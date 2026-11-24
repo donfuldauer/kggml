@@ -28,6 +28,7 @@ You own the end-to-end execution lifecycle of a GitHub issue in **Kggml** (`com.
 3. **Local Quality Gates & PR Creation:**
    - Run all relevant build/test/parity/audit checks (`./scripts/verify-agent-parity.sh`, `./gradlew check`, `ctest`, binary symbol audits).
    - Push `feat/issue-<N>-<slug>` and create a PR targeting `main` with `Closes #<N>`, summary, and verification evidence.
+   - Immediately enable auto-fix on the new PR (mandatory): in Claude Code call `subscribe_pr_activity` for the PR; in other harnesses use the equivalent PR watch. CI failures and review comments are then fixed on the feature branch without waiting to be asked.
    - Transition issue labels (`--remove-label status:in-progress --add-label status:in-review`) and comment on the issue with the PR link.
 4. **Conditional Phase Gate Check:**
    - Check if `#N` is the final open issue in its Phase/Milestone.
