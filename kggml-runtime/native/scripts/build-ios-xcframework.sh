@@ -41,8 +41,12 @@ for preset in ios-device ios-simulator-arm64; do
   cmake -S "${NATIVE_DIR}" --preset "${preset}" ${extra_args[@]+"${extra_args[@]}"}
   cmake --build "${build_dir}" --config Release -- -quiet
 
-  # Xcode places multi-config output under <dir>/Release-iphoneos or Release-iphonesimulator.
-  fw="$(find "${build_dir}" -type d -name GgmlRuntime.framework -path '*Release-iphone*' -prune | head -n 1)"
+  # Xcode places multi-config output under <dir>/Release-iphoneos or Release-iphonesimulator. Newer Xcode also
+  # emits a binary-less stub under build/EagerLinkingTBDs/, so only accept a framework that holds its Mach-O.
+  fw=""
+  while IFS= read -r candidate; do
+    if [[ -f "${candidate}/GgmlRuntime" ]]; then fw="${candidate}"; break; fi
+  done < <(find "${build_dir}" -type d -name GgmlRuntime.framework -path '*Release-iphone*' -not -path '*/EagerLinkingTBDs/*' -prune)
   if [[ -z "${fw}" ]]; then
     echo "GgmlRuntime.framework not found under ${build_dir}" >&2
     exit 1
