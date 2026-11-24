@@ -1,0 +1,18 @@
+[versions]
+kotlin = "2.2.0"
+agp = "8.10.1"
+android-compileSdk = "35"
+android-minSdk = "26"
+jvmTarget = "17"
+
+[libraries]
+kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+android-gradle-plugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
+kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
+
+[plugins]
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+# Kggml convention plugins (provided by the included build `build-logic`)
+kggml-kmp-library = { id = "kggml.kmp.library" }
+kggml-publishing = { id = "kggml.publishing" }
