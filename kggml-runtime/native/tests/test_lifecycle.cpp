@@ -88,7 +88,7 @@ TEST_F(LifecycleTest, VersionAndTopologyQueriesWorkWithoutInit) {
 
 TEST_F(LifecycleTest, ConcurrentBalancedInitShutdownEndsAtZero) {
     constexpr int kThreads = 8;
-    constexpr int kIterations = 200;
+    static constexpr int kIterations = 200; // static: MSVC (C3493) will not implicitly capture a local constexpr
     std::vector<std::thread> threads;
     std::vector<int> failures(kThreads, 0);
     for (int t = 0; t < kThreads; ++t) {
