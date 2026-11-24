@@ -52,7 +52,9 @@ Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.
 
 ## 3. Build, Test & Verification Commands
 
-Run the commands relevant to the modules touched by your change:
+**Before every push, run `./scripts/ci-local.sh`.** It runs the same checks as the Linux PR CI jobs (agent parity, gitleaks, ggml pin, host native build + CTest, dynamic-linkage audit, `:kggml-runtime:jvmTest`, Android cross-compile + audit). Native steps run only when native paths changed versus `origin/main`; tools it cannot find (gitleaks, Android NDK) are reported as `SKIPPED`. Paste its summary block into the PR's Verification section. Fix every `FAIL` locally before pushing rather than using CI to find failures.
+
+Also run whichever of these apply to the modules your change touches:
 
 ```bash
 # Agent & harness parity check (always run if .agents/ or AGENTS.md changed)
@@ -75,6 +77,13 @@ ctest --test-dir build/native --output-on-failure
 - **Native C++ & Bridge Layers (`:kggml-runtime`, `:kggml-whisper`, `:kggml-llama`, `:kggml-diffusion`):** CTest/GoogleTest suites (resampling, short-buffer padding, abort callbacks, exception handling) + platform integration tests (`androidUnitTest`, `iosSimulatorArm64Test`, `jvmTest`) using tiny CC0/MIT synthetic fixtures and PCM arrays.
 - **Modularity & UI:** CI binary symbol audit on `:samples:whisper-only-minimal` (`nm`/`otool` on iOS, `apkanalyzer`/`readelf` on Android) and Compose UI tests on `:samples:kggml-showcase`.
 
+### CI Minutes Policy (private repository)
+Hosted macOS runners are billed at 10× Linux minutes, so CI is split by cost:
+- **Every PR (Linux, 1×):** `repo-hygiene.yml` (parity, gitleaks) and `runtime-native.yml` (Linux host build + CTest + linkage audit + `jvmTest`, Android cross-compile + audit). Draft PRs skip the native jobs, and a new push cancels the previous run.
+- **macOS on demand only:** `runtime-native-macos.yml` runs only when a PR has the `ci:macos` label, when dispatched manually, or weekly (Mondays) if `main` changed runtime paths that week. Add `ci:macos` to **phase-final PRs** and to PRs that change macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Do not add it to other PRs.
+- New CI jobs must put shared logic in `scripts/ci/` and call it from both the workflow and `./scripts/ci-local.sh`, so every Linux CI check can be reproduced locally. Any new macOS/iOS job goes in the label-gated macOS workflow, not the per-PR one.
+- Batch fixes into one push where possible: every push to an open PR starts the Linux jobs again.
+
 ---
 
 ## 4. GitHub Workflow, Labels & Multi-Agent Roles
@@ -83,11 +92,12 @@ ctest --test-dir build/native --output-on-failure
 - **Phase:** `phase-1`, `phase-2`, `phase-3`, `phase-4`, `phase-oss`
 - **Module:** `mod:bom`, `mod:core-api`, `mod:runtime`, `mod:whisper`, `mod:llama`, `mod:diffusion`, `mod:model-manager`, `mod:samples`, `infra:ci`
 - **Status Lifecycle:** `status:ready`, `status:blocked`, `status:in-progress`, `status:in-review`
+- **CI (PRs only):** `ci:macos` — runs the 10×-billed macOS workflow; see Section 3 "CI Minutes Policy"
 
 ### Branch & PR Conventions
 - Branch name: `feat/issue-<N>-<slug>` cut from `main`.
 - PR body must include `Closes #<N>`, summary of changes, verification output, and checklist completion.
-- Merge strategy: merge to `main` with a **merge commit** (`gh pr merge <PR> --merge --delete-branch`; squash merges are disabled on the repository, and merge commits preserve each PR's individual commits) after CI passes (and `phase-reviewer` approval on phase-final issues), delete branch, and promote newly unblocked downstream issues from `status:blocked` to `status:ready`.
+- Merge strategy: merge to `main` with a **merge commit** (`gh pr merge <PR> --merge --delete-branch`; squash merges are disabled on the repository, and merge commits preserve each PR's individual commits) after CI passes (including the `ci:macos` run on phase-final or Apple-specific PRs, plus `phase-reviewer` approval on phase-final issues), delete branch, and promote newly unblocked downstream issues from `status:blocked` to `status:ready`.
 - **Autonomous merge:** A `"work on next issue"` / `"work on issue #X"` request authorizes the agent (in any harness) to perform that merge itself without asking for confirmation. Escalate to the user only when a gate fails and cannot be fixed within the issue's scope (red CI, unresolvable conflict, missing `phase-reviewer` approval, or unresolved requested changes).
 
 ### Specialized Agents (`.agents/agents/`)

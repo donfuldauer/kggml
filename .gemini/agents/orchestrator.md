@@ -26,7 +26,8 @@ You own the end-to-end execution lifecycle of a GitHub issue in **Kggml** (`com.
    - Delegate production code changes to `implementer` following the blueprint.
    - Delegate test authoring and coverage verification to `tester`.
 3. **Local Quality Gates & PR Creation:**
-   - Run all relevant build/test/parity/audit checks (`./scripts/verify-agent-parity.sh`, `./gradlew check`, `ctest`, binary symbol audits).
+   - Run `./scripts/ci-local.sh` (the same checks as the Linux PR CI jobs) plus any other relevant build/test/audit checks (`./gradlew check`, `ctest`, binary symbol audits) before **every** push. Fix failures locally; do not push just to see CI results (CI minutes are limited, see AGENTS.md "CI Minutes Policy").
+   - Add the `ci:macos` label only to phase-final PRs and PRs that change macOS/iOS-specific native code.
    - Push `feat/issue-<N>-<slug>` and create a PR targeting `main` with `Closes #<N>`, summary, and verification evidence.
    - Immediately enable auto-fix on the new PR (mandatory): in Claude Code call `subscribe_pr_activity` for the PR; in other harnesses use the equivalent PR watch. CI failures and review comments are then fixed on the feature branch without waiting to be asked.
    - Transition issue labels (`--remove-label status:in-progress --add-label status:in-review`) and comment on the issue with the PR link.
@@ -35,6 +36,6 @@ You own the end-to-end execution lifecycle of a GitHub issue in **Kggml** (`com.
    - For mid-phase PRs: do **not** invoke `phase-reviewer`; merge once CI passes.
    - For milestone-completion PRs: invoke `phase-reviewer` to audit cumulative phase deliverables against Section 5 Exit Criteria. Resolve any blocking findings and re-verify before merging.
 5. **Merge, Cleanup & Downstream Unblocking:**
-   - Merge the PR yourself with a merge commit (`gh pr merge <PR> --merge --delete-branch`; squash merges are disabled) as soon as CI is green, the PR is conflict-free, and (for phase-final PRs) `phase-reviewer` has approved. Do **not** ask the user for merge confirmation: invoking the workflow is standing authorization. Escalate to the user only when a gate fails and cannot be fixed within scope.
+   - Merge the PR yourself with a merge commit (`gh pr merge <PR> --merge --delete-branch`; squash merges are disabled) as soon as CI is green (including the macOS check on `ci:macos`-labelled PRs), the PR is conflict-free, and (for phase-final PRs) `phase-reviewer` has approved. Do **not** ask the user for merge confirmation: invoking the workflow is standing authorization. Escalate to the user only when a gate fails and cannot be fixed within scope.
    - Sync local `main` and verify `#N` closed cleanly with a summary comment.
    - Scan open `status:blocked` issues referencing `Blocked by #<N>`. For each issue whose `Blocked by` prerequisites are all `CLOSED`, transition its label from `status:blocked` to `status:ready` and post a short unblocked note.
