@@ -89,12 +89,16 @@ android {
     }
 }
 
+// Host runtime built by build-host.sh: shared libraries land in build/native/lib, except Windows DLLs (build/native/bin).
+val hostNativeLibDir: File = rootProject.layout.projectDirectory
+    .dir(if (System.getProperty("os.name").lowercase().startsWith("windows")) "build/native/bin" else "build/native/lib")
+    .asFile
+
 compose.desktop {
     application {
         mainClass = "com.donfuldauer.kggml.samples.showcase.MainKt"
         // During development, point the JVM loader at a locally built host runtime (build-host.sh) if present.
         // Release desktop builds instead bundle it into the :kggml-runtime jar (-Pkggml.bundleNative=true).
-        val hostNativeLibDir = rootProject.layout.projectDirectory.dir("build/native/lib").asFile
         if (hostNativeLibDir.isDirectory) jvmArgs += "-Dkggml.native.path=${hostNativeLibDir.absolutePath}"
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
@@ -109,7 +113,7 @@ compose.desktop {
 // state. -Pkggml.requireNative=true makes the native path mandatory.
 tasks.named<Test>("desktopTest") {
     val requireNative = providers.gradleProperty("kggml.requireNative").map(String::toBoolean).getOrElse(false)
-    val libDir = rootProject.layout.projectDirectory.dir("build/native/lib").asFile
+    val libDir = hostNativeLibDir
     val jniLibraryName = System.mapLibraryName("kggml_runtime_jni")
     systemProperty("kggml.test.requireNative", requireNative.toString())
     inputs.property("kggml.requireNative", requireNative)
