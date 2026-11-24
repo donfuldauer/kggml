@@ -19,7 +19,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Cancel superseded PR runs, but let every push to main finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   GRADLE_OPTS: -Dorg.gradle.daemon=false
@@ -177,6 +178,7 @@ jobs:
       - name: Native runtime (windows-x64, MSVC) build + CTest
         shell: cmd
         run: |
+          where ninja >nul 2>&1 || choco install ninja -y --no-progress || exit /b 1
           cmake -S kggml-runtime/native --preset windows-x64 -B build/native || exit /b 1
           cmake --build build/native --config Release -j 4 || exit /b 1
           ctest --test-dir build/native --build-config Release --output-on-failure -j 4
