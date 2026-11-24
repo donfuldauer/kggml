@@ -1,0 +1,119 @@
+name: Runtime Native (ggml CMake + CTest)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "kggml-runtime/native/**"
+      - ".gitmodules"
+      - "NOTICE"
+      - ".github/workflows/runtime-native.yml"
+  pull_request:
+    paths:
+      - "kggml-runtime/native/**"
+      - ".gitmodules"
+      - "NOTICE"
+      - ".github/workflows/runtime-native.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    name: Host build + CTest (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout repository (with ggml submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja || true
+
+      - name: Verify ggml submodule matches the pin recorded in CMakeLists.txt and NOTICE
+        run: |
+          actual="$(git -C kggml-runtime/native/third_party/ggml rev-parse HEAD)"
+          pinned="$(sed -n 's/^set(KGGML_GGML_PINNED_COMMIT "\([0-9a-f]\{40\}\)")$/\1/p' kggml-runtime/native/CMakeLists.txt)"
+          echo "submodule=${actual} pinned=${pinned}"
+          test -n "${pinned}"
+          test "${actual}" = "${pinned}"
+          grep -q "${pinned}" NOTICE
+
+      - name: Configure, build and test (build/native)
+        run: ./kggml-runtime/native/scripts/build-host.sh
+
+      - name: Audit dynamic ggml linkage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          lib=build/native/lib
+          readelf -d "${lib}/libkggml_runtime.so" | tee /dev/stderr | grep -q 'NEEDED.*\[libggml.so'
+          readelf -d "${lib}/libkggml_runtime.so" | grep -q 'NEEDED.*\[libggml-base.so'
+          # kggml_runtime must import ggml, never define (embed) it.
+          if nm -D --defined-only "${lib}/libkggml_runtime.so" | grep -E ' (ggml|gguf)_'; then
+            echo "libkggml_runtime.so embeds ggml symbols" >&2; exit 1
+          fi
+          nm -D --defined-only "${lib}/libggml-base.so" | grep -q ' ggml_init$'
+          nm -D --defined-only "${lib}/libggml.so" | grep -q ' ggml_backend_reg_by_name$'
+
+      - name: Audit dynamic ggml linkage (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          lib=build/native/lib
+          otool -L "${lib}/libkggml_runtime.dylib" | tee /dev/stderr | grep -q 'libggml\.'
+          otool -L "${lib}/libkggml_runtime.dylib" | grep -q 'libggml-base\.'
+          if nm -gU "${lib}/libkggml_runtime.dylib" | grep -E ' _(ggml|gguf)_'; then
+            echo "libkggml_runtime.dylib embeds ggml symbols" >&2; exit 1
+          fi
+
+      - name: Upload CTest logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-${{ matrix.os }}
+          path: build/native/Testing/Temporary/
+          if-no-files-found: ignore
+
+  android:
+    name: Android cross-compile (arm64-v8a, x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (with ggml submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Build Android shared libraries
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
+          ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
+
+      - name: Audit unversioned sonames and dynamic ggml linkage
+        run: |
+          for abi in arm64-v8a x86_64; do
+            lib="build/native-android-${abi}/lib"
+            for so in libggml-base.so libggml-cpu.so libggml.so libkggml_runtime.so; do
+              readelf -d "${lib}/${so}" | grep -q "SONAME.*\[${so}\]"
+            done
+            readelf -d "${lib}/libkggml_runtime.so" | grep -q 'NEEDED.*\[libggml.so\]'
+            if nm -D --defined-only "${lib}/libkggml_runtime.so" | grep -E ' (ggml|gguf)_'; then
+              echo "${abi}: libkggml_runtime.so embeds ggml symbols" >&2; exit 1
+            fi
+            echo "${abi}: OK"
+          done
