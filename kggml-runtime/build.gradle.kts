@@ -23,7 +23,9 @@ val bundleNative = providers.gradleProperty("kggml.bundleNative").map(String::to
 val nativeDir = layout.projectDirectory.dir("native")
 val rootBuildDir = rootProject.layout.projectDirectory.dir("build")
 val nativeBuildDir = rootBuildDir.dir("native")
-val hostNativeLibDir = nativeBuildDir.dir("lib")
+// CMake puts shared libraries in lib/ on Linux/macOS but DLLs (RUNTIME artifacts) in bin/ on Windows.
+val isWindowsHost = System.getProperty("os.name").lowercase().startsWith("windows")
+val hostNativeLibDir = nativeBuildDir.dir(if (isWindowsHost) "bin" else "lib")
 val nativeReleaseBuildDir = rootBuildDir.dir("native-release")
 val nativeReleaseInstallDir = rootBuildDir.dir("native-release-install")
 val androidJniLibsDir = rootBuildDir.dir("native-android-jniLibs")
