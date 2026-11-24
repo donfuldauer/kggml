@@ -80,7 +80,7 @@ ctest --test-dir build/native --output-on-failure
 ### CI Minutes Policy (private repository)
 Hosted macOS runners are billed at 10× Linux minutes, so CI is split by cost:
 - **Every PR (Linux, 1×):** `repo-hygiene.yml` (parity, gitleaks) and `runtime-native.yml` (Linux host build + CTest + linkage audit + `jvmTest`, Android cross-compile + audit). Draft PRs skip the native jobs, and a new push cancels the previous run.
-- **macOS on demand only:** `runtime-native-macos.yml` runs only when a PR has the `ci:macos` label, when dispatched manually, or weekly (Mondays) if `main` changed runtime paths that week. Add `ci:macos` to **phase-final PRs** and to PRs that change macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Do not add it to other PRs.
+- **macOS on demand only:** `runtime-native-macos.yml` and the macOS job in `ci.yml` run only when a PR has the `ci:macos` label, when dispatched manually, or (`runtime-native-macos.yml` only) weekly (Mondays) if `main` changed runtime paths that week. Pushes to `main` do not run the `ci.yml` macOS job. Add `ci:macos` to **phase-final PRs** and to PRs that change macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Do not add it to other PRs.
 - New CI jobs must put shared logic in `scripts/ci/` and call it from both the workflow and `./scripts/ci-local.sh`, so every Linux CI check can be reproduced locally. Any new macOS/iOS job goes in the label-gated macOS workflow, not the per-PR one.
 - Batch fixes into one push where possible: every push to an open PR starts the Linux jobs again.
 

@@ -1,6 +1,8 @@
 name: CI (Phase 1 cross-platform matrix)
 
 # Phase 1 matrix (issue #6): every PR and push to main builds and tests the SDK and both samples on
+# Ubuntu and Windows. The macOS job is billed at 10x Linux minutes, so (per AGENTS.md "CI Minutes Policy")
+# it runs only on PRs labelled `ci:macos` (adding the label starts it at once) or on a manual dispatch.
 #   - Ubuntu:  Linux x86_64 native runtime + CTest, `./gradlew check` (commonTest, jvmTest, androidUnitTest,
 #              BOM checks, sample audits) with native-backed tests mandatory, Android NDK cross-compile,
 #              Android APKs + desktop jar for both samples.
@@ -13,12 +15,18 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    # `labeled` lets adding `ci:macos` start the macOS job without a new push; the Ubuntu and
+    # Windows jobs skip `labeled` events because the PR's head already ran them.
+    types: [opened, synchronize, reopened, labeled]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A `labeled` run gets its own throwaway group so adding a label never cancels the head's build
+  # (and is never cancelled by it).
+  group: ci-${{ github.ref }}-${{ github.event.action == 'labeled' && github.run_id || 'build' }}
   # Cancel superseded PR runs, but let every push to main finish.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
@@ -32,6 +40,7 @@ env:
 jobs:
   linux:
     name: Ubuntu (Linux JVM, Android, CTest)
+    if: github.event.action != 'labeled'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -82,6 +91,13 @@ jobs:
 
   macos:
     name: macOS (macOS JVM, iOS XCFramework + simulator tests, CTest)
+    # Skipped jobs start no runner and are not billed. On a `labeled` event, only the `ci:macos`
+    # label itself starts a run, not unrelated labels added to an already-labelled PR.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'ci:macos') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
     runs-on: macos-latest
     timeout-minutes: 75
     steps:
@@ -149,6 +165,7 @@ jobs:
 
   windows:
     name: Windows (Windows x64 native, JVM, CTest)
+    if: github.event.action != 'labeled'
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
