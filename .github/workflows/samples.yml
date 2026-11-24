@@ -1,0 +1,102 @@
+name: Samples (showcase + whisper-only-minimal)
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "samples/**"
+      - "kggml-*/**"
+      - "build-logic/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/samples.yml"
+  pull_request:
+    paths:
+      - "samples/**"
+      - "kggml-*/**"
+      - "build-logic/**"
+      - "gradle/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - ".github/workflows/samples.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: samples-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-desktop:
+    name: Android + JVM Desktop (assemble, unit + Compose UI tests)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (with ggml submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build host native runtime (for the native-backed inspector test)
+        run: ./kggml-runtime/native/scripts/build-host.sh --skip-ctest
+
+      - name: Showcase desktop tests (Compose UI + real JNI runtime) and sample checks
+        run: >
+          ./gradlew --console=plain -Pkggml.requireNative=true
+          :samples:kggml-showcase:desktopTest
+          :samples:kggml-showcase:testDebugUnitTest
+          :samples:whisper-only-minimal:check
+
+      - name: Assemble sample apps (Android APKs, desktop jar)
+        run: >
+          ./gradlew --console=plain
+          :samples:kggml-showcase:assembleDebug
+          :samples:kggml-showcase:desktopJar
+          :samples:whisper-only-minimal:assembleDebug
+
+      - name: Upload test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: samples-test-reports
+          path: samples/*/build/reports/
+          if-no-files-found: ignore
+
+  ios:
+    name: iOS frameworks (iosArm64, iosSimulatorArm64)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Static frameworks: GgmlRuntime.framework is linked by the Xcode host app, so no xcframework is needed here.
+      # iOS test executables (which do need it) run once the CI matrix builds GgmlRuntime.xcframework (#6).
+      - name: Link sample iOS frameworks
+        run: >
+          ./gradlew --console=plain
+          :samples:kggml-showcase:linkDebugFrameworkIosSimulatorArm64
+          :samples:kggml-showcase:linkDebugFrameworkIosArm64
+          :samples:whisper-only-minimal:linkDebugFrameworkIosSimulatorArm64
+          :samples:whisper-only-minimal:linkDebugFrameworkIosArm64

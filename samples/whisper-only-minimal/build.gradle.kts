@@ -1,2 +1,95 @@
-// Placeholder: minimal Android + iOS sample depending ONLY on `:kggml-bom` + `:kggml-whisper`
-// (used for CI binary symbol leakage audits). Implemented in a later issue. Never published.
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
+// Minimal Android + iOS sample used for CI binary symbol leakage audits (AGENTS.md §2.1): it depends ONLY on the
+// `kggml-bom` platform and `:kggml-runtime` (Phase 2 adds `:kggml-whisper`). It must never depend on
+// `:kggml-llama` or `:kggml-diffusion`, and uses no UI toolkit beyond the platform's own, so its binaries
+// contain nothing but the app, the runtime and (later) whisper. Never published.
+plugins {
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.application)
+}
+
+val jvmTargetVersion: String = libs.versions.jvmTarget.get()
+// Samples are not published, so they do not get `project.version`; reuse the SDK version for app metadata.
+val sampleVersion: String = providers.gradleProperty("VERSION_NAME").get()
+// Built by kggml-runtime/native/scripts/build-ios-xcframework.sh (macOS only).
+val iosXcframeworkDir: File = rootProject.layout.projectDirectory.dir("build/native-ios/GgmlRuntime.xcframework").asFile
+
+kotlin {
+    androidTarget {
+        compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
+    }
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
+        target.binaries.framework {
+            baseName = "WhisperOnlyMinimal"
+            // Static: GgmlRuntime.framework is embedded and linked by the Xcode host app, never duplicated here.
+            isStatic = true
+        }
+        // Test executables are fully linked, so they need the locally built GgmlRuntime.framework.
+        val slice = if (target.name == "iosSimulatorArm64") "ios-arm64-simulator" else "ios-arm64"
+        val frameworkSearchPath = iosXcframeworkDir.resolve(slice).absolutePath
+        target.binaries.getTest("DEBUG").linkerOpts("-F", frameworkSearchPath, "-rpath", frameworkSearchPath)
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            // Kggml SDK: versions come from the BOM only.
+            implementation(project.dependencies.platform(project(":kggml-bom")))
+            implementation(project(":kggml-runtime"))
+        }
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+        }
+    }
+}
+
+android {
+    namespace = "com.donfuldauer.kggml.samples.whisper"
+    compileSdk = libs.versions.android.compileSdk.get().toInt()
+    defaultConfig {
+        applicationId = "com.donfuldauer.kggml.samples.whisper"
+        minSdk = libs.versions.android.minSdk.get().toInt()
+        targetSdk = libs.versions.android.compileSdk.get().toInt()
+        versionCode = 1
+        versionName = sampleVersion
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.toVersion(jvmTargetVersion)
+        targetCompatibility = JavaVersion.toVersion(jvmTargetVersion)
+    }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+}
+
+// Guard: this sample must never (even transitively) pull in the llama or diffusion engines.
+val forbiddenKggmlModules = setOf("kggml-llama", "kggml-diffusion")
+val verifyMinimalDependencies by tasks.registering {
+    group = "verification"
+    description = "Fails if :samples:whisper-only-minimal resolves :kggml-llama or :kggml-diffusion."
+    val roots = listOf("releaseRuntimeClasspath", "debugRuntimeClasspath")
+        .map { configurations.getByName(it).incoming.resolutionResult.rootComponent }
+    doLast {
+        val offenders = roots.flatMap { root ->
+            val seen = mutableSetOf<String>()
+            fun visit(c: org.gradle.api.artifacts.result.ResolvedComponentResult) {
+                val name = c.moduleVersion?.name ?: return
+                if (!seen.add("${c.id}")) return
+                c.dependencies.filterIsInstance<org.gradle.api.artifacts.result.ResolvedDependencyResult>()
+                    .forEach { visit(it.selected) }
+            }
+            visit(root.get())
+            seen.filter { id -> forbiddenKggmlModules.any { id.contains(it) } }
+        }.distinct()
+        check(offenders.isEmpty()) { "whisper-only-minimal must not depend on $forbiddenKggmlModules: $offenders" }
+        logger.lifecycle("whisper-only-minimal dependency audit OK (no llama / diffusion modules)")
+    }
+}
+tasks.named("check") { dependsOn(verifyMinimalDependencies) }
+
+// iOS test executables link against GgmlRuntime.xcframework; skip them (like :kggml-runtime) until it is built.
+tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
+    onlyIf("GgmlRuntime.xcframework is built (kggml-runtime/native/scripts/build-ios-xcframework.sh)") {
+        iosXcframeworkDir.isDirectory
+    }
+}
