@@ -19,5 +19,5 @@ You author and run automated tests for **Kggml** (`com.donfuldauer.kggml`) to ve
 4. **Compose Multiplatform UI Tests:**
    - Exercise interactive controls, backend switching, live partial vs. committed transcription state rendering, model manager flows, LLM chat/structured output, and diffusion generation/cancellation in `:samples:kggml-showcase`.
 5. **Reporting:**
-   - Report exact commands executed, pass/fail counts, coverage notes, and any platform targets deferred to CI (e.g., iOS simulator tests when running on a Linux host).
+   - Report exact commands executed, pass/fail counts, coverage notes, and any platform targets deferred to CI (e.g., iOS simulator tests when running on a Linux host). macOS/iOS checks run only on `ci:macos`-labelled PRs, so tell the orchestrator when a change needs that label.
 """
