@@ -1,0 +1,19 @@
+# kggml-whisper CMake package.
+#
+# Provides:
+#   kggml::whisper - libkggml_whisper (kggml_whisper.h + whisper.h), linked dynamically against
+#                    kggml::runtime / kggml::ggml from the kggml-runtime package.
+
+@PACKAGE_INIT@
+
+set(KGGML_WHISPER_UPSTREAM_COMMIT "@KGGML_WHISPER_UPSTREAM_COMMIT@")
+set(KGGML_WHISPER_UPSTREAM_VERSION "@KGGML_WHISPER_UPSTREAM_VERSION@")
+set(KGGML_WHISPER_COREML @KGGML_WHISPER_COREML@)
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+find_dependency(kggml-runtime 1.0 CONFIG)
+
+include("${CMAKE_CURRENT_LIST_DIR}/kggml-whisper-targets.cmake")
+
+check_required_components(kggml-whisper)

@@ -1,12 +1,12 @@
 name: CI (Phase 1 cross-platform matrix)
 
 # Phase 1 matrix (issue #6): every PR and push to main builds and tests the SDK and both samples on
-#   - Ubuntu:  Linux x86_64 native runtime + CTest, `./gradlew check` (commonTest, jvmTest, androidUnitTest,
+#   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + CTest, `./gradlew check` (commonTest, jvmTest, androidUnitTest,
 #              BOM checks, sample audits) with native-backed tests mandatory, Android NDK cross-compile,
 #              Android APKs + desktop jar for both samples.
-#   - macOS:   macOS arm64 native runtime (Metal + Accelerate) + CTest, JVM tests against it,
-#              GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64), iosSimulatorArm64Test, sample iOS frameworks.
-#   - Windows: Windows x64 native runtime (MSVC) + CTest, JVM tests against it.
+#   - macOS:   macOS arm64 native runtime (Metal + Accelerate) + whisper + CTest, JVM tests against it,
+#              GgmlRuntime.xcframework + KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML), iosSimulatorArm64Test, sample iOS frameworks.
+#   - Windows: Windows x64 native runtime + whisper (MSVC) + CTest, JVM tests against it.
 # Deeper per-binary linkage audits live in runtime-native.yml; parity + gitleaks live in repo-hygiene.yml.
 
 on:
@@ -55,6 +55,12 @@ jobs:
       - name: Native runtime (linux-x64) build + CTest
         run: ./kggml-runtime/native/scripts/build-host.sh
 
+      - name: Native whisper (linux-x64) build + CTest + dynamic ggml linkage audit
+        run: |
+          ./scripts/ci/verify-whisper-pin.sh
+          ./kggml-whisper/native/scripts/build-host.sh
+          ./scripts/ci/audit-whisper-linkage.sh host
+
       - name: Gradle check (commonTest, jvmTest, androidUnitTest, samples, BOM) with native tests required
         run: ./gradlew check $NATIVE_GRADLE_ARGS
 
@@ -62,6 +68,8 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
           ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
+          ./kggml-whisper/native/scripts/build-android.sh arm64-v8a x86_64
+          ./scripts/ci/audit-whisper-linkage.sh android arm64-v8a x86_64
 
       - name: Assemble samples (Android APKs, desktop jar) via kggml-bom + :kggml-runtime
         run: >
@@ -77,6 +85,7 @@ jobs:
           name: reports-linux
           path: |
             build/native/Testing/Temporary/
+            build/native-whisper/Testing/Temporary/
             **/build/reports/
           if-no-files-found: ignore
 
@@ -105,8 +114,16 @@ jobs:
       - name: Native runtime (macos-arm64, Metal + Accelerate) build + CTest
         run: ./kggml-runtime/native/scripts/build-host.sh
 
+      - name: Native whisper (macos-arm64) build + CTest + dynamic ggml linkage audit
+        run: |
+          ./kggml-whisper/native/scripts/build-host.sh
+          ./scripts/ci/audit-whisper-linkage.sh host
+
       - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64)
         run: ./kggml-runtime/native/scripts/build-ios-xcframework.sh
+
+      - name: Build KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML, linked to GgmlRuntime)
+        run: ./kggml-whisper/native/scripts/build-ios-xcframework.sh
 
       - name: JVM tests against the macOS native runtime
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
@@ -144,6 +161,7 @@ jobs:
           name: reports-macos
           path: |
             build/native/Testing/Temporary/
+            build/native-whisper/Testing/Temporary/
             **/build/reports/
           if-no-files-found: ignore
 
@@ -183,6 +201,13 @@ jobs:
           cmake --build build/native --config Release -j 4 || exit /b 1
           ctest --test-dir build/native --build-config Release --output-on-failure -j 4
 
+      - name: Native whisper (windows-x64, MSVC) build + CTest
+        shell: cmd
+        run: |
+          cmake -S kggml-whisper/native --preset windows-x64 -B build/native-whisper || exit /b 1
+          cmake --build build/native-whisper --config Release -j 4 || exit /b 1
+          ctest --test-dir build/native-whisper --build-config Release --output-on-failure -j 4
+
       - name: JVM tests against the Windows native runtime
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
 
@@ -193,5 +218,6 @@ jobs:
           name: reports-windows
           path: |
             build/native/Testing/Temporary/
+            build/native-whisper/Testing/Temporary/
             **/build/reports/
           if-no-files-found: ignore

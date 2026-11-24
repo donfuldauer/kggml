@@ -1,3 +1,6 @@
 [submodule "kggml-runtime/native/third_party/ggml"]
 	path = kggml-runtime/native/third_party/ggml
 	url = https://github.com/ggml-org/ggml
+[submodule "kggml-whisper/native/third_party/whisper.cpp"]
+	path = kggml-whisper/native/third_party/whisper.cpp
+	url = https://github.com/ggml-org/whisper.cpp
