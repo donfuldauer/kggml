@@ -4,13 +4,21 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "kggml-runtime/native/**"
+      - "kggml-runtime/**"
+      - "kggml-core-api/src/commonMain/**"
+      - "build-logic/**"
+      - "gradle/**"
+      - "gradle.properties"
       - ".gitmodules"
       - "NOTICE"
       - ".github/workflows/runtime-native.yml"
   pull_request:
     paths:
-      - "kggml-runtime/native/**"
+      - "kggml-runtime/**"
+      - "kggml-core-api/src/commonMain/**"
+      - "build-logic/**"
+      - "gradle/**"
+      - "gradle.properties"
       - ".gitmodules"
       - "NOTICE"
       - ".github/workflows/runtime-native.yml"
@@ -63,8 +71,15 @@ jobs:
           readelf -d "${lib}/libkggml_runtime.so" | tee /dev/stderr | grep -q 'NEEDED.*\[libggml.so'
           readelf -d "${lib}/libkggml_runtime.so" | grep -q 'NEEDED.*\[libggml-base.so'
           # kggml_runtime must import ggml, never define (embed) it.
-          if nm -D --defined-only "${lib}/libkggml_runtime.so" | grep -E ' (ggml|gguf)_'; then
-            echo "libkggml_runtime.so embeds ggml symbols" >&2; exit 1
+          for so in libkggml_runtime.so libkggml_runtime_jni.so; do
+            if nm -D --defined-only "${lib}/${so}" | grep -E ' (ggml|gguf)_'; then
+              echo "${so} embeds ggml symbols" >&2; exit 1
+            fi
+          done
+          readelf -d "${lib}/libkggml_runtime_jni.so" | grep -q 'NEEDED.*\[libkggml_runtime.so'
+          # The JNI bridge exports only Java_* entry points.
+          if nm -D --defined-only "${lib}/libkggml_runtime_jni.so" | awk '$2 ~ /[TDB]/ {print $3}' | grep -v '^Java_com_donfuldauer_kggml_runtime_KggmlRuntimeJni_'; then
+            echo "libkggml_runtime_jni.so exports non-JNI symbols" >&2; exit 1
           fi
           nm -D --defined-only "${lib}/libggml-base.so" | grep -q ' ggml_init$'
           nm -D --defined-only "${lib}/libggml.so" | grep -q ' ggml_backend_reg_by_name$'
@@ -75,9 +90,24 @@ jobs:
           lib=build/native/lib
           otool -L "${lib}/libkggml_runtime.dylib" | tee /dev/stderr | grep -q 'libggml\.'
           otool -L "${lib}/libkggml_runtime.dylib" | grep -q 'libggml-base\.'
-          if nm -gU "${lib}/libkggml_runtime.dylib" | grep -E ' _(ggml|gguf)_'; then
-            echo "libkggml_runtime.dylib embeds ggml symbols" >&2; exit 1
-          fi
+          for dylib in libkggml_runtime.dylib libkggml_runtime_jni.dylib; do
+            if nm -gU "${lib}/${dylib}" | grep -E ' _(ggml|gguf)_'; then
+              echo "${dylib} embeds ggml symbols" >&2; exit 1
+            fi
+          done
+          otool -L "${lib}/libkggml_runtime_jni.dylib" | grep -q 'libkggml_runtime\.'
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Kotlin JNI bindings against the native runtime (jvmTest)
+        run: ./gradlew :kggml-runtime:jvmTest -Pkggml.requireNative=true --console=plain
 
       - name: Upload CTest logs on failure
         if: failure()
@@ -108,9 +138,13 @@ jobs:
         run: |
           for abi in arm64-v8a x86_64; do
             lib="build/native-android-${abi}/lib"
-            for so in libggml-base.so libggml-cpu.so libggml.so libkggml_runtime.so; do
+            for so in libggml-base.so libggml-cpu.so libggml.so libkggml_runtime.so libkggml_runtime_jni.so; do
               readelf -d "${lib}/${so}" | grep -q "SONAME.*\[${so}\]"
             done
+            readelf -d "${lib}/libkggml_runtime_jni.so" | grep -q 'NEEDED.*\[libkggml_runtime.so\]'
+            if nm -D --defined-only "${lib}/libkggml_runtime_jni.so" | grep -E ' (ggml|gguf)_'; then
+              echo "${abi}: libkggml_runtime_jni.so embeds ggml symbols" >&2; exit 1
+            fi
             readelf -d "${lib}/libkggml_runtime.so" | grep -q 'NEEDED.*\[libggml.so\]'
             if nm -D --defined-only "${lib}/libkggml_runtime.so" | grep -E ' (ggml|gguf)_'; then
               echo "${abi}: libkggml_runtime.so embeds ggml symbols" >&2; exit 1

@@ -1,0 +1,12 @@
+# Kotlin/Native bindings for the kggml_runtime C ABI (iosArm64, iosSimulatorArm64).
+#
+# The include directory (kggml-runtime/native/include) is supplied by kggml-runtime/build.gradle.kts.
+# Symbols resolve at link time against the dynamic GgmlRuntime.framework from GgmlRuntime.xcframework
+# (built by kggml-runtime/native/scripts/build-ios-xcframework.sh); the consuming app or test binary
+# supplies the framework search path (-F) and embeds the framework.
+package = com.donfuldauer.kggml.runtime.cinterop
+headers = kggml_runtime.h
+headerFilter = kggml_runtime.h
+# Keep enums as plain integers so unknown (future) native values never crash the bindings.
+nonStrictEnums = kggml_status kggml_backend_kind
+linkerOpts = -framework GgmlRuntime

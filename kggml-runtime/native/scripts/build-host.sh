@@ -4,9 +4,10 @@
 # Output: <repo>/build/native (so `ctest --test-dir build/native --output-on-failure` works from the root).
 #
 # Usage: kggml-runtime/native/scripts/build-host.sh [--clean] [--no-tests] [--skip-ctest] [--vulkan]
-#                                                  [--install <prefix>]
+#                                                  [--install <prefix>] [--build-dir <dir>]
 #   --no-tests    configure with KGGML_RUNTIME_BUILD_TESTS=OFF (no GoogleTest download, no test hooks)
 #   --skip-ctest  build the tests but do not run them
+#   --build-dir   build tree to use instead of <repo>/build/native (e.g. a release tree for packaging)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +28,8 @@ while [[ $# -gt 0 ]]; do
     --skip-ctest) run_tests=0 ;;
     --vulkan) extra_args+=("-DKGGML_ENABLE_VULKAN=ON") ;;
     --install) install_prefix="${2:?--install needs a prefix}"; shift ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --build-dir) BUILD_DIR="${2:?--build-dir needs a directory}"; shift ;;
+    -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -59,7 +61,7 @@ tests_flag="ON"
 [[ ${build_tests} -eq 1 ]] || tests_flag="OFF"
 
 echo "==> Configuring preset ${preset} -> ${BUILD_DIR}"
-cmake -S "${NATIVE_DIR}" --preset "${preset}" -DKGGML_RUNTIME_BUILD_TESTS="${tests_flag}" ${extra_args[@]+"${extra_args[@]}"}
+cmake -S "${NATIVE_DIR}" --preset "${preset}" -B "${BUILD_DIR}" -DKGGML_RUNTIME_BUILD_TESTS="${tests_flag}" ${extra_args[@]+"${extra_args[@]}"}
 
 echo "==> Building (-j${jobs})"
 cmake --build "${BUILD_DIR}" --config Release -j "${jobs}"
