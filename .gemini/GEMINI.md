@@ -88,6 +88,7 @@ ctest --test-dir build/native --output-on-failure
 - Branch name: `feat/issue-<N>-<slug>` cut from `main`.
 - PR body must include `Closes #<N>`, summary of changes, verification output, and checklist completion.
 - Merge strategy: squash-merge to `main` after CI passes (and `phase-reviewer` approval on phase-final issues), delete branch, and promote newly unblocked downstream issues from `status:blocked` to `status:ready`.
+- **Autonomous merge:** A `"work on next issue"` / `"work on issue #X"` request authorizes the agent (in any harness) to perform that merge itself without asking for confirmation. Escalate to the user only when a gate fails and cannot be fixed within the issue's scope (red CI, unresolvable conflict, missing `phase-reviewer` approval, or unresolved requested changes).
 
 ### Specialized Agents (`.agents/agents/`)
 1. **`issue-triager`** — Verifies `Blocked by` prerequisites, inspects codebase state, identifies edge cases, and produces a technical blueprint.
