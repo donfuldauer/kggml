@@ -304,6 +304,56 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------------------------------------
+# kggml_runtime_jni: JNI bridge for the Kotlin bindings on Android + JVM Desktop (not used on iOS, where
+# Kotlin/Native calls the C ABI directly through cinterop). Links kggml_runtime dynamically.
+# ---------------------------------------------------------------------------------------------------------
+
+set(KGGML_JNI_INCLUDE_DIRS "")
+if (ANDROID)
+    set(_kggml_jni_default ON) # jni.h ships in the NDK sysroot
+elseif (KGGML_RUNTIME_MONOLITHIC OR CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(_kggml_jni_default OFF)
+else()
+    # Only the headers are needed (the JVM provides the symbols at load time), so do not require JNI_FOUND
+    # (which also demands libjawt / libjvm on some CMake versions).
+    find_package(JNI QUIET)
+    if (JAVA_INCLUDE_PATH AND JAVA_INCLUDE_PATH2)
+        set(_kggml_jni_default ON)
+        set(KGGML_JNI_INCLUDE_DIRS "${JAVA_INCLUDE_PATH}" "${JAVA_INCLUDE_PATH2}")
+    else()
+        set(_kggml_jni_default OFF)
+    endif()
+endif()
+option(KGGML_RUNTIME_BUILD_JNI "kggml: build the kggml_runtime_jni JNI bridge (Android / JVM Desktop)"
+    ${_kggml_jni_default})
+
+if (KGGML_RUNTIME_BUILD_JNI)
+    if (NOT ANDROID AND NOT KGGML_JNI_INCLUDE_DIRS)
+        message(FATAL_ERROR "KGGML_RUNTIME_BUILD_JNI=ON but JNI headers were not found (set JAVA_HOME)")
+    endif()
+    add_library(kggml_runtime_jni SHARED jni/kggml_runtime_jni.cpp)
+    target_include_directories(kggml_runtime_jni PRIVATE ${KGGML_JNI_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(kggml_runtime_jni PRIVATE kggml_runtime)
+    target_compile_definitions(kggml_runtime_jni PRIVATE
+        $<$<BOOL:${KGGML_RUNTIME_TEST_HOOKS}>:KGGML_RUNTIME_TEST_HOOKS=1>)
+    # Exports only the Java_* entry points. Unversioned (loaded by file name from Java), like on Android.
+    set_target_properties(kggml_runtime_jni PROPERTIES
+        C_VISIBILITY_PRESET hidden
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+    if (MSVC)
+        target_compile_options(kggml_runtime_jni PRIVATE /W4 /EHsc)
+    else()
+        target_compile_options(kggml_runtime_jni PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    # Installed next to kggml_runtime but deliberately not part of the exported CMake package: it is a
+    # private implementation detail of the Kotlin bindings.
+    install(TARGETS kggml_runtime_jni
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
+
+# ---------------------------------------------------------------------------------------------------------
 # Install + exported CMake package (kggml-runtime-config.cmake → kggml::runtime, kggml::ggml)
 # ---------------------------------------------------------------------------------------------------------
 
@@ -366,5 +416,5 @@ endif()
 
 message(STATUS "kggml: runtime ${PROJECT_VERSION}, ggml ${KGGML_GGML_PINNED_VERSION} @ ${KGGML_GGML_PINNED_COMMIT}")
 message(STATUS "kggml: monolithic=${KGGML_RUNTIME_MONOLITHIC} metal=${GGML_METAL} vulkan=${GGML_VULKAN} "
-               "blas=${GGML_BLAS} coreml=${KGGML_ENABLE_COREML} native=${GGML_NATIVE} "
+               "blas=${GGML_BLAS} coreml=${KGGML_ENABLE_COREML} jni=${KGGML_RUNTIME_BUILD_JNI} native=${GGML_NATIVE} "
                "arm_arch='${GGML_CPU_ARM_ARCH}' tests=${KGGML_RUNTIME_BUILD_TESTS}")

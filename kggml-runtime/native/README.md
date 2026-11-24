@@ -12,6 +12,7 @@ dynamically and never carry their own copy of ggml.
 | --- | --- |
 | `third_party/ggml/` | Upstream ggml git submodule (`git submodule update --init --recursive`) |
 | `include/kggml_runtime.h` | Public C ABI: init/shutdown (refcounted), backends, P-core count, versions, last error |
+| `jni/kggml_runtime_jni.cpp` | JNI bridge (`libkggml_runtime_jni`) for the Kotlin bindings on Android + JVM Desktop; links `kggml_runtime` dynamically (`KGGML_RUNTIME_BUILD_JNI`, ON when JNI headers are found / on Android, never on iOS) |
 | `src/` | Implementation. `guard.hpp` holds the FFI exception firewall. `kggml_runtime_testing.h` holds the test-only fault hooks |
 | `tests/` | GoogleTest/CTest suite (`-DKGGML_RUNTIME_BUILD_TESTS=ON`; GoogleTest v1.15.2 via FetchContent) |
 | `cmake/kggml-runtime-config.cmake.in` | Installed package: `find_package(kggml-runtime)` → `kggml::runtime`, `kggml::ggml` |
@@ -21,8 +22,8 @@ dynamically and never carry their own copy of ggml.
 
 | Platform | Artifacts |
 | --- | --- |
-| Linux / macOS / Windows | `libggml-base`, `libggml-cpu`, `libggml` (+ `libggml-metal`/`-blas` on macOS, `libggml-vulkan` when enabled), `libkggml_runtime` |
-| Android (`arm64-v8a`, `x86_64`) | Same libraries with unversioned sonames (`libggml.so`, `libkggml_runtime.so`, …), 16 KB page aligned, `c++_shared` STL |
+| Linux / macOS / Windows | `libggml-base`, `libggml-cpu`, `libggml` (+ `libggml-metal`/`-blas` on macOS, `libggml-vulkan` when enabled), `libkggml_runtime`, `libkggml_runtime_jni` |
+| Android (`arm64-v8a`, `x86_64`) | Same libraries with unversioned sonames (`libggml.so`, `libkggml_runtime.so`, `libkggml_runtime_jni.so`, …), 16 KB page aligned, `c++_shared` STL |
 | iOS (device, simulator arm64) | `GgmlRuntime.xcframework`. Each slice is one dynamic framework that holds ggml, its backends and `kggml_runtime` (`KGGML_RUNTIME_MONOLITHIC=ON`) |
 
 `GGML_BACKEND_DL` is always OFF, so backends are linked directly and nothing is loaded with `dlopen`.
@@ -66,6 +67,34 @@ kggml-runtime/native/scripts/build-ios-xcframework.sh   # --coreml to advertise 
 # Gradle helpers (opt-in, not part of `check`)
 ./gradlew :kggml-runtime:buildNativeHost :kggml-runtime:nativeCtest
 ```
+
+## Kotlin bindings
+
+`com.donfuldauer.kggml.runtime.KggmlRuntime` (in `kggml-runtime/src/`) exposes the C ABI to Kotlin:
+`acquire()` (ref-counted `RuntimeHandle`), `backends()`, `availableBackends()`, `resolveBackend()`,
+`recommendedThreadCount()`, `hardwareThreadCount()` and `info()`. Native status codes become typed
+`InferenceException`s.
+
+| Platform | Binding | Library loading |
+| --- | --- | --- |
+| Android | JNI (`jniMain`) | `System.loadLibrary("kggml_runtime_jni")` from the AAR's jniLibs |
+| JVM Desktop | JNI (`jniMain`) | `-Dkggml.native.path=<dir>` (or `KGGML_NATIVE_PATH`), else extracted from the jar's `/kggml/native/<os>-<arch>/` (listed in `index.txt` in load order), else `java.library.path` |
+| iOS | cinterop (`src/nativeInterop/cinterop/kggmlRuntime.def`) | Linked against the dynamic `GgmlRuntime.framework`; the app embeds `GgmlRuntime.xcframework` |
+
+```bash
+# JVM tests against build/native/lib, including C++ fault injection across JNI.
+# Without -Pkggml.requireNative the native-backed cases are skipped when build/native is missing.
+./gradlew :kggml-runtime:jvmTest -Pkggml.requireNative=true
+
+# Package release (no test hooks) natives: host libs into the JVM jar, arm64-v8a + x86_64 into the AAR.
+ANDROID_HOME=/path/to/sdk ./gradlew :kggml-runtime:assemble -Pkggml.bundleNative=true
+
+# iOS (macOS): build the xcframework first; iOS test tasks are skipped until it exists.
+kggml-runtime/native/scripts/build-ios-xcframework.sh && ./gradlew :kggml-runtime:iosSimulatorArm64Test
+```
+
+The JVM jar bundles only the host platform it was built on. A jar for several desktop platforms needs the
+staged `kggml/native/<platform>/` directories from each host merged in; that belongs to the publishing work.
 
 ## Status codes
 
