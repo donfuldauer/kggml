@@ -85,7 +85,12 @@ Execute a Kggml GitHub issue from selection through implementation, verification
      --title "<concise PR title> (#<N>)" \
      --body "Closes #<N>\n\n## Summary\n...\n\n## Verification\n..."
    ```
-3. **Transition issue status to `status:in-review`:**
+3. **Enable auto-fix on the PR immediately (mandatory, do not ask first):**
+   As soon as the PR exists, subscribe to its activity so CI failures, review comments, and review requests are delivered back to the agent and fixed autonomously on `feat/issue-<N>-<slug>`.
+   - **Claude Code:** call the `subscribe_pr_activity` tool with `owner`, `repo`, and `pullNumber=<PR_NUMBER>` right after `gh pr create` (or the GitHub MCP `create_pull_request`) returns. This is part of opening the PR, not an optional follow-up.
+   - **Other harnesses:** use the harness's equivalent PR watch / auto-fix mechanism.
+   - Auto-fix pushes only to the PR's own feature branch; it never skips or disables tests to get green, never force-pushes, and never merges on its own. Unsubscribe (`unsubscribe_pr_activity`) once the PR is merged or closed.
+4. **Transition issue status to `status:in-review`:**
    ```bash
    gh issue edit <N> --remove-label "status:in-progress" --add-label "status:in-review"
    gh issue comment <N> --body "Opened PR #<PR_NUMBER> with implementation and verification results."
