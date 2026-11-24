@@ -1,0 +1,195 @@
+name: CI (Phase 1 cross-platform matrix)
+
+# Phase 1 matrix (issue #6): every PR and push to main builds and tests the SDK and both samples on
+#   - Ubuntu:  Linux x86_64 native runtime + CTest, `./gradlew check` (commonTest, jvmTest, androidUnitTest,
+#              BOM checks, sample audits) with native-backed tests mandatory, Android NDK cross-compile,
+#              Android APKs + desktop jar for both samples.
+#   - macOS:   macOS arm64 native runtime (Metal + Accelerate) + CTest, JVM tests against it,
+#              GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64), iosSimulatorArm64Test, sample iOS frameworks.
+#   - Windows: Windows x64 native runtime (MSVC) + CTest, JVM tests against it.
+# Deeper per-binary linkage audits live in runtime-native.yml; parity + gitleaks live in repo-hygiene.yml.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+  # The native runtime is built explicitly by a dedicated step on every runner, so Gradle must not rebuild it
+  # (its Exec task shells out to bash, which on Windows may resolve to WSL). -Pkggml.requireNative=true then
+  # turns every native-backed test from "skip if missing" into "fail if missing".
+  NATIVE_GRADLE_ARGS: -Pkggml.requireNative=true -x :kggml-runtime:buildNativeHost --console=plain
+
+jobs:
+  linux:
+    name: Ubuntu (Linux JVM, Android, CTest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository (with ggml submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Native runtime (linux-x64) build + CTest
+        run: ./kggml-runtime/native/scripts/build-host.sh
+
+      - name: Gradle check (commonTest, jvmTest, androidUnitTest, samples, BOM) with native tests required
+        run: ./gradlew check $NATIVE_GRADLE_ARGS
+
+      - name: Android NDK cross-compile (arm64-v8a, x86_64)
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
+          ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
+
+      - name: Assemble samples (Android APKs, desktop jar) via kggml-bom + :kggml-runtime
+        run: >
+          ./gradlew --console=plain
+          :samples:kggml-showcase:assembleDebug
+          :samples:kggml-showcase:desktopJar
+          :samples:whisper-only-minimal:assembleDebug
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-linux
+          path: |
+            build/native/Testing/Temporary/
+            **/build/reports/
+          if-no-files-found: ignore
+
+  macos:
+    name: macOS (macOS JVM, iOS XCFramework + simulator tests, CTest)
+    runs-on: macos-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout repository (with ggml submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Ninja
+        run: brew install ninja || true
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Native runtime (macos-arm64, Metal + Accelerate) build + CTest
+        run: ./kggml-runtime/native/scripts/build-host.sh
+
+      - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64)
+        run: ./kggml-runtime/native/scripts/build-ios-xcframework.sh
+
+      - name: JVM tests against the macOS native runtime
+        run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
+
+      - name: Pick an available iPhone simulator
+        id: sim
+        run: |
+          udid="$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in devices if "iOS" in k), reverse=True)
+          print(next(d["udid"] for k in ios for d in devices[k] if d["name"].startswith("iPhone")))
+          ')"
+          echo "Using simulator ${udid}"
+          echo "udid=${udid}" >> "$GITHUB_OUTPUT"
+
+      - name: iOS simulator tests (iosSimulatorArm64Test)
+        run: >
+          ./gradlew iosSimulatorArm64Test $NATIVE_GRADLE_ARGS
+          -Pkggml.iosSimulatorDevice=${{ steps.sim.outputs.udid }}
+
+      - name: Link iOS frameworks (SDK modules + samples, iosArm64 + iosSimulatorArm64)
+        run: >
+          ./gradlew --console=plain
+          :kggml-runtime:compileKotlinIosArm64
+          :samples:kggml-showcase:linkDebugFrameworkIosArm64
+          :samples:kggml-showcase:linkDebugFrameworkIosSimulatorArm64
+          :samples:whisper-only-minimal:linkDebugFrameworkIosArm64
+          :samples:whisper-only-minimal:linkDebugFrameworkIosSimulatorArm64
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-macos
+          path: |
+            build/native/Testing/Temporary/
+            **/build/reports/
+          if-no-files-found: ignore
+
+  windows:
+    name: Windows (Windows x64 native, JVM, CTest)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository (with ggml submodule)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up MSVC developer environment (x64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Run in cmd so the MSVC toolchain (cl.exe, link.exe) wins over Git Bash's coreutils `link`.
+      - name: Native runtime (windows-x64, MSVC) build + CTest
+        shell: cmd
+        run: |
+          cmake -S kggml-runtime/native --preset windows-x64 -B build/native || exit /b 1
+          cmake --build build/native --config Release -j 4 || exit /b 1
+          ctest --test-dir build/native --build-config Release --output-on-failure -j 4
+
+      - name: JVM tests against the Windows native runtime
+        run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-windows
+          path: |
+            build/native/Testing/Temporary/
+            **/build/reports/
+          if-no-files-found: ignore
