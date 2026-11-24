@@ -5,7 +5,7 @@ description: Autonomous end-to-end GitHub issue-to-PR workflow for Kggml. Handle
 
 # Skill: `work-on-issue`
 
-Execute a Kggml GitHub issue from selection through implementation, verification, PR review/phase-gate, squash-merge, and downstream DAG unblocking using strictly standard CLI tools (`gh`, `git`, `./gradlew`, `ctest`).
+Execute a Kggml GitHub issue from selection through implementation, verification, PR review/phase-gate, merge-commit merge, and downstream DAG unblocking using strictly standard CLI tools (`gh`, `git`, `./gradlew`, `ctest`).
 
 ## Trigger Forms
 
@@ -14,7 +14,7 @@ Execute a Kggml GitHub issue from selection through implementation, verification
 
 ## Standing Authorization (all harnesses)
 
-Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **squash-merging it into `main`**, deleting the branch, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
+Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, deleting the branch, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
 
 Stop and report to the user instead of merging **only** when:
 - a required CI check is failing and cannot be fixed within the issue's scope;
@@ -131,9 +131,9 @@ Perform this step autonomously (see **Standing Authorization**): once the gates 
    ```bash
    gh pr checks <PR_NUMBER>
    ```
-2. **Squash-merge and delete branch:**
+2. **Merge with a merge commit and delete branch** (squash merges are disabled on the repository):
    ```bash
-   gh pr merge <PR_NUMBER> --squash --delete-branch
+   gh pr merge <PR_NUMBER> --merge --delete-branch
    git checkout main
    git pull --ff-only origin main
    git branch -D feat/issue-<N>-<slug> 2>/dev/null || true

@@ -13,7 +13,7 @@ Thank you for your interest in contributing to Kggml (`com.donfuldauer.kggml`).
    - Zero-copy JNI / Kotlin/Native buffer crossing and `extern "C"` `try/catch` boundaries on all C++ entry points.
 4. **Tests are mandatory:** Every PR must ship automated tests covering pure Kotlin (`commonTest`), C++ (`ctest`), platform integration (`androidUnitTest`, `iosSimulatorArm64Test`, `jvmTest`), and UI/binary checks as applicable.
 5. **Agentic harness parity:** If you edit `AGENTS.md`, `.agents/agents/`, or `.agents/skills/`, run `./scripts/sync-agent-mirrors.sh` and verify with `./scripts/verify-agent-parity.sh`.
-6. **Pull requests:** Link `Closes #<N>` in the PR description and ensure all CI checks (and `phase-reviewer` audit on phase-final issues) pass prior to squash-merge.
+6. **Pull requests:** Link `Closes #<N>` in the PR description and ensure all CI checks (and `phase-reviewer` audit on phase-final issues) pass prior to merging (merge commit; squash merges are disabled).
 
 ## Licensing & Attribution
 
