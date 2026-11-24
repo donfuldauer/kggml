@@ -1,0 +1,27 @@
+# kggml-runtime CMake package.
+#
+# Provides:
+#   kggml::runtime   - the kggml_runtime C ABI shared library (kggml_runtime.h)
+#   kggml::ggml      - the single shared ggml (libggml + libggml-base + backends); in the monolithic
+#                      (iOS GgmlRuntime.framework) layout this is an alias of kggml::runtime
+#   kggml::ggml-base - split layout only
+#
+# Engine modules must link these imported SHARED targets and never build their own copy of ggml.
+
+@PACKAGE_INIT@
+
+set(KGGML_RUNTIME_MONOLITHIC @KGGML_RUNTIME_MONOLITHIC@)
+set(KGGML_GGML_PINNED_COMMIT "@KGGML_GGML_PINNED_COMMIT@")
+set(KGGML_GGML_PINNED_VERSION "@KGGML_GGML_PINNED_VERSION@")
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/kggml-runtime-targets.cmake")
+
+if (NOT TARGET kggml::ggml)
+    add_library(kggml::ggml INTERFACE IMPORTED)
+    set_target_properties(kggml::ggml PROPERTIES INTERFACE_LINK_LIBRARIES kggml::runtime)
+endif()
+
+check_required_components(kggml-runtime)
