@@ -17,7 +17,7 @@ Execute a Kggml GitHub issue from selection through implementation, verification
 Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, deleting the branch, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
 
 Stop and report to the user instead of merging **only** when:
-- a required CI check is failing and cannot be fixed within the issue's scope;
+- a required CI check (or, on a `ci:macos`-labelled PR, the macOS check) is failing and cannot be fixed within the issue's scope;
 - the PR has a merge conflict that cannot be resolved cleanly;
 - a phase-final PR lacks `APPROVED` from `phase-reviewer`; or
 - a human reviewer has requested changes that are still unresolved.
@@ -75,13 +75,16 @@ Stop and report to the user instead of merging **only** when:
 
 ## Step 3: Local Verification & PR Creation
 
-1. **Run verification gates:**
+1. **Run verification gates locally (mandatory before every push, including auto-fix pushes):**
    ```bash
-   ./scripts/verify-agent-parity.sh
-   # Run applicable Gradle, CTest, and binary audit commands:
+   # Runs the same checks as the Linux PR CI jobs (parity, gitleaks, ggml pin, host build + CTest,
+   # linkage audit, jvmTest, Android cross-compile + audit). Must end with no FAIL lines.
+   ./scripts/ci-local.sh
+   # Plus any module-specific commands from AGENTS.md Section 3 that apply, e.g.:
    # ./gradlew check
-   # ctest --test-dir build/native --output-on-failure
+   # ./gradlew iosSimulatorArm64Test   # macOS hosts only; otherwise covered by the ci:macos run
    ```
+   Include `ci-local.sh`'s summary block in the PR's Verification section. Do not push to see whether CI passes: CI minutes are limited, so fix failures locally first.
 2. **Commit, push, and open PR:**
    ```bash
    git status
@@ -95,12 +98,17 @@ Stop and report to the user instead of merging **only** when:
      --title "<concise PR title> (#<N>)" \
      --body "Closes #<N>\n\n## Summary\n...\n\n## Verification\n..."
    ```
-3. **Enable auto-fix on the PR immediately (mandatory, do not ask first):**
+3. **Request the macOS run only when needed (AGENTS.md "CI Minutes Policy"):**
+   Add the `ci:macos` label if the PR is phase-final (see Step 4) or changes macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Otherwise leave it off.
+   ```bash
+   gh pr edit <PR_NUMBER> --add-label "ci:macos"
+   ```
+4. **Enable auto-fix on the PR immediately (mandatory, do not ask first):**
    As soon as the PR exists, subscribe to its activity so CI failures, review comments, and review requests are delivered back to the agent and fixed autonomously on `feat/issue-<N>-<slug>`.
    - **Claude Code:** call the `subscribe_pr_activity` tool with `owner`, `repo`, and `pullNumber=<PR_NUMBER>` right after `gh pr create` (or the GitHub MCP `create_pull_request`) returns. This is part of opening the PR, not an optional follow-up.
    - **Other harnesses:** use the harness's equivalent PR watch / auto-fix mechanism.
-   - Auto-fix pushes only to the PR's own feature branch; it never skips or disables tests to get green, and never force-pushes. Auto-fix only makes the PR mergeable; the merge itself happens in Step 5. Unsubscribe (`unsubscribe_pr_activity`) once the PR is merged or closed.
-4. **Transition issue status to `status:in-review`:**
+   - Auto-fix pushes only to the PR's own feature branch; it never skips or disables tests to get green, and never force-pushes. Re-run `./scripts/ci-local.sh` before each auto-fix push and batch related fixes into a single push. Auto-fix only makes the PR mergeable; the merge itself happens in Step 5. Unsubscribe (`unsubscribe_pr_activity`) once the PR is merged or closed.
+5. **Transition issue status to `status:in-review`:**
    ```bash
    gh issue edit <N> --remove-label "status:in-progress" --add-label "status:in-review"
    gh issue comment <N> --body "Opened PR #<PR_NUMBER> with implementation and verification results."
@@ -118,7 +126,7 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 - **Mid-phase PR (other issues in the phase remain open):** Proceed directly to Step 5 once CI checks pass. Do **not** invoke `phase-reviewer`.
 - **Phase-final PR (only `#N` remains open in the phase):**
-  1. Invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against Section 5 Exit Criteria.
+  1. Make sure the PR has the `ci:macos` label so the macOS job runs, then invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against Section 5 Exit Criteria.
   2. Fix any blocking findings, push updates, re-run verification, and obtain `APPROVED` from `phase-reviewer` before merging.
 
 ---
@@ -127,7 +135,7 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it to finish (auto-fix events or `gh pr checks <PR_NUMBER> --watch`); do not end the workflow with an open, green PR.
 
-1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes):**
+1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes).** If the PR has the `ci:macos` label, the `Host build + CTest (macos-latest)` check must also be green:
    ```bash
    gh pr checks <PR_NUMBER>
    ```
