@@ -1,0 +1,26 @@
+# Auto-generated from .agents/agents/*.md by scripts/sync-agent-mirrors.sh
+# OpenAI Codex multi-agent role registry for Kggml
+
+[agents]
+max_threads = 4
+max_depth = 2
+
+[agents."implementer"]
+description = "Kotlin Multiplatform and native C++ engineer. Implements production KMP modules, Gradle/CMake build logic, JNI bridges, Kotlin/Native cinterop definitions, and Compose Multiplatform UI adhering to com.donfuldauer.kggml architecture rules."
+config_file = "agents/implementer.toml"
+
+[agents."issue-triager"]
+description = "Issue analyst and dependency verifier. Reads target GitHub issue specifications, confirms all Blocked-by prerequisites are closed, inspects current codebase state, identifies edge cases or API impacts, and produces a concise execution blueprint."
+config_file = "agents/issue-triager.toml"
+
+[agents."orchestrator"]
+description = "Delegation and workflow coordinator. Claims ready GitHub issues, manages status labels and feature branches (feat/issue-<N>-<slug>), coordinates issue-triager, implementer, tester, and phase-reviewer, enforces quality gates, and manages PR merge and downstream DAG unblocking."
+config_file = "agents/orchestrator.toml"
+
+[agents."phase-reviewer"]
+description = "Milestone gate auditor invoked exclusively upon completion of the final issue of a Phase/Milestone. Audits cumulative phase changes against Section 5 Exit Criteria, architecture compliance, cross-platform parity, memory safety, and binary isolation before unblocking the next phase."
+config_file = "agents/phase-reviewer.toml"
+
+[agents."tester"]
+description = "Verification and coverage engineer. Authors commonTest unit tests, CTest/GoogleTest native suites, memory-leak and concurrency checks, binary symbol leakage audits, platform integration tests, and Compose UI tests."
+config_file = "agents/tester.toml"

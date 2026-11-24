@@ -1,0 +1,12 @@
+title = "Kggml Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for synthetic test fixtures and documentation placeholders"
+paths = [
+  '''^NOTICE$''',
+  '''^SECURITY\.md$''',
+  '''^\.gitleaks\.toml$''',
+]

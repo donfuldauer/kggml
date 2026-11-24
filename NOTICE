@@ -1,0 +1,19 @@
+# Third-Party Notices and Attribution
+
+Kggml (`com.donfuldauer.kggml`) wraps and distributes native components from the following open-source projects. Exact pinned commit hashes are updated here whenever an upstream native dependency is added or bumped.
+
+| Component | Upstream Repository | License | Pinned Commit / Tag | Module |
+| --- | --- | --- | --- | --- |
+| `ggml` | https://github.com/ggml-org/ggml | MIT | TBD (Phase 1) | `:kggml-runtime` |
+| `whisper.cpp` | https://github.com/ggml-org/whisper.cpp | MIT | TBD (Phase 2) | `:kggml-whisper` |
+| `llama.cpp` | https://github.com/ggml-org/llama.cpp | MIT | TBD (Phase 4) | `:kggml-llama` |
+| `libmtmd` | https://github.com/ggml-org/llama.cpp (`tools/mtmd`) | MIT | TBD (Phase 4) | `:kggml-llama` |
+| `stable-diffusion.cpp` | https://github.com/leejet/stable-diffusion.cpp | MIT | TBD (Phase 4) | `:kggml-diffusion` |
+
+## Test Fixtures & Micro-Weights
+
+All bundled test audio clips, synthetic PCM arrays, and micro-model fixtures must carry an open-source license compatible with MIT (e.g., MIT or CC0) and be documented below prior to public launch.
+
+| Fixture Path | Source / Origin | License | Notes |
+| --- | --- | --- | --- |
+| *(populated as engine test suites are added)* | — | — | — |

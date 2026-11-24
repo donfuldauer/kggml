@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+
+reviews:
+  # Disabled by default so routine iterative PRs stay fast and quiet.
+  # Invoke on demand via `@coderabbitai review` when explicitly requested by a human developer.
+  # Milestone and phase-gate audits are owned exclusively by the internal `phase-reviewer` agent.
+  auto_review:
+    enabled: false
+    drafts: false
+  poem: false
+  collapse_walkthrough: true
+  path_instructions:
+    - path: "**/*.kt"
+      instructions: |
+        Enforce Kotlin Multiplatform engineering rules for `com.donfuldauer.kggml`:
+        1. No global engine singletons; inference engines must be instantiable `AutoCloseable` classes with a dedicated single-thread `CoroutineDispatcher` serializing `init`, `infer`, and `close`.
+        2. Verify cooperative coroutine cancellation propagates cleanly into native abort callbacks (`abort_callback`, `llama_set_abort_callback`, etc.).
+        3. Verify `BackendConfig` (`CPU_ONLY`, `GPU_METAL`, `GPU_VULKAN`, `NPU_COREML`) is respected at runtime without compile-time-only locks, especially `use_gpu = false` on iOS for Whisper.
+        4. Check for zero-copy buffer crossing (`usePinned` on Kotlin/Native, direct `ByteBuffer` / `GetPrimitiveArrayCritical` on JNI) and absence of temporary WAV/image disk I/O in streaming pipelines.
+        5. Ensure pure Kotlin logic has deterministic `commonTest` unit coverage.
+    - path: "**/CMakeLists.txt"
+      instructions: |
+        Verify strict binary modularity and single-symbol linkage:
+        1. All `ggml-base`, `ggml-cpu`, `ggml-metal`, and `ggml-vulkan` targets must be centralized exclusively in `:kggml-runtime`.
+        2. Engine libraries (`:kggml-whisper`, `:kggml-llama`, `:kggml-diffusion`) must link dynamically against `:kggml-runtime` and never statically embed duplicate `ggml` objects.
+        3. Confirm cross-compilation flags for Android (`arm64-v8a`, `x86_64`), iOS (`iosArm64`, `iosSimulatorArm64` XCFrameworks), and JVM Desktop (`macosArm64`, `linuxX64`, `windowsX64`).
+    - path: "**/*.{c,cc,cpp,h,hpp,mm}"
+      instructions: |
+        Audit C++/Objective-C++ native bridges for memory safety and FFI soundness:
+        1. Every FFI entry point must be wrapped in `extern "C"` with `try/catch` returning structured error codes—no C++ exceptions may cross JNI or Kotlin/Native boundaries.
+        2. Verify zero-copy pointer lifetimes: `GetPrimitiveArrayCritical` must always be paired with `ReleasePrimitiveArrayCritical` on every return path without calling back into JNI while critical regions are held.
+        3. Verify all native allocations (`whisper_context`, `whisper_state`, `llama_context`, `sd_ctx_t`, resampler buffers) are deterministically freed in `close()`/destructors with no leaks on error or cancellation paths.
+        4. Check short-buffer guardrails (>= 1,000 ms floor for `whisper_full_with_state`) and thread-safe atomic abort flags.
+    - path: "**/*.def"
+      instructions: |
+        Verify Kotlin/Native `cinterop` definitions expose only public C ABI headers, link dynamically against `GgmlRuntime.xcframework` where appropriate, and avoid symbol collisions across modules.
+
+chat:
+  auto_reply: false
