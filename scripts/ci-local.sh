@@ -12,6 +12,8 @@
 #   steps (comma-separated): parity,gitleaks,pin,native,jvm,android
 #   --strict   fail instead of skipping when a tool (gitleaks, Android NDK) is missing
 #   --clean    pass --clean to the host native build
+#   The Android NDK comes from ANDROID_NDK_HOME / ANDROID_NDK_ROOT, else the newest NDK under
+#   ANDROID_HOME, ANDROID_SDK_ROOT, local.properties sdk.dir, or /opt/android-sdk.
 # Native steps only run when files they cover changed vs origin/main, unless named with --only.
 set -euo pipefail
 
@@ -30,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     --skip) skip="${2:?--skip needs a step list}"; shift ;;
     --strict) strict=1 ;;
     --clean) clean_flag=(--clean) ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -58,6 +60,27 @@ selected() {
     pin|native|jvm|android) native_changed ;;
     *) return 0 ;;
   esac
+}
+
+# Prints the Android NDK to use, or fails. Explicit NDK variables win (in CI's order of precedence);
+# otherwise the newest NDK under an SDK root is used: $ANDROID_HOME, $ANDROID_SDK_ROOT,
+# sdk.dir from local.properties, then /opt/android-sdk (where the cloud setup script installs it).
+# Only directories that actually contain an NDK toolchain file are accepted.
+is_ndk() { [[ -n "$1" && -f "$1/build/cmake/android.toolchain.cmake" ]]; }
+find_ndk() {
+  local candidate sdk sdk_dir=""
+  for candidate in "${ANDROID_NDK_LATEST_HOME:-}" "${ANDROID_NDK_HOME:-}" "${ANDROID_NDK_ROOT:-}"; do
+    if is_ndk "${candidate}"; then echo "${candidate}"; return 0; fi
+  done
+  if [[ -f local.properties ]]; then
+    sdk_dir="$(sed -n 's/^sdk\.dir=//p' local.properties | tail -n 1)"
+  fi
+  for sdk in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "${sdk_dir}" /opt/android-sdk; do
+    [[ -n "${sdk}" && -d "${sdk}/ndk" ]] || continue
+    candidate="$(find "${sdk}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+    if is_ndk "${candidate}"; then echo "${candidate}"; return 0; fi
+  done
+  return 1
 }
 
 results=()
@@ -97,14 +120,13 @@ for step in "${all_steps[@]}"; do
     jvm)
       run_step jvm ./gradlew :kggml-runtime:jvmTest -Pkggml.requireNative=true --console=plain ;;
     android)
-      ndk="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}}"
-      if [[ -z "${ndk}" && -n "${ANDROID_HOME:-}" && -d "${ANDROID_HOME}/ndk" ]]; then ndk="${ANDROID_HOME}/ndk"; fi
-      if [[ -n "${ndk}" ]]; then
-        [[ -z "${ANDROID_NDK_LATEST_HOME:-}" ]] || export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME}"
+      if ndk="$(find_ndk)"; then
+        echo "Using Android NDK: ${ndk}"
+        export ANDROID_NDK_HOME="${ndk}"
         run_step android ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
         run_step a-audit ./scripts/ci/audit-android-linkage.sh arm64-v8a x86_64
       else
-        missing android "Android NDK not found (set ANDROID_NDK_HOME)"
+        missing android "Android NDK not found (set ANDROID_NDK_HOME or ANDROID_HOME)"
       fi ;;
   esac
 done
