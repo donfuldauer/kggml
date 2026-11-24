@@ -1,0 +1,33 @@
+# Kggml samples
+
+Both samples consume the SDK exclusively through the BOM (`platform(project(":kggml-bom"))` + versionless
+module dependencies). They are never published.
+
+| Sample | Targets | Purpose |
+| --- | --- | --- |
+| `:samples:kggml-showcase` | Android, iOS, JVM Desktop (Compose Multiplatform) | Navigation shell (Backends, Models, Whisper, Chat, Diffusion) with a functional **Hardware Backend Inspector** backed by `KggmlRuntime`. The other screens are placeholders filled in by later phases. |
+| `:samples:whisper-only-minimal` | Android, iOS | Minimal app depending only on `kggml-bom` + `:kggml-runtime` (`:kggml-whisper` joins in Phase 2). Used for CI binary symbol leakage audits; `verifyMinimalDependencies` (part of `check`) fails if `:kggml-llama` or `:kggml-diffusion` is ever resolved. |
+
+## Running
+
+```bash
+# JVM Desktop (uses build/native/lib automatically if kggml-runtime/native/scripts/build-host.sh was run)
+./gradlew :samples:kggml-showcase:run
+
+# Android APKs (add -Pkggml.bundleNative=true to package the native runtime for arm64-v8a / x86_64)
+./gradlew :samples:kggml-showcase:assembleDebug :samples:whisper-only-minimal:assembleDebug
+
+# iOS static frameworks (macOS). The Xcode host app embeds GgmlRuntime.xcframework
+# (kggml-runtime/native/scripts/build-ios-xcframework.sh) next to KggmlShowcase.framework / WhisperOnlyMinimal.framework.
+./gradlew :samples:kggml-showcase:linkDebugFrameworkIosSimulatorArm64
+```
+
+Without native libraries the inspector shows a "Native runtime unavailable" state instead of crashing.
+
+## Tests
+
+```bash
+./gradlew :samples:kggml-showcase:desktopTest          # state + Compose UI smoke tests (+ real JNI runtime if built)
+./gradlew :samples:kggml-showcase:testDebugUnitTest    # common state tests on Android
+./gradlew :samples:whisper-only-minimal:check          # unit tests + dependency audit
+```
