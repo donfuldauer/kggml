@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Adds a "Co-authored-by:" trailer for the repository maintainer to commits authored by
+# someone else (e.g. an AI agent committing as "Claude <noreply@anthropic.com>"), so GitHub
+# attributes agent-made commits to the maintainer as well as to the agent.
+#
+# Enabled by ./scripts/install-git-hooks.sh (sets core.hooksPath=.githooks).
+# Override the maintainer per clone with:
+#   git config kggml.maintainerName  "<name>"
+#   git config kggml.maintainerEmail "<email>"
+set -euo pipefail
+
+msg_file="$1"
+
+maintainer_name="$(git config --get kggml.maintainerName || echo 'donfuldauer')"
+maintainer_email="$(git config --get kggml.maintainerEmail || echo '13605136+donfuldauer@users.noreply.github.com')"
+
+# "Name <email> <timestamp> <tz>" -> name / email
+author_ident="$(git var GIT_AUTHOR_IDENT)"
+author_name="${author_ident%% <*}"
+author_email="${author_ident#*<}"
+author_email="${author_email%%>*}"
+
+lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# The maintainer committing as themselves needs no trailer.
+if [[ "$(lc "${author_email}")" == "$(lc "${maintainer_email}")" \
+   || "$(lc "${author_name}")" == "$(lc "${maintainer_name}")" ]]; then
+  exit 0
+fi
+
+# Already credited (any casing of the trailer key, matched on the email).
+if grep -qiE "^co-authored-by:.*<$(printf '%s' "${maintainer_email}" | sed 's/[][\.*^$+?(){}|]/\\&/g')>" "${msg_file}"; then
+  exit 0
+fi
+
+git interpret-trailers --in-place --if-exists addIfDifferent \
+  --trailer "Co-authored-by: ${maintainer_name} <${maintainer_email}>" "${msg_file}"

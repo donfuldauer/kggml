@@ -89,7 +89,9 @@ Stop and report to the user instead of merging **only** when:
    ```bash
    git status
    git add -A
+   ./scripts/install-git-hooks.sh   # idempotent; enables the maintainer Co-authored-by hook
    git commit -m "<type>(<scope>): <concise summary> (#<N>)"
+   git log -1 --format=%B | grep -i "^Co-authored-by: donfuldauer"   # must match for agent-authored commits
    git push -u origin feat/issue-<N>-<slug>
 
    gh pr create \
