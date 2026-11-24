@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
-# Adds a "Co-authored-by:" trailer for the repository maintainer to commits authored by
-# someone else (e.g. an AI agent committing as "Claude <noreply@anthropic.com>"), so GitHub
-# attributes agent-made commits to the maintainer as well as to the agent.
+# When a commit is authored by an AI agent (e.g. "Claude <noreply@anthropic.com>"), append a
+# "Co-authored-by:" trailer for the human the agent is working for, so GitHub attributes the
+# commit to that person as well as to the agent. Commits authored by people are left untouched.
 #
-# Enabled by ./scripts/install-git-hooks.sh (sets core.hooksPath=.githooks).
-# Override the maintainer per clone with:
-#   git config kggml.maintainerName  "<name>"
-#   git config kggml.maintainerEmail "<email>"
+# The human comes from `git config kggml.coauthor` ("Name <email>"), which
+# ./scripts/install-git-hooks.sh resolves per contributor; $KGGML_COAUTHOR overrides it.
 set -euo pipefail
 
 msg_file="$1"
-
-maintainer_name="$(git config --get kggml.maintainerName || echo 'donfuldauer')"
-maintainer_email="$(git config --get kggml.maintainerEmail || echo '13605136+donfuldauer@users.noreply.github.com')"
+hooks_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-agent-identity.sh
+source "${hooks_dir}/lib-agent-identity.sh"
 
 # "Name <email> <timestamp> <tz>" -> name / email
 author_ident="$(git var GIT_AUTHOR_IDENT)"
@@ -20,18 +18,21 @@ author_name="${author_ident%% <*}"
 author_email="${author_ident#*<}"
 author_email="${author_email%%>*}"
 
-lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+is_agent_identity "${author_name}" "${author_email}" || exit 0
 
-# The maintainer committing as themselves needs no trailer.
-if [[ "$(lc "${author_email}")" == "$(lc "${maintainer_email}")" \
-   || "$(lc "${author_name}")" == "$(lc "${maintainer_name}")" ]]; then
+coauthor="${KGGML_COAUTHOR:-$(git config --get kggml.coauthor || true)}"
+if [[ ! "${coauthor}" =~ ^[^\<]+\ \<[^\>]+\>$ ]]; then
+  echo "commit-msg: agent-authored commit has no human co-author;" \
+       "run ./scripts/install-git-hooks.sh or: git config kggml.coauthor 'Name <email>'" >&2
   exit 0
 fi
 
-# Already credited (any casing of the trailer key, matched on the email).
-if grep -qiE "^co-authored-by:.*<$(printf '%s' "${maintainer_email}" | sed 's/[][\.*^$+?(){}|]/\\&/g')>" "${msg_file}"; then
+coauthor_email="${coauthor#*<}"
+coauthor_email="${coauthor_email%>}"
+coauthor_email_re="$(printf '%s' "${coauthor_email}" | sed 's/[][\.*^$+?(){}|/]/\\&/g')"
+if grep -qiE "^co-authored-by:.*<${coauthor_email_re}>" "${msg_file}"; then
   exit 0
 fi
 
 git interpret-trailers --in-place --if-exists addIfDifferent \
-  --trailer "Co-authored-by: ${maintainer_name} <${maintainer_email}>" "${msg_file}"
+  --trailer "Co-authored-by: ${coauthor}" "${msg_file}"
