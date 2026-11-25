@@ -42,7 +42,11 @@ import kotlinx.coroutines.job
  * cores), [BackendConfig.useFlashAttention] llama.cpp's flash attention, and [BackendConfig.useMmap] whether the
  * GGUF file is memory-mapped.
  *
- * @throws com.donfuldauer.kggml.core.ModelLoadException if the file is missing or not a loadable GGUF model.
+ * With [LlamaEngineOptions.projectorPath] a multimodal projector (libmtmd) is loaded as well, on the backend the model
+ * runs on, enabling image prompts (see [LlamaEngine.generate] with images).
+ *
+ * @throws com.donfuldauer.kggml.core.ModelLoadException if the file is missing or not a loadable GGUF model, or
+ *   the projector is missing or does not match the model.
  * @throws com.donfuldauer.kggml.core.BackendUnavailableException if the backend is unavailable and fallback is off.
  * @throws com.donfuldauer.kggml.core.OutOfMemoryException if the weights or KV cache cannot be allocated.
  * @throws com.donfuldauer.kggml.core.NativeFailureException if the native libraries cannot be loaded.
@@ -80,6 +84,9 @@ internal fun platformAvailableBackends(): Set<ComputeBackend> = KggmlRuntime.ava
  * [saveSession] / [restoreSession] serialize that KV cache to a `ByteArray` and back, on this or another engine
  * with the same model.
  *
+ * **Images.** With a projector ([LlamaEngineOptions.projectorPath]) prompts may carry in-memory [LlamaImage]s
+ * (vision-language models such as LLaVA, Gemma 3, Qwen-VL or SmolVLM): see [generate] with images.
+ *
  * **Cancellation** is cooperative and prompt: cancelling the collector of [generate] sets the native abort flag
  * that llama.cpp polls inside every ggml graph computation (`llama_set_abort_callback`), so a running decode stops
  * within one graph step. The engine stays usable afterwards.
@@ -97,7 +104,13 @@ public class LlamaEngine internal constructor(
     dispatcherFactory: SerialDispatcherFactory,
 ) : InferenceEngine {
 
-    private class Loaded(val backend: ComputeBackend, val usesGpu: Boolean, val info: LlamaModelInfo, val contextLength: Int)
+    private class Loaded(
+        val backend: ComputeBackend,
+        val usesGpu: Boolean,
+        val info: LlamaModelInfo,
+        val contextLength: Int,
+        val supportsVision: Boolean,
+    )
 
     private val executor = SerialExecutor("kggml-llama-${nextInstanceId.addAndFetch(1)}", dispatcherFactory)
     private val loaded = AtomicReference<Loaded?>(null)
@@ -112,6 +125,7 @@ public class LlamaEngine internal constructor(
     private var model: Long = 0L
     private var context: Long = 0L
     private var embeddingContext: Long = 0L
+    private var projector: Long = 0L
 
     /**
      * Sampler of the generation in progress, freed exactly once (via `exchange`) by the generation itself or by
@@ -142,7 +156,11 @@ public class LlamaEngine internal constructor(
     public val contextLength: Int
         get() = loadedState().contextLength
 
-    /** Number of tokens currently held in the session's KV cache. */
+    /** `true` if a projector ([LlamaEngineOptions.projectorPath]) with vision input is loaded: images are accepted. */
+    public val supportsVision: Boolean
+        get() = loadedState().supportsVision
+
+    /** Number of tokens (KV-cache positions, including image embeddings) currently held in the session. */
     public val sessionTokenCount: Int
         get() = sessionSize.load()
 
@@ -171,7 +189,39 @@ public class LlamaEngine internal constructor(
      *
      * @throws IllegalStateException immediately if the engine is closed.
      */
-    public fun generate(prompt: String, options: GenerationOptions = GenerationOptions.DEFAULT): Flow<TokenEvent> {
+    public fun generate(prompt: String, options: GenerationOptions = GenerationOptions.DEFAULT): Flow<TokenEvent> =
+        generation(prompt, emptyList(), options)
+
+    /**
+     * Streams the continuation of a multimodal [prompt] with in-memory [images], like [generate] without images.
+     * Requires a projector ([LlamaEngineOptions.projectorPath], [supportsVision]); without one the flow reports
+     * [InvalidInputException].
+     *
+     * [prompt] marks where each image goes with [MEDIA_MARKER], one marker per image, in order (inside the model's
+     * chat template, if it uses one). A prompt without any marker gets one marker per image prepended, each on its own
+     * line. libmtmd wraps [LlamaImage.Rgb] pixels and decodes [LlamaImage.Encoded] files **in memory** (the bytes are
+     * pinned zero-copy just for preprocessing; no temporary files), encodes them with the projector and evaluates
+     * them with the text into the KV cache; generation then proceeds as for text.
+     *
+     * An image prompt always starts a new session (image embeddings are not token ids, so there is no prefix to
+     * reuse) and a later text-only [generate] does not reuse it either. [saveSession] / [restoreSession] work as
+     * usual. The repetition penalty only considers generated tokens. Cancellation aborts the text decodes inside
+     * llama.cpp and is checked between image encodes (a single image encode runs to completion).
+     *
+     * An empty [images] list is the same as [generate] without images.
+     *
+     * Reported as [TokenEvent.Error] with [InvalidInputException]: no projector, a marker / image count mismatch, an
+     * image libmtmd cannot decode, or a prompt (text + image embeddings) that does not fit the context.
+     *
+     * @throws IllegalStateException immediately if the engine is closed.
+     */
+    public fun generate(
+        prompt: String,
+        images: List<LlamaImage>,
+        options: GenerationOptions = GenerationOptions.DEFAULT,
+    ): Flow<TokenEvent> = generation(prompt, images.toList(), options)
+
+    private fun generation(prompt: String, images: List<LlamaImage>, options: GenerationOptions): Flow<TokenEvent> {
         check(!isClosed) { "LlamaEngine is closed" }
         return channelFlow {
             // A generation suspends on the engine thread (in send()) while the collector is slow. close() must not shut
@@ -179,7 +229,7 @@ public class LlamaEngine internal constructor(
             // and the flow would hang. So the last generation to leave shuts the executor down instead (see close()).
             activeGenerations.addAndFetch(1)
             try {
-                serial { runGeneration(prompt, options, this@channelFlow) }
+                serial { runGeneration(prompt, images, options, this@channelFlow) }
             } finally {
                 if (activeGenerations.addAndFetch(-1) == 0 && isClosed) shutDownExecutor()
             }
@@ -192,11 +242,24 @@ public class LlamaEngine internal constructor(
      * @throws InferenceException for the failure a [TokenEvent.Error] would report.
      * @throws IllegalStateException if the engine is closed.
      */
-    public suspend fun generateText(prompt: String, options: GenerationOptions = GenerationOptions.DEFAULT): GenerationResult {
+    public suspend fun generateText(prompt: String, options: GenerationOptions = GenerationOptions.DEFAULT): GenerationResult =
+        generateText(prompt, emptyList(), options)
+
+    /**
+     * Runs the multimodal [generate] (with [images]) to completion and returns the generated text.
+     *
+     * @throws InferenceException for the failure a [TokenEvent.Error] would report.
+     * @throws IllegalStateException if the engine is closed.
+     */
+    public suspend fun generateText(
+        prompt: String,
+        images: List<LlamaImage>,
+        options: GenerationOptions = GenerationOptions.DEFAULT,
+    ): GenerationResult {
         val text = StringBuilder()
         val tokens = ArrayList<Int>()
         var reason: StopReason? = null
-        generate(prompt, options).collect { event ->
+        generate(prompt, images, options).collect { event ->
             when (event) {
                 is TokenEvent.Token -> {
                     text.append(event.text)
@@ -403,11 +466,33 @@ public class LlamaEngine internal constructor(
             bridge.check(nCtx.status, "kggml_llama_context_n_ctx", requested)
             fingerprint = SessionCodec.Fingerprint(raw.vocabularySize, raw.embeddingSize, raw.layerCount)
             val backend = LlamaBackendKind.toComputeBackend(raw.backend) ?: requested
-            loaded.store(Loaded(backend, raw.usesGpu, info, nCtx.value))
+            val vision = options.projectorPath?.let { loadProjector(bridge, it, backend) } ?: false
+            loaded.store(Loaded(backend, raw.usesGpu, info, nCtx.value, vision))
         } catch (failure: Throwable) {
             freeAll()
             throw failure
         }
+    }
+
+    /** Loads the libmtmd projector for [model] on [backend]; returns whether it accepts images. */
+    private fun loadProjector(bridge: NativeLlamaBridge, path: String, backend: ComputeBackend): Boolean {
+        val created = bridge.mtmdInit(
+            model,
+            path,
+            RawMtmdParams(
+                backend = LlamaBackendKind.of(backend),
+                threads = if (backendConfig.cpuThreads == BackendConfig.AUTO_THREADS) 0 else backendConfig.cpuThreads,
+                flashAttention = if (backendConfig.useFlashAttention) 1 else 0,
+                imageMinTokens = options.imageMinTokens,
+                imageMaxTokens = options.imageMaxTokens,
+                warmup = false,
+            ),
+        )
+        bridge.check(created.status, "kggml_llama_mtmd_init", backend)
+        projector = created.handle
+        val caps = bridge.mtmdCaps(projector)
+        bridge.check(caps.status, "kggml_llama_mtmd_get_caps", backend)
+        return caps.vision
     }
 
     private fun contextParams(length: Int, batch: Int, embeddings: Boolean): RawContextParams {
@@ -442,9 +527,11 @@ public class LlamaEngine internal constructor(
         activeSampler.exchange(0L).let { if (it != 0L) bridge.samplerFree(it) }
         if (embeddingContext != 0L) bridge.contextFree(embeddingContext)
         if (context != 0L) bridge.contextFree(context)
+        if (projector != 0L) bridge.mtmdFree(projector)
         if (model != 0L) bridge.modelFree(model)
         embeddingContext = 0L
         context = 0L
+        projector = 0L
         model = 0L
         setSession(IntArray(0), 0)
     }
@@ -492,14 +579,32 @@ public class LlamaEngine internal constructor(
         setSession(session, 0)
     }
 
-    private suspend fun runGeneration(prompt: String, options: GenerationOptions, out: ProducerScope<TokenEvent>) {
+    private suspend fun runGeneration(
+        prompt: String,
+        images: List<LlamaImage>,
+        options: GenerationOptions,
+        out: ProducerScope<TokenEvent>,
+    ) {
         val bridge = bridges.get()
+        var chunks = 0L
         try {
-            val promptTokens = tokenizeOnThread(prompt, options.addSpecialTokens, options.parseSpecialTokens)
-            if (promptTokens.isEmpty()) throw InvalidInputException("prompt produced no tokens")
             val nCtx = contextLength
-            if (promptTokens.size >= nCtx) {
-                throw InvalidInputException("prompt is ${promptTokens.size} tokens; the context fits $nCtx (incl. output)")
+            var promptTokens = IntArray(0)
+            if (images.isEmpty()) {
+                promptTokens = tokenizeOnThread(prompt, options.addSpecialTokens, options.parseSpecialTokens)
+                if (promptTokens.isEmpty()) throw InvalidInputException("prompt produced no tokens")
+                if (promptTokens.size >= nCtx) {
+                    throw InvalidInputException("prompt is ${promptTokens.size} tokens; the context fits $nCtx (incl. output)")
+                }
+            } else {
+                chunks = tokenizeMultimodal(bridge, prompt, images, options)
+                val info = bridge.mtmdChunksInfo(chunks)
+                bridge.check(info.status, "kggml_llama_mtmd_chunks_info")
+                if (info.positions >= nCtx) {
+                    throw InvalidInputException(
+                        "prompt with ${info.images} image(s) needs ${info.positions} positions; the context fits $nCtx (incl. output)",
+                    )
+                }
             }
             val created = bridge.samplerCreate(model, options.toRaw())
             bridge.check(created.status, "kggml_llama_sampler_create")
@@ -507,18 +612,61 @@ public class LlamaEngine internal constructor(
             val sampler = created.handle
 
             abortable(bridge, context) {
-                evaluatePrompt(bridge, promptTokens, options)
-                if (options.repeatPenalty != 1f) {
-                    val from = maxOf(0, promptTokens.size - options.repeatLastN)
-                    for (i in from until promptTokens.size) bridge.check(bridge.samplerAccept(sampler, promptTokens[i], false), "kggml_llama_sampler_accept")
+                if (chunks != 0L) {
+                    // The chunks hold the preprocessed images: release them as soon as they are in the KV cache.
+                    val evaluated = chunks
+                    chunks = 0L
+                    evaluateMultimodal(bridge, evaluated)
+                } else {
+                    evaluatePrompt(bridge, promptTokens, options)
+                    if (options.repeatPenalty != 1f) {
+                        val from = maxOf(0, promptTokens.size - options.repeatLastN)
+                        for (i in from until promptTokens.size) bridge.check(bridge.samplerAccept(sampler, promptTokens[i], false), "kggml_llama_sampler_accept")
+                    }
                 }
                 generateTokens(bridge, sampler, options, nCtx, out)
             }
         } catch (e: InferenceException) {
             out.send(TokenEvent.Error(e))
         } finally {
+            if (chunks != 0L) bridge.mtmdChunksFree(chunks)
             activeSampler.exchange(0L).let { if (it != 0L) bridge.samplerFree(it) }
         }
+    }
+
+    /** Tokenizes a multimodal prompt (images preprocessed in memory) and returns the chunks handle. */
+    private fun tokenizeMultimodal(bridge: NativeLlamaBridge, prompt: String, images: List<LlamaImage>, options: GenerationOptions): Long {
+        if (projector == 0L) {
+            throw InvalidInputException("this LlamaEngine has no multimodal projector; set LlamaEngineOptions.projectorPath")
+        }
+        if (!loadedState().supportsVision) throw InvalidInputException("the loaded projector does not accept images")
+        val marker = bridge.mtmdDefaultMarker()
+        val text = if (prompt.contains(marker)) prompt else buildString {
+            repeat(images.size) { append(marker).append('\n') }
+            append(prompt)
+        }
+        val result = bridge.mtmdTokenize(projector, text, images.map { it.toRaw() }, options.addSpecialTokens, options.parseSpecialTokens)
+        bridge.check(result.status, "kggml_llama_mtmd_tokenize")
+        return result.handle
+    }
+
+    /**
+     * Starts a new session with [chunks] (text + images), leaving the logits of the last prompt token readable, and
+     * frees [chunks]. Image positions have no token id: the session records them as [IMAGE_POSITION], which never
+     * matches a prompt token, so no later prompt reuses them as a prefix.
+     */
+    private suspend fun evaluateMultimodal(bridge: NativeLlamaBridge, chunks: Long) {
+        val result = try {
+            clearSessionOnThread(bridge)
+            bridge.mtmdEvalChunks(projector, context, chunks, 0, SEQ, true)
+        } finally {
+            bridge.mtmdChunksFree(chunks)
+        }
+        if (result.status != LlamaStatus.OK) {
+            runCatching { clearSessionOnThread(bridge) } // drop partially evaluated chunks
+            throwOnFailure(bridge, result.status, "kggml_llama_mtmd_eval_chunks")
+        }
+        setSession(IntArray(maxOf(result.value, 16)) { IMAGE_POSITION }, result.value)
     }
 
     /** Evaluates the part of [tokens] not already in the session, leaving the logits of the last token readable. */
@@ -624,6 +772,11 @@ public class LlamaEngine internal constructor(
     }
 
     public companion object {
+        /** Stands for one image in a multimodal prompt (libmtmd's default media marker). */
+        public const val MEDIA_MARKER: String = "<__media__>"
+
+        /** Session entry of a KV-cache position that holds an image embedding (never a valid token id). */
+        private const val IMAGE_POSITION = -1
         private const val SEQ = 0
         private const val STOP_WINDOW = 4096
         private val nextInstanceId = AtomicInt(0)

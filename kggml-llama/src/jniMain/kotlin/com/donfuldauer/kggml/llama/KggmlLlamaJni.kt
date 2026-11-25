@@ -31,6 +31,18 @@ internal object KggmlLlamaJni {
     /** temperature, top_p, min_p, repeat_penalty. */
     const val SAMPLER_FLOAT_COUNT: Int = 4
 
+    /** backend, n_threads, flash_attn, image_min_tokens, image_max_tokens, warmup. */
+    const val MTMD_PARAM_COUNT: Int = 6
+
+    /** vision, audio, audio_sample_rate. */
+    const val MTMD_CAPS_COUNT: Int = 3
+
+    /** Per image in `nativeMtmdTokenize(meta)`: format, width, height. */
+    const val IMAGE_META_STRIDE: Int = 3
+
+    /** n_tokens, n_pos, n_images. */
+    const val CHUNKS_INFO_COUNT: Int = 3
+
     @JvmStatic external fun nativeVersionString(which: Int): String?
 
     @JvmStatic external fun nativeStatusName(status: Int): String?
@@ -102,10 +114,43 @@ internal object KggmlLlamaJni {
 
     @JvmStatic external fun nativeSamplerReset(sampler: Long): Int
 
+    @JvmStatic external fun nativeMtmdInit(model: Long, pathUtf8: ByteArray, ints: IntArray, outHandle: LongArray): Int
+
+    @JvmStatic external fun nativeMtmdFree(handle: Long)
+
+    @JvmStatic external fun nativeMtmdCaps(handle: Long, out: IntArray): Int
+
+    @JvmStatic external fun nativeMtmdDefaultMarker(): String?
+
+    /** [images] are pinned (`GetPrimitiveArrayCritical`) only for the duration of the call. */
+    @JvmStatic external fun nativeMtmdTokenize(
+        mtmd: Long,
+        promptUtf8: ByteArray,
+        images: Array<ByteArray>,
+        meta: IntArray,
+        addSpecial: Int,
+        parseSpecial: Int,
+        outHandle: LongArray,
+    ): Int
+
+    @JvmStatic external fun nativeMtmdChunksFree(handle: Long)
+
+    @JvmStatic external fun nativeMtmdChunksInfo(handle: Long, out: IntArray): Int
+
+    @JvmStatic external fun nativeMtmdEvalChunks(
+        mtmd: Long,
+        context: Long,
+        chunks: Long,
+        nPast: Int,
+        seqId: Int,
+        logitsLast: Int,
+        out: IntArray,
+    ): Int
+
     /** `true` only in builds with `KGGML_LLAMA_TEST_HOOKS` (never in release libraries). */
     @JvmStatic external fun nativeTestHooksAvailable(): Boolean
 
-    /** Test hook: live native models / contexts / samplers in this process, or -1 when unavailable. */
+    /** Test hook: live native models / contexts / samplers / projectors / chunks in this process, or -1 when unavailable. */
     @JvmStatic external fun nativeTestLiveObjects(): Long
 
     /** Test hook: abort-callback polls on the context since it was created, or -1 when unavailable. */

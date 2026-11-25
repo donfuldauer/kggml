@@ -49,17 +49,20 @@ abstract class NativeLlamaEngineContract {
     protected abstract fun directoryPath(): String
 
     protected lateinit var modelPath: String
+    protected lateinit var mmprojPath: String
     private lateinit var garbagePath: String
 
     @BeforeTest
     fun writeFixtures() {
         modelPath = writeTempFile("kggml-llama-tiny-", TinyLlamaModel.bytes())
+        mmprojPath = writeTempFile("kggml-llama-tiny-mmproj-", TinyMmproj.bytes())
         garbagePath = writeTempFile("kggml-llama-garbage-", "this is not a GGUF model".encodeToByteArray())
     }
 
     @AfterTest
     fun deleteFixtures() {
         if (::modelPath.isInitialized) deleteFile(modelPath)
+        if (::mmprojPath.isInitialized) deleteFile(mmprojPath)
         if (::garbagePath.isInitialized) deleteFile(garbagePath)
     }
 
@@ -69,6 +72,14 @@ abstract class NativeLlamaEngineContract {
 
     protected suspend fun cpuEngine(contextConfig: LlamaContextConfig = SMALL): LlamaEngine =
         LlamaEngine(modelPath, BackendConfig(ComputeBackend.CPU_ONLY, gpuLayers = 0, cpuThreads = 2), contextConfig)
+
+    /** CPU engine with the tiny vision projector. */
+    protected suspend fun visionEngine(contextConfig: LlamaContextConfig = SMALL): LlamaEngine = LlamaEngine(
+        modelPath,
+        BackendConfig(ComputeBackend.CPU_ONLY, gpuLayers = 0, cpuThreads = 2),
+        contextConfig,
+        LlamaEngineOptions(projectorPath = mmprojPath),
+    )
 
     private suspend fun LlamaEngine.greedy(prompt: String, maxTokens: Int = 8, reuse: Boolean = true): GenerationResult =
         generateText(prompt, GenerationOptions.GREEDY.copy(maxTokens = maxTokens, reusePromptCache = reuse))
@@ -305,6 +316,101 @@ abstract class NativeLlamaEngineContract {
         engine.close()
     }
 
+    // ---- multimodal (libmtmd) ----------------------------------------------------------------------------
+
+    @Test
+    fun visionProjectorLoadsNextToTheModel() = nativeTest {
+        visionEngine().use { engine ->
+            assertTrue(engine.supportsVision)
+            assertEquals(ComputeBackend.CPU_ONLY, engine.activeBackend)
+            assertFalse(engine.usesGpu)
+        }
+        cpuEngine().use { assertFalse(it.supportsVision) }
+    }
+
+    @Test
+    fun unloadableProjectorsFailTyped() = nativeTest {
+        for (path in listOf(garbagePath, modelPath, directoryPath(), "$garbagePath.missing")) {
+            assertFailsWith<ModelLoadException>(path) {
+                LlamaEngine(modelPath, BackendConfig.CPU, SMALL, LlamaEngineOptions(projectorPath = path))
+            }
+        }
+    }
+
+    @Test
+    fun inMemoryImagePromptsGenerateDeterministically() = nativeTest {
+        val pixels = TinyMmproj.rgbPattern(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, 1)
+        val image = LlamaImage.Rgb(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, pixels)
+        val prompt = "ab ${LlamaEngine.MEDIA_MARKER} z"
+        val options = GenerationOptions.GREEDY.copy(maxTokens = 6, grammar = LETTERS)
+        visionEngine().use { a ->
+            visionEngine().use { b ->
+                val first = a.generateText(prompt, listOf(image), options)
+                assertEquals(6, first.tokens.size)
+                assertTrue(first.text.isNotEmpty())
+                val textTokens = a.tokenize("ab ", addSpecial = true).size
+                assertTrue(a.sessionTokenCount >= textTokens + TinyMmproj.IMAGE_TOKENS + 6, "session ${a.sessionTokenCount}")
+                assertEquals(first.text, a.generateText(prompt, listOf(image), options).text, "same engine, same output")
+                assertEquals(first.text, b.generateText(prompt, listOf(image), options).text, "independent engines agree")
+                // Without a marker one is prepended: same images, different text layout, still valid.
+                assertEquals(6, a.generateText("ab z", listOf(image), options).tokens.size)
+            }
+        }
+    }
+
+    @Test
+    fun encodedImagesDecodeInMemoryLikeTheirPixels() = nativeTest {
+        val options = GenerationOptions.GREEDY.copy(maxTokens = 6, grammar = LETTERS)
+        visionEngine().use { engine ->
+            for ((w, h) in listOf(28 to 28, 45 to 19)) {
+                val pixels = TinyMmproj.rgbPattern(w, h, 3)
+                val raw = engine.generateText("ab", listOf(LlamaImage.Rgb(w, h, pixels)), options)
+                val bmp = engine.generateText("ab", listOf(LlamaImage.Encoded(TinyMmproj.bmp(pixels, w, h))), options)
+                assertEquals(raw.tokens.toList(), bmp.tokens.toList(), "${w}x$h: BMP is lossless")
+            }
+        }
+    }
+
+    @Test
+    fun invalidImagePromptsFailTypedAndKeepTheEngineUsable() = nativeTest {
+        val good = LlamaImage.Rgb(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, TinyMmproj.rgbPattern(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, 1))
+        visionEngine().use { engine ->
+            val undecodable = engine.generate("ab", listOf(LlamaImage.Encoded("not an image".encodeToByteArray()))).toList()
+            assertIs<InvalidInputException>(assertIs<TokenEvent.Error>(undecodable.single()).exception)
+            val mismatch = engine.generate("${LlamaEngine.MEDIA_MARKER} ${LlamaEngine.MEDIA_MARKER}", listOf(good)).toList()
+            assertIs<InvalidInputException>(assertIs<TokenEvent.Error>(mismatch.single()).exception)
+            val tooMany = engine.generate("ab", List(80) { good }).toList() // 80 * 4 embeddings > 256 positions
+            assertIs<InvalidInputException>(assertIs<TokenEvent.Error>(tooMany.single()).exception)
+            assertEquals(4, engine.generateText("ab", listOf(good), GenerationOptions.GREEDY.copy(maxTokens = 4, grammar = LETTERS)).tokens.size)
+        }
+        cpuEngine().use { engine ->
+            val noProjector = engine.generate("ab", listOf(good)).toList()
+            assertIs<InvalidInputException>(assertIs<TokenEvent.Error>(noProjector.single()).exception)
+        }
+    }
+
+    @Test
+    fun imagePromptGenerationIsCancellable() = nativeTest {
+        val image = LlamaImage.Rgb(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, TinyMmproj.rgbPattern(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, 2))
+        visionEngine().use { engine ->
+            val taken = engine.generate("ab", listOf(image), ENDLESS).buffer(Channel.RENDEZVOUS).take(2).toList()
+            assertEquals(2, taken.size)
+            var aborted = false
+            val events = engine.generate("ab", listOf(image), ENDLESS)
+                .buffer(Channel.RENDEZVOUS)
+                .onEach { if (!aborted) aborted = engine.abortActiveGeneration() }
+                .toList()
+            assertTrue(aborted)
+            assertIs<InferenceCancelledException>(assertIs<TokenEvent.Error>(events.last()).exception)
+            // The image session saves and restores like a text one.
+            val saved = engine.saveSession()
+            val count = engine.sessionTokenCount
+            engine.clearSession()
+            engine.restoreSession(saved)
+            assertEquals(count, engine.sessionTokenCount)
+        }
+    }
+
     protected companion object {
         /**
          * Greedy, unlimited and constrained by a grammar that never completes, so end-of-generation is inadmissible:
@@ -312,6 +418,9 @@ abstract class NativeLlamaEngineContract {
          */
         val ENDLESS: GenerationOptions =
             GenerationOptions.GREEDY.copy(maxTokens = GenerationOptions.UNLIMITED, grammar = LlamaGrammar.gbnf("root ::= [a-z] root"))
+
+        /** Letters only and never complete, so a `maxTokens` limit always produces exactly that many tokens. */
+        val LETTERS: LlamaGrammar = LlamaGrammar.gbnf("root ::= [a-z] root")
 
         val SMALL: LlamaContextConfig = LlamaContextConfig(contextLength = 256, batchSize = 16, embeddingContextLength = 64)
     }

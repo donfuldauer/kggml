@@ -2,13 +2,16 @@ package com.donfuldauer.kggml.llama
 
 import com.donfuldauer.kggml.core.BackendConfig
 import com.donfuldauer.kggml.core.ComputeBackend
+import com.donfuldauer.kggml.core.TokenEvent
 import java.io.File
 import java.nio.file.Files
 import java.security.MessageDigest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assumptions.assumeTrue
 
@@ -47,6 +50,49 @@ class JvmNativeLlamaTest : NativeLlamaEngineContract() {
         val sha = MessageDigest.getInstance("SHA-256").digest(TinyLlamaModel.bytes()).joinToString("") { "%02x".format(it) }
         // SHA-256 of the GGUF written by kggml-llama/native/tests/tiny_model.cpp through ggml's gguf_* API.
         assertEquals("202f373d8244ac6b885fb1717b4e5ade4b66c4f4ee85507594d8f21ace31adbb", sha)
+    }
+
+    @Test
+    fun kotlinProjectorFixtureIsByteIdenticalToTheNativeTestProjector() {
+        val sha = MessageDigest.getInstance("SHA-256").digest(TinyMmproj.bytes()).joinToString("") { "%02x".format(it) }
+        // SHA-256 of the GGUF written by write_tiny_mmproj() in kggml-llama/native/tests/tiny_model.cpp.
+        assertEquals("686242ef4925d6f5c9cc1a135f76f610ccdb4d90a4a2d1d60654b05a8b7bbc22", sha)
+    }
+
+    @Test
+    fun imagePromptsWriteNoTemporaryFiles() = runBlocking {
+        val tmp = File(System.getProperty("java.io.tmpdir"))
+        visionEngine().use { engine ->
+            val before = tmp.list()!!.toSet()
+            val pixels = TinyMmproj.rgbPattern(45, 19, 5)
+            engine.generateText("ab", listOf(LlamaImage.Encoded(TinyMmproj.bmp(pixels, 45, 19))), GenerationOptions.GREEDY.copy(maxTokens = 2))
+            engine.generateText("ab", listOf(LlamaImage.Rgb(45, 19, pixels)), GenerationOptions.GREEDY.copy(maxTokens = 2))
+            assertEquals(before, tmp.list()!!.toSet(), "images are decoded in memory, nothing is written to disk")
+        }
+    }
+
+    @Test
+    fun projectorAndImageChunksAreReleasedDeterministically() = runBlocking {
+        assumeTrue(KggmlLlamaJni.nativeTestHooksAvailable(), "host build without KGGML_LLAMA_TEST_HOOKS")
+        val baseline = KggmlLlamaJni.nativeTestLiveObjects()
+        val engine = visionEngine()
+        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects(), "model + context + projector")
+        val image = LlamaImage.Rgb(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, TinyMmproj.rgbPattern(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, 1))
+        // Completion, invalid input, abort: the chunks (preprocessed images) and samplers never outlive the call.
+        engine.generateText("ab", listOf(image), GenerationOptions.GREEDY.copy(maxTokens = 3))
+        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects())
+        engine.generate("${LlamaEngine.MEDIA_MARKER}${LlamaEngine.MEDIA_MARKER}", listOf(image)).toList()
+        engine.generate("ab", List(80) { image }).toList()
+        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects())
+        val context = contextHandleOf(engine)
+        assertEquals(LlamaStatus.OK, KggmlLlamaJni.nativeTestAbortAfterPolls(context, 1))
+        val aborted = engine.generate("ab", listOf(image), GenerationOptions.GREEDY.copy(maxTokens = 50)).toList()
+        assertIs<TokenEvent.Error>(aborted.last())
+        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects())
+        engine.close()
+        val deadline = System.nanoTime() + 10_000_000_000L
+        while (KggmlLlamaJni.nativeTestLiveObjects() != baseline && System.nanoTime() < deadline) Thread.sleep(5)
+        assertEquals(baseline, KggmlLlamaJni.nativeTestLiveObjects())
     }
 
     @Test

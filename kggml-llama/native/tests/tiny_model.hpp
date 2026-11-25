@@ -23,8 +23,16 @@ constexpr int32_t kTinyLetterBase = 260;  // "a" .. "z" are ids 260 .. 285
 constexpr int32_t kTinySpaceAb = 286;     // "▁ab"
 constexpr int32_t kTinySpaceZ = 287;      // "▁z"
 
+// Tiny LLaVA-style ("mlp") vision projector for the tiny model: a 2-block ViT with a 16-wide state over 28x28 images
+// in 14x14 patches (so every image becomes 4 embeddings of kTinyEmbd), deterministic weights, ~40 KB.
+constexpr int32_t kTinyMmprojImageSize = 28;
+constexpr int32_t kTinyMmprojImageTokens = 4;
+
 /// Path of the tiny llama GGUF, generated once per test process under the GoogleTest temp dir.
 const std::string & tiny_model_path();
+
+/// Path of the tiny "mlp" projector GGUF (mmproj) matching the tiny model, generated once per test process.
+const std::string & tiny_mmproj_path();
 
 /// The first half of the tiny model's bytes (valid GGUF header, truncated tensor data).
 const std::string & truncated_model_path();

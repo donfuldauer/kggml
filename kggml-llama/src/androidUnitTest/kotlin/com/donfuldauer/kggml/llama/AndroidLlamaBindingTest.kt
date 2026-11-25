@@ -36,6 +36,11 @@ class AndroidLlamaBindingTest {
         for (name in listOf("nativeModelLoad", "nativeDecode", "nativeSamplerCreate", "nativeStateSave", "nativeStateLoad", "nativeGetEmbeddings", "nativeRequestAbort")) {
             assertTrue(name in natives, "missing native method $name")
         }
+        // Every entry point defined in C++ is declared in Kotlin, and vice versa.
+        val cpp = java.io.File("native/jni/kggml_llama_jni.cpp").readText()
+        val defined = Regex("""KGGML_JNI\(\w+, (native\w+)\)""").findAll(cpp).map { it.groupValues[1] }.toSet()
+        assertTrue("nativeMtmdTokenize" in defined && "nativeMtmdEvalChunks" in defined, "parsed ${defined.size} JNI entry points")
+        assertEquals(defined, natives)
         assertTrue(natives.all { Modifier.isStatic(KggmlLlamaJni::class.java.getDeclaredMethod(it, *KggmlLlamaJni::class.java.declaredMethods.first { m -> m.name == it }.parameterTypes).modifiers) })
     }
 }

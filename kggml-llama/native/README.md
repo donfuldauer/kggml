@@ -61,7 +61,8 @@ The Kotlin `LlamaEngine` (see [`../README.md`](../README.md)) is built on this C
 on Android / JVM Desktop, and through Kotlin/Native cinterop (`src/nativeInterop/cinterop/kggmlLlama.def`) on iOS.
 The JNI bridge links `libkggml_llama` dynamically, pins token arrays with `GetPrimitiveArrayCritical` (zero-copy),
 passes text as UTF-8 `byte[]`, runs every entry point behind a `try/catch` firewall and exports only `Java_*`
-symbols (version script on ELF; audited by `scripts/ci/audit-llama-linkage.sh`). The VLM API follows in issue #15.
+symbols (version script on ELF; audited by `scripts/ci/audit-llama-linkage.sh`). Image `byte[]`s of `nativeMtmdTokenize` are
+pinned the same way, only for `kggml_llama_mtmd_tokenize()`: the (long) image encode runs with nothing pinned.
 
 ## Backend selection
 
@@ -91,7 +92,7 @@ default it follows the model.
 - Objects are not thread-safe: the Kotlin engines serialize every call on one dedicated single-threaded dispatcher.
   `kggml_llama_request_abort()` is the exception: it sets an atomic flag from any thread. The flag is polled by the
   callback registered with `llama_set_abort_callback()` (inside every ggml graph compute, so a running decode stops
-  mid-graph), by `kggml_llama_decode()` between batches and by `kggml_llama_mtmd_eval()` between chunks (an image
+  mid-graph), by `kggml_llama_decode()` between batches and by `kggml_llama_mtmd_eval[_chunks]()` between chunks (an image
   encode itself is not interruptible). The interrupted call returns `KGGML_STATUS_CANCELLED`; the flag stays latched
   until `kggml_llama_clear_abort()`.
 - A full KV cache returns `KGGML_STATUS_BUFFER_TOO_SMALL` (make room with `kggml_llama_memory_seq_rm()`).
@@ -108,16 +109,22 @@ default it follows the model.
   optionally L2-normalized.
 - `kggml_llama_mtmd_eval` takes images as raw RGB888 buffers (wrapped with `mtmd_bitmap_init`) or encoded bytes
   (PNG / JPEG / ..., decoded in memory by `mtmd_helper_bitmap_init_from_buf`). No temporary image file is ever
-  written. The prompt contains one `kggml_llama_mtmd_default_marker()` per image.
+  written. The prompt contains one `kggml_llama_mtmd_default_marker()` per image. It is
+  `kggml_llama_mtmd_tokenize()` (wrap / decode + preprocess; the caller's bytes are not referenced afterwards) followed
+  by `kggml_llama_mtmd_eval_chunks()` (encode + evaluate, `KGGML_STATUS_BUFFER_TOO_SMALL` before evaluating anything
+  when the prompt does not fit the context); the bindings use the two halves so image buffers stay pinned only
+  briefly. `kggml_llama_mtmd_chunks_info()` reports token / position / image counts.
 
 ## Tests
 
-`tests/` is a GoogleTest suite registered with CTest (59 cases, labelled `kggml-llama`). It needs no model download:
+`tests/` is a GoogleTest suite registered with CTest (67 cases, labelled `kggml-llama`). It needs no model download:
 `tests/tiny_model.cpp` writes a 1-block, 32-wide llama-architecture GGUF with a synthetic 288-token SentencePiece
 vocabulary through the ggml `gguf_*` API at test time (see `NOTICE`). The suite covers model-load error handling
 (missing, garbage, truncated, directory, cancelled by progress callback, unavailable backends), `extern "C"`
 exception trapping (fault injection through test-only hooks compiled in with `KGGML_LLAMA_TEST_HOOKS`, never in
 release builds), abort-callback triggering (before decode, mid-graph through a poll countdown, between batches,
 from another thread), batched decoding, KV-cache state round trips, embeddings, GBNF-constrained sampling, libmtmd
-projector load errors and deterministic resource release (live-object counters and the runtime reference count
+projector load errors, in-memory image evaluation with a synthetic LLaVA-style projector (`tiny_mmproj_path()`: RGB
+and BMP inputs give identical logits, invalid images / marker mismatches / a too-small context return typed errors,
+abort, no temporary files) and deterministic resource release (live-object counters and the runtime reference count
 return to their baseline).
