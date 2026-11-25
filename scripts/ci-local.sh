@@ -6,11 +6,13 @@
 #   .github/workflows/runtime-native.yml  -> ggml + whisper.cpp pins, host build + CTest (runtime and
 #                                            whisper), host linkage audits, :kggml-runtime + :kggml-whisper jvmTest,
 #                                            Android cross-compile + audits
+#   .github/workflows/ci.yml (Ubuntu)     -> :samples:whisper-only-minimal check + release APK binary symbol
+#                                            audit (scripts/ci/audit-minimal-sample.sh)
 # The macOS/iOS jobs (.github/workflows/runtime-native-macos.yml) cannot run on a Linux host;
 # on a macOS host the host build, CTest, linkage audit and jvmTest steps below cover the macOS job.
 #
 # Usage: ./scripts/ci-local.sh [--only <steps>] [--skip <steps>] [--strict] [--clean]
-#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android
+#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample
 #   --strict   fail instead of skipping when a tool (gitleaks, Android NDK) is missing
 #   --clean    pass --clean to the host native build
 #   The Android NDK comes from ANDROID_NDK_HOME / ANDROID_NDK_ROOT, else the newest NDK under
@@ -24,7 +26,7 @@ cd "${REPO_ROOT}"
 # Make sure commit attribution hooks (.githooks/) are active in this clone.
 ./scripts/install-git-hooks.sh
 
-all_steps=(parity gitleaks pin native jvm android)
+all_steps=(parity gitleaks pin native jvm android sample)
 only=""
 skip=""
 strict=0
@@ -36,7 +38,7 @@ while [[ $# -gt 0 ]]; do
     --skip) skip="${2:?--skip needs a step list}"; shift ;;
     --strict) strict=1 ;;
     --clean) clean_flag=(--clean) ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -56,12 +58,24 @@ native_changed() {
     || [[ -n "$(git ls-files --others --exclude-standard -- "${native_paths[@]}")" ]]
 }
 
+# Paths that affect :samples:whisper-only-minimal's binaries or its audit (in addition to native_paths).
+sample_paths=(samples/whisper-only-minimal scripts/audit-binary-symbols.sh scripts/tests .github/workflows/ci.yml)
+sample_changed() {
+  native_changed && return 0
+  local base
+  base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+  [[ -n "${base}" ]] || return 0
+  [[ -n "$(git diff --name-only "${base}" -- "${sample_paths[@]}")" ]] \
+    || [[ -n "$(git ls-files --others --exclude-standard -- "${sample_paths[@]}")" ]]
+}
+
 selected() {
   local step="$1"
   if [[ -n "${only}" ]]; then in_list "${step}" "${only}"; return; fi
   in_list "${step}" "${skip}" && return 1
   case "${step}" in
     pin|native|jvm|android) native_changed ;;
+    sample) sample_changed ;;
     *) return 0 ;;
   esac
 }
@@ -136,6 +150,15 @@ for step in "${all_steps[@]}"; do
         run_step wa-audit ./scripts/ci/audit-whisper-linkage.sh android arm64-v8a x86_64
       else
         missing android "Android NDK not found (set ANDROID_NDK_HOME or ANDROID_HOME)"
+      fi ;;
+    sample)
+      run_step s-check ./gradlew :samples:whisper-only-minimal:check --console=plain
+      if ndk="$(find_ndk)"; then
+        export ANDROID_NDK_HOME="${ndk}"
+        run_step s-audit ./scripts/ci/audit-minimal-sample.sh android
+      else
+        run_step s-audit-t ./scripts/tests/test-audit-binary-symbols.sh
+        missing s-audit "Android NDK not found (APK binary symbol audit)"
       fi ;;
   esac
 done
