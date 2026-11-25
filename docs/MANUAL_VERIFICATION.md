@@ -13,3 +13,12 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#9] On a physical iPhone, `ComputeBackend.CPU_ONLY` completes Whisper transcription while
   the app is backgrounded, with no Metal `accessRevoked` abort — procedure in
   `samples/whisper-only-minimal/README.md` ("Physical iOS background `CPU_ONLY` verification").
+
+## Phase 3
+
+- [ ] [#12] Live dictation in `:samples:kggml-showcase` shows partial hypotheses with < 400 ms lag and commits
+  punctuated, timestamped segments across >= 3 minutes of continuous speech, writing no WAV files — procedure in
+  `samples/kggml-showcase/README.md` ("Live dictation latency and multi-minute continuity").
+- [ ] [#12] On a physical iPhone, the Whisper Studio background stress toggle shows `CPU_ONLY` transcribing in the
+  background while Metal is cut off, and the default `CPU_ONLY` fallback keeps the app alive — procedure in
+  `samples/kggml-showcase/README.md` ("iOS background stress: `CPU_ONLY` vs. Metal").

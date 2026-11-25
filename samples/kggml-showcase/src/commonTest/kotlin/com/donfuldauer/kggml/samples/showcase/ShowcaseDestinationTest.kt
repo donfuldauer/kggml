@@ -15,9 +15,10 @@ class ShowcaseDestinationTest {
     }
 
     @Test
-    fun onlyBackendInspectorIsFunctionalInPhase1() {
-        assertFalse(ShowcaseDestination.BACKEND_INSPECTOR.isPlaceholder)
-        ShowcaseDestination.entries.filter { it != ShowcaseDestination.BACKEND_INSPECTOR }.forEach {
+    fun backendInspectorAndWhisperStudioAreFunctional() {
+        val functional = setOf(ShowcaseDestination.BACKEND_INSPECTOR, ShowcaseDestination.WHISPER_STUDIO)
+        functional.forEach { assertFalse(it.isPlaceholder, "$it should be functional") }
+        ShowcaseDestination.entries.filter { it !in functional }.forEach {
             assertTrue(it.isPlaceholder, "$it should be a placeholder")
         }
     }

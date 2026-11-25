@@ -32,22 +32,58 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import com.donfuldauer.kggml.samples.showcase.whisper.AudioCapture
+import com.donfuldauer.kggml.samples.showcase.whisper.TranscriberFactory
+import com.donfuldauer.kggml.samples.showcase.whisper.WhisperStudioController
+import com.donfuldauer.kggml.samples.showcase.whisper.WhisperStudioScreen
+import com.donfuldauer.kggml.samples.showcase.whisper.WhisperTranscriberFactory
+import com.donfuldauer.kggml.samples.showcase.whisper.defaultWhisperModelPath
+import com.donfuldauer.kggml.samples.showcase.whisper.platformAudioCapture
+import com.donfuldauer.kggml.samples.showcase.whisper.readAudioFile
+import com.donfuldauer.kggml.samples.showcase.whisper.supportsBackgroundStress
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/** Platform services used by the Whisper Studio; replaced by deterministic fakes in UI tests. */
+data class WhisperStudioEnvironment(
+    val transcriberFactory: TranscriberFactory = WhisperTranscriberFactory,
+    val audioCapture: AudioCapture? = platformAudioCapture(),
+    val readFile: (String) -> ByteArray = ::readAudioFile,
+    val initialModelPath: String = defaultWhisperModelPath(),
+    val backgroundStressSupported: Boolean = supportsBackgroundStress,
+)
 
 /**
  * Root of the showcase: a navigation shell over [ShowcaseDestination]s.
  *
  * @param inspector runtime source for the Hardware Backend Inspector (faked in UI tests).
  * @param ioDispatcher dispatcher for blocking native runtime calls (never the UI thread).
+ * @param whisperEnvironment engine factory, microphone and file access of the Whisper Studio.
  */
 @Composable
 fun ShowcaseApp(
     inspector: RuntimeInspector = KggmlRuntimeInspector,
     ioDispatcher: CoroutineDispatcher = Dispatchers.Default,
     initialDestination: ShowcaseDestination = ShowcaseDestination.BACKEND_INSPECTOR,
+    whisperEnvironment: WhisperStudioEnvironment = remember { WhisperStudioEnvironment() },
 ) {
+    // Hoisted above the navigation so a live dictation keeps running while other screens are shown.
+    val scope = rememberCoroutineScope()
+    val whisperStudio = remember(whisperEnvironment, ioDispatcher) {
+        WhisperStudioController(
+            scope = scope,
+            factory = whisperEnvironment.transcriberFactory,
+            capture = whisperEnvironment.audioCapture,
+            readFile = whisperEnvironment.readFile,
+            ioDispatcher = ioDispatcher,
+            initialModelPath = whisperEnvironment.initialModelPath,
+            backgroundStressSupported = whisperEnvironment.backgroundStressSupported,
+        )
+    }
+    DisposableEffect(whisperStudio) { onDispose { whisperStudio.close() } }
     MaterialTheme {
         var selectedName by rememberSaveable { mutableStateOf(initialDestination.name) }
         val selected = ShowcaseDestination.valueOf(selectedName)
@@ -69,6 +105,7 @@ fun ShowcaseApp(
             Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
                 when (selected) {
                     ShowcaseDestination.BACKEND_INSPECTOR -> BackendInspectorScreen(inspector, ioDispatcher)
+                    ShowcaseDestination.WHISPER_STUDIO -> WhisperStudioScreen(whisperStudio)
                     else -> PlaceholderScreen(selected)
                 }
             }

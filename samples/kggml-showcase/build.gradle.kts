@@ -13,8 +13,11 @@ plugins {
 val jvmTargetVersion: String = libs.versions.jvmTarget.get()
 // Samples are not published, so they do not get `project.version`; reuse the SDK version for app metadata.
 val sampleVersion: String = providers.gradleProperty("VERSION_NAME").get()
-// Built by kggml-runtime/native/scripts/build-ios-xcframework.sh (macOS only).
+// Built by kggml-runtime/native/scripts/build-ios-xcframework.sh and kggml-whisper/native/scripts/build-ios-xcframework.sh
+// (macOS only).
 val iosXcframeworkDir: File = rootProject.layout.projectDirectory.dir("build/native-ios/GgmlRuntime.xcframework").asFile
+val iosWhisperXcframeworkDir: File =
+    rootProject.layout.projectDirectory.dir("build/native-ios/KggmlWhisper.xcframework").asFile
 
 kotlin {
     androidTarget {
@@ -26,13 +29,15 @@ kotlin {
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "KggmlShowcase"
-            // Static: GgmlRuntime.framework is embedded and linked by the Xcode host app, never duplicated here.
+            // Static: GgmlRuntime.framework and KggmlWhisper.framework are embedded and linked by the Xcode host
+            // app, never duplicated here.
             isStatic = true
         }
-        // Test executables are fully linked, so they need the locally built GgmlRuntime.framework.
+        // Test executables are fully linked, so they need the locally built dynamic frameworks.
         val slice = if (target.name == "iosSimulatorArm64") "ios-arm64-simulator" else "ios-arm64"
-        val frameworkSearchPath = iosXcframeworkDir.resolve(slice).absolutePath
-        target.binaries.getTest("DEBUG").linkerOpts("-F", frameworkSearchPath, "-rpath", frameworkSearchPath)
+        listOf(iosWhisperXcframeworkDir, iosXcframeworkDir).map { it.resolve(slice).absolutePath }.forEach { path ->
+            target.binaries.getTest("DEBUG").linkerOpts("-F", path, "-rpath", path)
+        }
     }
 
     sourceSets {
@@ -40,6 +45,7 @@ kotlin {
             // Kggml SDK: versions come from the BOM only.
             implementation(project.dependencies.platform(project(":kggml-bom")))
             implementation(project(":kggml-runtime"))
+            implementation(project(":kggml-whisper"))
 
             implementation(compose.runtime)
             implementation(compose.foundation)
@@ -89,10 +95,11 @@ android {
     }
 }
 
-// Host runtime built by build-host.sh: shared libraries land in build/native/lib, except Windows DLLs (build/native/bin).
-val hostNativeLibDir: File = rootProject.layout.projectDirectory
-    .dir(if (System.getProperty("os.name").lowercase().startsWith("windows")) "build/native/bin" else "build/native/lib")
-    .asFile
+// Host runtime / whisper built by build-host.sh: shared libraries land in build/native(-whisper)/lib, except Windows
+// DLLs (bin).
+val hostLibSubdir: String = if (System.getProperty("os.name").lowercase().startsWith("windows")) "bin" else "lib"
+val hostNativeLibDir: File = rootProject.layout.projectDirectory.dir("build/native/$hostLibSubdir").asFile
+val hostWhisperLibDir: File = rootProject.layout.projectDirectory.dir("build/native-whisper/$hostLibSubdir").asFile
 
 compose.desktop {
     application {
@@ -100,6 +107,9 @@ compose.desktop {
         // During development, point the JVM loader at a locally built host runtime (build-host.sh) if present.
         // Release desktop builds instead bundle it into the :kggml-runtime jar (-Pkggml.bundleNative=true).
         if (hostNativeLibDir.isDirectory) jvmArgs += "-Dkggml.native.path=${hostNativeLibDir.absolutePath}"
+        if (hostWhisperLibDir.isDirectory) jvmArgs += "-Dkggml.whisper.native.path=${hostWhisperLibDir.absolutePath}"
+        // Optional default model for the Whisper Studio: ./gradlew :samples:kggml-showcase:run -Pkggml.whisper.model=...
+        providers.gradleProperty("kggml.whisper.model").orNull?.let { jvmArgs += "-Dkggml.whisper.model=$it" }
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "KggmlShowcase"
@@ -122,9 +132,10 @@ tasks.named<Test>("desktopTest") {
     }
 }
 
-// iOS test executables link against GgmlRuntime.xcframework; skip them (like :kggml-runtime) until it is built.
+// iOS test executables link against GgmlRuntime.xcframework and KggmlWhisper.xcframework; skip them (like
+// :kggml-whisper) until both are built.
 tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
-    onlyIf("GgmlRuntime.xcframework is built (kggml-runtime/native/scripts/build-ios-xcframework.sh)") {
-        iosXcframeworkDir.isDirectory
+    onlyIf("GgmlRuntime.xcframework and KggmlWhisper.xcframework are built (native/scripts/build-ios-xcframework.sh)") {
+        iosXcframeworkDir.isDirectory && iosWhisperXcframeworkDir.isDirectory
     }
 }
