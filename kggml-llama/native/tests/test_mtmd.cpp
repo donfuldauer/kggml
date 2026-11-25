@@ -134,12 +134,24 @@ kggml_llama_image encoded_image(const std::vector<uint8_t> & bytes) {
     return kggml_llama_image{bytes.data(), bytes.size(), KGGML_LLAMA_IMAGE_ENCODED, 0, 0};
 }
 
-/// Regular files directly in the temp directories (a VLM prompt must not create any).
+/// Entries directly in the temp directories (a VLM prompt must not create any). The kggml-* fixtures that test
+/// processes running in parallel (CTest -j) write there are ignored.
 std::set<std::string> temp_files() {
     std::set<std::string> out;
     for (const auto & dir : {std::filesystem::path(::testing::TempDir()), std::filesystem::temp_directory_path()}) {
         std::error_code ec;
-        for (const auto & e : std::filesystem::directory_iterator(dir, ec)) out.insert(e.path().string());
+        for (const auto & e : std::filesystem::directory_iterator(dir, ec)) {
+            if (e.path().filename().string().rfind("kggml-", 0) != 0) out.insert(e.path().string());
+        }
+    }
+    return out;
+}
+
+/// Entries of `after` that are not in `before`.
+std::set<std::string> created(const std::set<std::string> & before, const std::set<std::string> & after) {
+    std::set<std::string> out;
+    for (const auto & f : after) {
+        if (before.count(f) == 0) out.insert(f);
     }
     return out;
 }
@@ -242,7 +254,7 @@ TEST(LlamaMtmd, EncodedImageDecodesInMemoryLikeTheRawPixels) {
         ASSERT_FALSE(raw.empty());
         EXPECT_EQ(raw, decoded) << w << "x" << h << ": BMP is lossless, so the decoded bitmap equals the raw one";
     }
-    EXPECT_EQ(temp_files(), before) << "images are decoded in memory, no temporary files";
+    EXPECT_TRUE(created(before, temp_files()).empty()) << "images are decoded in memory, no temporary files";
 }
 
 TEST(LlamaMtmd, InvalidImagesAreRejectedWithErrorCodes) {

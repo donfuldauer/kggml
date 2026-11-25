@@ -63,11 +63,13 @@ class JvmNativeLlamaTest : NativeLlamaEngineContract() {
     fun imagePromptsWriteNoTemporaryFiles() = runBlocking {
         val tmp = File(System.getProperty("java.io.tmpdir"))
         visionEngine().use { engine ->
-            val before = tmp.list()!!.toSet()
+            // Fixtures of tests running in parallel (kggml-*) are ignored; nothing else may appear.
+            fun entries() = tmp.list()!!.filterNot { it.startsWith("kggml-") }.toSet()
+            val before = entries()
             val pixels = TinyMmproj.rgbPattern(45, 19, 5)
             engine.generateText("ab", listOf(LlamaImage.Encoded(TinyMmproj.bmp(pixels, 45, 19))), GenerationOptions.GREEDY.copy(maxTokens = 2))
             engine.generateText("ab", listOf(LlamaImage.Rgb(45, 19, pixels)), GenerationOptions.GREEDY.copy(maxTokens = 2))
-            assertEquals(before, tmp.list()!!.toSet(), "images are decoded in memory, nothing is written to disk")
+            assertEquals(emptySet(), entries() - before, "images are decoded in memory, nothing is written to disk")
         }
     }
 
