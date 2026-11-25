@@ -11,3 +11,6 @@ headerFilter = kggml_llama.h kggml_runtime.h
 # Keep enums as plain integers so unknown (future) native values never crash the bindings.
 nonStrictEnums = kggml_status kggml_backend_kind
 linkerOpts = -framework KggmlLlama -framework GgmlRuntime
+# kggml_llama_tokenize takes (text, text_len): keep `const char *` a raw pointer so pinned UTF-8 bytes are passed
+# with their exact length instead of a re-encoded, NUL-terminated Kotlin String.
+noStringConversion = kggml_llama_tokenize
