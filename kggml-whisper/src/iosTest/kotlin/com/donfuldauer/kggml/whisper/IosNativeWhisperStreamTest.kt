@@ -66,7 +66,7 @@ class IosNativeWhisperStreamTest {
         NSFileManager.defaultManager.contentsOfDirectoryAtPath(NSTemporaryDirectory(), null).orEmpty().map { it.toString() }.toSet()
 
     @Test
-    fun streamsCommittedSegmentsInOrderWithoutTemporaryFiles() = runBlocking {
+    fun streamsCommittedSegmentsInOrderWithoutTemporaryFiles(): Unit = runBlocking {
         val before = tempFiles()
         WhisperEngine(modelPath, BackendConfig.CPU).use { engine ->
             val parts = buildList {
@@ -95,7 +95,7 @@ class IosNativeWhisperStreamTest {
     }
 
     @Test
-    fun cancellationAndCloseEndStreamsCleanly() = runBlocking {
+    fun cancellationAndCloseEndStreamsCleanly(): Unit = runBlocking {
         val engine = WhisperEngine(modelPath, BackendConfig.CPU.copy(cpuThreads = 1))
         val endless = flow { while (true) emit(speech(100)) }
         val first = AtomicReference<TranscriptionEvent?>(null)
