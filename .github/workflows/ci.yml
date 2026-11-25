@@ -2,17 +2,18 @@ name: CI (Phase 1 cross-platform matrix)
 
 # Phase 1 matrix (issue #6). Billed minutes are limited on this private repository (see AGENTS.md
 # "CI Minutes Policy"), so only the 1x-billed Ubuntu job runs on every ready PR push:
-#   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + CTest + ggml pin + host linkage audits,
+#   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + llama (llama.cpp + libmtmd) + CTest +
+#              ggml / upstream pins + host linkage audits,
 #              `./gradlew check` (commonTest, jvmTest, androidUnitTest, BOM checks, sample audits) with
 #              native-backed tests mandatory, Android NDK cross-compile + linkage audits,
 #              whisper-only-minimal release APK binary symbol audit, Android APKs + desktop jar for both samples.
 #              (This job also covers everything runtime-native.yml used to run per PR, so that workflow is
 #              now manual-dispatch only and the same work is not billed twice.)
 #   - macOS (10x billed):  only on PRs labelled `ci:macos` or a manual dispatch. macOS arm64 native runtime
-#              (Metal + Accelerate) + whisper + CTest, JVM tests, GgmlRuntime/KggmlWhisper.xcframework
-#              (CoreML), iosSimulatorArm64Test, sample iOS frameworks + whisper-only-minimal iOS symbol audit.
+#              (Metal + Accelerate) + whisper + llama + CTest, JVM tests, GgmlRuntime/KggmlWhisper.xcframework
+#              (CoreML) + KggmlLlama.xcframework, iosSimulatorArm64Test, sample iOS frameworks + whisper-only-minimal iOS symbol audit.
 #   - Windows (2x billed): only on PRs labelled `ci:windows` or a manual dispatch. Windows x64 native
-#              runtime + whisper (MSVC) + CTest, JVM tests against it.
+#              runtime + whisper + llama (MSVC) + CTest, JVM tests against it.
 # Not run: draft PRs, docs/agent-instruction-only PRs (paths-ignore below), and pushes to main (PRs
 # merge with a merge commit after this workflow passed on the PR head, so a main run repeats it).
 # Every Ubuntu step is reproducible locally with `./scripts/ci-local.sh --full`, the fallback gate
@@ -56,7 +57,9 @@ jobs:
     # Draft PRs start no runner (skipped jobs are not billed); marking the PR ready runs it.
     if: github.event.action != 'labeled' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # llama.cpp + libmtmd (host + 2 Android ABIs) roughly doubles the cold native compile time; ccache keeps
+    # warm runs well below this.
+    timeout-minutes: 90
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
@@ -95,6 +98,12 @@ jobs:
           ./kggml-whisper/native/scripts/build-host.sh
           ./scripts/ci/audit-whisper-linkage.sh host
 
+      - name: Native llama (llama.cpp + libmtmd, linux-x64) build + CTest + dynamic ggml linkage audit
+        run: |
+          ./scripts/ci/verify-llama-pin.sh
+          ./kggml-llama/native/scripts/build-host.sh
+          ./scripts/ci/audit-llama-linkage.sh host
+
       - name: Gradle check (commonTest, jvmTest, androidUnitTest, samples, BOM) with native tests required
         run: ./gradlew check $NATIVE_GRADLE_ARGS
 
@@ -105,6 +114,8 @@ jobs:
           ./scripts/ci/audit-android-linkage.sh arm64-v8a x86_64
           ./kggml-whisper/native/scripts/build-android.sh arm64-v8a x86_64
           ./scripts/ci/audit-whisper-linkage.sh android arm64-v8a x86_64
+          ./kggml-llama/native/scripts/build-android.sh arm64-v8a x86_64
+          ./scripts/ci/audit-llama-linkage.sh android arm64-v8a x86_64
 
       - name: whisper-only-minimal binary symbol audit (release APK, zero llama / stable-diffusion symbols)
         run: |
@@ -126,6 +137,7 @@ jobs:
           path: |
             build/native/Testing/Temporary/
             build/native-whisper/Testing/Temporary/
+            build/native-llama/Testing/Temporary/
             **/build/reports/
           if-no-files-found: ignore
 
@@ -169,11 +181,19 @@ jobs:
           ./kggml-whisper/native/scripts/build-host.sh
           ./scripts/ci/audit-whisper-linkage.sh host
 
+      - name: Native llama (macos-arm64) build + CTest + dynamic ggml linkage audit
+        run: |
+          ./kggml-llama/native/scripts/build-host.sh
+          ./scripts/ci/audit-llama-linkage.sh host
+
       - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64)
         run: ./kggml-runtime/native/scripts/build-ios-xcframework.sh
 
       - name: Build KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML, linked to GgmlRuntime)
         run: ./kggml-whisper/native/scripts/build-ios-xcframework.sh
+
+      - name: Build KggmlLlama.xcframework (iosArm64 + iosSimulatorArm64, llama.cpp + libmtmd, linked to GgmlRuntime)
+        run: ./kggml-llama/native/scripts/build-ios-xcframework.sh
 
       - name: JVM tests against the macOS native runtime
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
@@ -216,6 +236,7 @@ jobs:
           path: |
             build/native/Testing/Temporary/
             build/native-whisper/Testing/Temporary/
+            build/native-llama/Testing/Temporary/
             **/build/reports/
           if-no-files-found: ignore
 
@@ -269,6 +290,13 @@ jobs:
           cmake --build build/native-whisper --config Release -j 4 || exit /b 1
           ctest --test-dir build/native-whisper --build-config Release --output-on-failure -j 4
 
+      - name: Native llama (windows-x64, MSVC) build + CTest
+        shell: cmd
+        run: |
+          cmake -S kggml-llama/native --preset windows-x64 -B build/native-llama || exit /b 1
+          cmake --build build/native-llama --config Release -j 4 || exit /b 1
+          ctest --test-dir build/native-llama --build-config Release --output-on-failure -j 4
+
       - name: JVM tests against the Windows native runtime
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
 
@@ -280,5 +308,6 @@ jobs:
           path: |
             build/native/Testing/Temporary/
             build/native-whisper/Testing/Temporary/
+            build/native-llama/Testing/Temporary/
             **/build/reports/
           if-no-files-found: ignore

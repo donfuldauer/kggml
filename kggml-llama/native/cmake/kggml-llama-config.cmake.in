@@ -1,0 +1,18 @@
+# kggml-llama CMake package.
+#
+# Provides:
+#   kggml::llama - libkggml_llama (kggml_llama.h + llama.h + mtmd.h), llama.cpp + libmtmd linked dynamically
+#                  against kggml::runtime / kggml::ggml from the kggml-runtime package.
+
+@PACKAGE_INIT@
+
+set(KGGML_LLAMA_UPSTREAM_COMMIT "@KGGML_LLAMA_UPSTREAM_COMMIT@")
+set(KGGML_LLAMA_UPSTREAM_VERSION "@KGGML_LLAMA_UPSTREAM_VERSION@")
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+find_dependency(kggml-runtime 1.0 CONFIG)
+
+include("${CMAKE_CURRENT_LIST_DIR}/kggml-llama-targets.cmake")
+
+check_required_components(kggml-llama)
