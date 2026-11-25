@@ -80,6 +80,29 @@ class BackgroundTranscriptionTestTest {
     }
 
     @Test
+    fun gpuRunAbortedAtTheTransitionIsNotAFailure() = runTest {
+        var engine: FakeSpeechEngine? = null
+        val session = WhisperSampleSession(
+            factory = { p, c -> FakeSpeechEngine(p, c, unavailable = setOf(ComputeBackend.GPU_METAL)).also { engine = it } },
+        )
+        var runs = 0
+        val summary = runBackgroundTranscriptionTest(
+            session, "a.bin", audio, ComputeBackend.GPU_METAL,
+            isInBackground = { runs >= 1 },
+            maxRuns = 3,
+        ) {
+            if (++runs == 1) engine!!.failNext = InferenceCancelledException("aborted by lifecycle")
+        }
+        assertTrue(summary.runs[1].abortedAtTransition)
+        assertEquals(
+            "#2 [background] ABORTED (GPU run at background transition): InferenceCancelledException: aborted by lifecycle",
+            summary.runs[1].describe(),
+        )
+        assertEquals(1, summary.backgroundRuns.size)
+        assertTrue(summary.passed, summary.describe())
+    }
+
+    @Test
     fun alwaysRunsAtLeastOnce() = runTest {
         val session = WhisperSampleSession(factory = { p, c -> FakeSpeechEngine(p, c) })
         val summary = runBackgroundTranscriptionTest(

@@ -24,11 +24,13 @@
 set -euo pipefail
 
 # Symbols / names that must never appear in a whisper-only artifact. ggml_* / gguf_* symbols are exempt (the
-# ggml CPU backend exports e.g. ggml_cpu_has_llamafile); their uniqueness is checked separately.
+# ggml CPU backend exports e.g. ggml_cpu_has_llamafile); their uniqueness is checked separately. ggml's own
+# llamafile sgemm kernels (GGML_LLAMAFILE) are not llama.cpp and are allowed as well.
 FORBIDDEN_SYMBOL_RE='llama|mtmd|stable_?diffusion|diffusion_?engine|kggml_diffusion|(^|_)(new|free)_sd_ctx|(^|_)sd_(ctx|image|img_gen|vid_gen|get_system_info)|(^|_)(txt2img|img2img|upscaler_ctx)'
 FORBIDDEN_LIB_RE='(llama|mtmd|stable-diffusion|stable_diffusion|diffusion)'
 FORBIDDEN_CLASS_RE='com/donfuldauer/kggml/(llama|diffusion)/|com\.donfuldauer\.kggml\.(llama|diffusion)\.'
 GGML_SYMBOL_RE='^_?(ggml|gguf)_'
+ALLOWED_SYMBOL_RE='llamafile'
 
 failures=0
 fail() { echo "FAIL: $*" >&2; failures=$((failures + 1)); }
@@ -56,17 +58,8 @@ defined_symbols() {
   } | awk 'NF >= 3 {print $NF}' | sort -u
 }
 
-# Exported (global, defined) symbol names of a binary.
-exported_symbols() {
-  local f="$1"
-  {
-    "${NM}" -D --defined-only "${f}" 2>/dev/null || true
-    "${NM}" -g --defined-only "${f}" 2>/dev/null || true
-  } | awk 'NF >= 3 {print $NF}' | sort -u
-}
-
 # Prints forbidden (llama / mtmd / stable-diffusion) symbol names found in the symbol list on stdin.
-forbidden_in() { grep -Ev "${GGML_SYMBOL_RE}" | grep -Ei "${FORBIDDEN_SYMBOL_RE}" || true; }
+forbidden_in() { grep -Ev "${GGML_SYMBOL_RE}" | grep -Eiv "${ALLOWED_SYMBOL_RE}" | grep -Ei "${FORBIDDEN_SYMBOL_RE}" || true; }
 
 # Checks one set of binaries that are loaded together (one Android ABI / one iOS slice).
 #   $1 label, $2 file listing the binaries (one path per line), $3 linkage dump command (readelf | otool).
@@ -234,7 +227,7 @@ audit_elf_dirs() {
     [[ -d "${d}" ]] || die "not a directory: ${d}"
     for f in "${d}"/*.so "${d}"/*.so.*; do
       [[ -f "${f}" && ! -L "${f}" ]] || continue
-      is_elf "${f}" && echo "${f}"
+      if is_elf "${f}"; then echo "${f}"; fi
     done
   done | sort >"${list}"
   audit_set "elf" "${list}" elf

@@ -123,7 +123,8 @@ class WhisperSampleSession(
             TranscriptionReport(
                 requestedBackend = backend,
                 activeBackend = result.backend,
-                usesGpu = active.usesGpu,
+                // From the result, not the engine: the iOS lifecycle fallback may have reloaded it on the CPU since.
+                usesGpu = result.backend != ComputeBackend.CPU_ONLY,
                 audioDurationMs = result.audioDurationMs,
                 elapsed = mark.elapsedNow(),
                 text = result.text,

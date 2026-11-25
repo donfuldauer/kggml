@@ -72,7 +72,7 @@ needs a **physical device** (the simulator does not revoke GPU access).
 1. Install the host app on an iPhone (Release or Debug), with the model and audio in Documents.
 2. Select **CPU only**, tap **Transcribe** once and confirm the result shows
    `ran on CPU_ONLY (use_gpu=false)` and the expected text.
-3. Tap **Background test (25 s)** and immediately press the Home button / swipe home (or lock the device).
+3. Tap **Background test (20 s)** and immediately press the Home button / swipe home (or lock the device).
 4. Wait ~30 s, return to the app and read the log. Each line is
    `#n [background|foreground] CPU_ONLY use_gpu=false <ms> ms: <text>`; the last line must start with
    `PASS:` and report at least one background run completed. The same lines are written with `NSLog`
@@ -82,8 +82,9 @@ needs a **physical device** (the simulator does not revoke GPU access).
    (no new crash report under *Settings → Privacy → Analytics Data*).
 6. Optional (lifecycle fallback): select **GPU (Metal)**, repeat steps 3–5. The engine is switched to
    `CPU_ONLY` on `UIApplicationDidEnterBackgroundNotification`, so background runs must also report
-   `use_gpu=false` (a run that was executing on the GPU at the transition may be reported as
-   `FAILED: InferenceCancelledException`; the following runs must succeed).
+   `use_gpu=false`. A run that was executing on the GPU at the transition may be reported as
+   `ABORTED (GPU run at background transition)`; it does not fail the test, but every other background run
+   must succeed.
 
 Record the device model, iOS version, model file, the summary line and the commit SHA in the Phase 2 gate
 issue / PR.

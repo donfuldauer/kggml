@@ -1,6 +1,7 @@
 package com.donfuldauer.kggml.samples.whisper
 
 import com.donfuldauer.kggml.core.ComputeBackend
+import com.donfuldauer.kggml.core.InferenceCancelledException
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
@@ -15,6 +16,12 @@ data class BackgroundRun(
     val inBackground: Boolean,
     val report: TranscriptionReport?,
     val error: String?,
+    /**
+     * `true` when an accelerated (GPU / CoreML) run was aborted with `InferenceCancelledException`: the expected
+     * outcome for the run in flight when the lifecycle fallback switches the engine to the CPU. Ignored by
+     * [BackgroundTestSummary.passed]; a cancelled `CPU_ONLY` run still counts as a failure.
+     */
+    val abortedAtTransition: Boolean = false,
 ) {
     val succeeded: Boolean get() = report != null
 
@@ -24,14 +31,15 @@ data class BackgroundRun(
             append("${report.activeBackend} use_gpu=${report.usesGpu} ${report.elapsed.inWholeMilliseconds} ms: ")
             append(report.text.ifEmpty { "(no speech)" })
         } else {
-            append("FAILED: ").append(error)
+            append(if (abortedAtTransition) "ABORTED (GPU run at background transition): " else "FAILED: ").append(error)
         }
     }
 }
 
 /** Outcome of a [runBackgroundTranscriptionTest]. */
 data class BackgroundTestSummary(val backend: ComputeBackend, val runs: List<BackgroundRun>) {
-    val backgroundRuns: List<BackgroundRun> get() = runs.filter { it.inBackground }
+    /** Background runs, excluding GPU runs aborted at the background transition. */
+    val backgroundRuns: List<BackgroundRun> get() = runs.filter { it.inBackground && !it.abortedAtTransition }
 
     /**
      * `true` when at least one transcription completed while the app was in the background, every background
@@ -82,7 +90,8 @@ suspend fun runBackgroundTranscriptionTest(
         } catch (e: CancellationException) {
             throw e
         } catch (t: Throwable) {
-            BackgroundRun(runs.size + 1, isInBackground(), null, "${t::class.simpleName}: ${t.message}")
+            val aborted = t is InferenceCancelledException && backend != ComputeBackend.CPU_ONLY
+            BackgroundRun(runs.size + 1, isInBackground(), null, "${t::class.simpleName}: ${t.message}", aborted)
         }
         runs += run
         onRun(run)

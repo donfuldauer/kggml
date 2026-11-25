@@ -6,6 +6,7 @@ import com.donfuldauer.kggml.core.ComputeBackend
 import com.donfuldauer.kggml.whisper.observeAppLifecycle
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.useContents
@@ -44,6 +45,10 @@ import platform.UIKit.UIView
 import platform.UIKit.UIViewAutoresizingFlexibleHeight
 import platform.UIKit.UIViewAutoresizingFlexibleWidth
 import platform.UIKit.UIViewController
+import platform.UIKit.secondarySystemBackgroundColor
+import platform.UIKit.systemBackgroundColor
+import platform.UIKit.systemBlueColor
+import platform.UIKit.systemGrayColor
 import platform.CoreGraphics.CGRectMake
 import platform.posix.memcpy
 
@@ -58,7 +63,7 @@ fun runtimeStatusText(): String = describeRuntime()
  * so the audited binary contains only the app, the Kggml runtime and whisper.
  *
  * - **Transcribe** runs one transcription of a PCM file (WAV or raw 16 kHz mono s16le) on the selected backend.
- * - **Background test** repeats the transcription for ~25 s inside a `UIApplication` background task; send the
+ * - **Background test** repeats the transcription for ~20 s inside a `UIApplication` background task; send the
  *   app to the background while it runs. The log (also written with `NSLog`) marks every run as
  *   `[background]` / `[foreground]` and ends with `PASS` when background runs completed with `use_gpu=false`.
  *
@@ -88,9 +93,9 @@ private class WhisperSampleScreen {
         selectedSegmentIndex = BackendChoice.CPU_ONLY.ordinal.toLong()
     }
     private val transcribeButton = button("Transcribe") { transcribeOnce() }
-    private val backgroundButton = button("Background test (25 s)") { backgroundTest() }
+    private val backgroundButton = button("Background test (20 s)") { backgroundTest() }
+    // Left editable: `editable` is read-only in the Kotlin/Native UIKit mapping, and every update replaces the text.
     private val output = UITextView().apply {
-        editable = false
         font = UIFont.systemFontOfSize(13.0)
     }
 
@@ -148,8 +153,18 @@ private class WhisperSampleScreen {
             val log = StringBuilder("Background test on $backend: send the app to the background now.\n")
             setOutput(log.toString())
             val current = currentCoroutineContext()[Job]
-            val task = withContext(Dispatchers.Main) {
-                app.beginBackgroundTaskWithName("kggml-whisper-background-test") { current?.cancel() }
+            // Ended exactly once, on the main thread: by the expiration handler (which Apple requires to end the
+            // task synchronously, or the app is terminated) or by the `finally` block below.
+            val ended = AtomicBoolean(false)
+            var task = UIBackgroundTaskInvalid
+            fun endTask() {
+                if (task != UIBackgroundTaskInvalid && ended.compareAndSet(false, true)) app.endBackgroundTask(task)
+            }
+            withContext(Dispatchers.Main) {
+                task = app.beginBackgroundTaskWithName("kggml-whisper-background-test") {
+                    current?.cancel()
+                    endTask()
+                }
             }
             try {
                 val summary = runBackgroundTranscriptionTest(
@@ -158,6 +173,7 @@ private class WhisperSampleScreen {
                     audio = audio,
                     backend = backend,
                     isInBackground = { inBackground.load() },
+                    duration = BACKGROUND_TEST_DURATION,
                 ) { run ->
                     NSLog("kggml-whisper-bg-test %@", run.describe())
                     log.appendLine(run.describe())
@@ -167,9 +183,7 @@ private class WhisperSampleScreen {
                 log.appendLine(summary.describe())
                 setOutput(log.toString())
             } finally {
-                if (task != UIBackgroundTaskInvalid) {
-                    withContext(NonCancellable + Dispatchers.Main) { app.endBackgroundTask(task) }
-                }
+                withContext(NonCancellable + Dispatchers.Main) { endTask() }
             }
         }
     }
@@ -216,6 +230,9 @@ private class WhisperSampleScreen {
 
     private companion object {
         const val MARGIN = 16.0
+
+        /** Stays well inside the ~30 s of background execution time iOS grants a background task. */
+        val BACKGROUND_TEST_DURATION = 20.seconds
     }
 }
 

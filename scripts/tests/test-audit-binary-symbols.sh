@@ -103,6 +103,11 @@ mkdir -p "${WORK}/elf-nowhisper"
 so "${WORK}/elf-nowhisper" libggml.so "${GGML_SRC}"
 expect fail "missing whisper engine fails" 'whisper engine missing' elf "${WORK}/elf-nowhisper"
 
+cp -r "${WORK}/elf-clean" "${WORK}/elf-llamafile"
+so "${WORK}/elf-llamafile" libggml-cpu.so 'int llamafile_sgemm(void){return 0;}'
+printf 'not an ELF file\n' >"${WORK}/elf-llamafile/libnotes.so.txt"
+expect pass "ggml llamafile kernels and non-ELF *.so.* files are allowed" 'binary symbol audit: OK' elf "${WORK}/elf-llamafile"
+
 echo "== apk mode"
 for abi in arm64-v8a x86_64; do clean_set "${WORK}/apk-clean/lib/${abi}"; done
 make_apk "${WORK}/clean.apk" "${WORK}/apk-clean"
