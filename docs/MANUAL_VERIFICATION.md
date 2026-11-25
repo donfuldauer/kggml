@@ -24,3 +24,8 @@ when it has been run; a failed check becomes a new issue.
   `samples/kggml-showcase/README.md` ("iOS background stress: `CPU_ONLY` vs. Metal").
 - [ ] [#12] CI re-run on macOS/Windows once Actions minutes reset (compiles the showcase iOS AVAudioEngine capture and
   runs iOS simulator tests) — https://github.com/donfuldauer/kggml/pull/42
+
+## Phase 4
+
+- [ ] [#13] CI re-run on macOS/Windows once Actions minutes reset (macOS arm64 + `KggmlLlama.xcframework` iOS device /
+  simulator build and Mach-O audit, Windows MSVC `kggml-llama` build + CTest) — https://github.com/donfuldauer/kggml/pull/44
