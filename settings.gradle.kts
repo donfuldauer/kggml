@@ -49,6 +49,9 @@ include(
 )
 
 // Samples (never published). Populated in later issues.
+// Unpublished cross-engine integration tests (several engines in one process).
+include(":integration-tests")
+
 include(
     ":samples:kggml-showcase",
     ":samples:whisper-only-minimal",

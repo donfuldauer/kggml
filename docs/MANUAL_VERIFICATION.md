@@ -65,3 +65,6 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#19] Showcase Diffusion Image Studio with a real SD 1.5 model on desktop, Android and iPhone (progress, same seed =
   same image, cancel within one step, PNG export opens in an image viewer) — procedure in
   `samples/kggml-showcase/README.md` ("Diffusion Image Studio on hardware").
+- [ ] [#20] Whisper live dictation and LLM Chat streaming at the same time in `:samples:kggml-showcase` on a physical
+  Android phone, an iPhone and desktop (both keep producing output, no crash or OOM, one mapping per `libggml*` library
+  on Android) — procedure in `integration-tests/README.md` ("Whisper and Llama together on devices").
