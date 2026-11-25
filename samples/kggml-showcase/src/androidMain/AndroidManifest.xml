@@ -3,6 +3,8 @@
 
     <!-- Live Whisper dictation (requested at run time by MainActivity). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Model Manager downloads. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"

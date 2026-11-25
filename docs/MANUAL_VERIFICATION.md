@@ -51,3 +51,17 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#18] Model manager on physical Android/iOS devices (real GGUF download resumed after airplane mode and app
   kill, SHA-256 mismatch leaves no `.part`, `send-trim-memory` / iOS memory warning closes idle resident engines,
   peak-RAM estimate within ~±30% of measured RSS) — procedure in `kggml-model-manager/README.md` ("Manual verification").
+- [ ] [#19] Showcase Model Manager real downloads on a physical Android phone and iPhone (progress, pause / resume, resume
+  after airplane mode and app kill, SHA-256 shown and matching Hugging Face, metadata + peak-RAM estimate, "Use in
+  Chat") — procedure in `samples/kggml-showcase/README.md` ("Model Manager: real downloads on devices").
+- [ ] [#19] Showcase OS low-memory eviction on devices (`adb shell am send-trim-memory … RUNNING_CRITICAL` /
+  `RUNNING_MODERATE`, iOS Simulate Memory Warning and device memory pressure: idle engines closed and RSS released,
+  leased engine survives, reload on next use) — procedure in `samples/kggml-showcase/README.md` ("Model Manager: OS
+  low-memory eviction on devices").
+- [ ] [#19] Showcase LLM Chat / structured output / embeddings / VLM with real GGUF models on desktop, Android and iPhone
+  (streaming, cancel, thread / GPU-layer reload, KV snapshot restore, JSON-schema output, camera + library images with
+  no temp files) — procedure in `samples/kggml-showcase/README.md` ("LLM Chat, structured output and vision on
+  hardware").
+- [ ] [#19] Showcase Diffusion Image Studio with a real SD 1.5 model on desktop, Android and iPhone (progress, same seed =
+  same image, cancel within one step, PNG export opens in an image viewer) — procedure in
+  `samples/kggml-showcase/README.md` ("Diffusion Image Studio on hardware").

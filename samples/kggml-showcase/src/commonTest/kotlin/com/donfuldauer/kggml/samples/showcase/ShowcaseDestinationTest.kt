@@ -3,11 +3,11 @@ package com.donfuldauer.kggml.samples.showcase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.assertNull
 
 class ShowcaseDestinationTest {
     @Test
-    fun shellContainsInspectorAndAllPlannedEngineScreens() {
+    fun shellContainsInspectorAndAllEngineScreens() {
         assertEquals(
             listOf("Backends", "Models", "Whisper", "Chat", "Diffusion"),
             ShowcaseDestination.entries.map { it.shortLabel },
@@ -15,11 +15,10 @@ class ShowcaseDestinationTest {
     }
 
     @Test
-    fun backendInspectorAndWhisperStudioAreFunctional() {
-        val functional = setOf(ShowcaseDestination.BACKEND_INSPECTOR, ShowcaseDestination.WHISPER_STUDIO)
-        functional.forEach { assertFalse(it.isPlaceholder, "$it should be functional") }
-        ShowcaseDestination.entries.filter { it !in functional }.forEach {
-            assertTrue(it.isPlaceholder, "$it should be a placeholder")
+    fun everyScreenIsFunctional() {
+        ShowcaseDestination.entries.forEach {
+            assertFalse(it.isPlaceholder, "$it should be functional")
+            assertNull(it.plannedPhase, "$it should not be planned for a later phase")
         }
     }
 

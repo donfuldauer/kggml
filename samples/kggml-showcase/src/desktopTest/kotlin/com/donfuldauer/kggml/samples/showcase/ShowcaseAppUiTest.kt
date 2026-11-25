@@ -12,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import com.donfuldauer.kggml.core.NativeFailureException
+import com.donfuldauer.kggml.models.DownloadEvent
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
 import kotlin.test.Test
@@ -29,17 +30,28 @@ class ShowcaseAppUiTest {
     }
 
     @Test
-    fun navigatingToPlaceholderScreensShowsTheirPhase() = runComposeUiTest {
-        setContent { ShowcaseApp(inspector = { fakeSnapshot() }, ioDispatcher = Dispatchers.Unconfined) }
-        ShowcaseDestination.entries.filter { it.isPlaceholder }.forEach { destination ->
+    fun navigatingToEveryScreenShowsIt() = runComposeUiTest {
+        showFakeShowcase(FakeShowcase(), ShowcaseDestination.BACKEND_INSPECTOR)
+        ShowcaseDestination.entries.forEach { destination ->
             onNodeWithTag(destination.navTag).performClick()
             onNodeWithTag(destination.navTag).assertIsSelected()
             onNodeWithTag(destination.screenTag).assertIsDisplayed()
             onNodeWithText(destination.title).assertIsDisplayed()
-            onNodeWithText("Coming in Phase ${destination.plannedPhase}.").assertIsDisplayed()
         }
+        onNodeWithText("Coming in Phase", substring = true).assertDoesNotExist()
         onNodeWithTag(ShowcaseDestination.BACKEND_INSPECTOR.navTag).performClick()
         onNodeWithTag(ShowcaseDestination.BACKEND_INSPECTOR.screenTag).assertIsDisplayed()
+    }
+
+    @Test
+    fun workKeepsRunningWhileNavigatingAway() = runComposeUiTest {
+        val fakes = FakeShowcase()
+        showFakeShowcase(fakes, ShowcaseDestination.MODEL_MANAGER)
+        click("model-llm-download")
+        onNodeWithTag(ShowcaseDestination.LLM_CHAT.navTag).performClick()
+        fakes.store.script("llm.gguf").trySend(DownloadEvent.Completed("/data/models/llm.gguf", 1000, "a".repeat(64), 0, false))
+        onNodeWithTag(ShowcaseDestination.MODEL_MANAGER.navTag).performClick()
+        waitForText("model-llm-phase", "Installed")
     }
 
     @Test
