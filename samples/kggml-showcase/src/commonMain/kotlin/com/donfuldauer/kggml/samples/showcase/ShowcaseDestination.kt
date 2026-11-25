@@ -3,8 +3,8 @@ package com.donfuldauer.kggml.samples.showcase
 /**
  * Top-level screens of the showcase navigation shell.
  *
- * [BACKEND_INSPECTOR] (Phase 1) and [WHISPER_STUDIO] (Phase 3) are functional; the remaining screens are
- * placeholders filled in by the phase that delivers the corresponding engine.
+ * Every screen is functional: [BACKEND_INSPECTOR] (Phase 1), [WHISPER_STUDIO] (Phase 3), and [MODEL_MANAGER],
+ * [LLM_CHAT] and [DIFFUSION_STUDIO] (Phase 4).
  */
 enum class ShowcaseDestination(
     val title: String,
@@ -22,8 +22,9 @@ enum class ShowcaseDestination(
     MODEL_MANAGER(
         title = "Model Manager",
         shortLabel = "Models",
-        summary = "Resumable model downloads, SHA-256 verification, RAM estimates and cache eviction.",
-        plannedPhase = 4,
+        summary = "Curated model catalog with resumable downloads, SHA-256 verification, header metadata with peak-RAM " +
+            "estimates, and manual / OS low-memory eviction of loaded engines.",
+        plannedPhase = null,
     ),
     WHISPER_STUDIO(
         title = "Live Whisper Dictation & Audio Studio",
@@ -33,16 +34,18 @@ enum class ShowcaseDestination(
         plannedPhase = null,
     ),
     LLM_CHAT(
-        title = "LLM Chat / VLM",
+        title = "LLM Chat, Structured Output & Vision",
         shortLabel = "Chat",
-        summary = "Streaming chat, structured output and image understanding with llama.cpp + libmtmd.",
-        plannedPhase = 4,
+        summary = "Multi-turn streaming chat, KV-cache snapshots, JSON-schema constrained extraction, embeddings and " +
+            "in-memory image understanding with llama.cpp + libmtmd.",
+        plannedPhase = null,
     ),
     DIFFUSION_STUDIO(
-        title = "Diffusion Studio",
+        title = "Diffusion Image Studio",
         shortLabel = "Diffusion",
-        summary = "On-device image generation with stable-diffusion.cpp.",
-        plannedPhase = 4,
+        summary = "On-device text-to-image generation with live step progress, cancellation and PNG export, with " +
+            "stable-diffusion.cpp.",
+        plannedPhase = null,
     ),
     ;
 
