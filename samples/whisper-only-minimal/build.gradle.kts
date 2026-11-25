@@ -1,9 +1,13 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 // Minimal Android + iOS sample used for CI binary symbol leakage audits (AGENTS.md §2.1): it depends ONLY on the
-// `kggml-bom` platform and `:kggml-runtime` (Phase 2 adds `:kggml-whisper`). It must never depend on
-// `:kggml-llama` or `:kggml-diffusion`, and uses no UI toolkit beyond the platform's own, so its binaries
-// contain nothing but the app, the runtime and (later) whisper. Never published.
+// `kggml-bom` platform and `:kggml-whisper` (which brings `:kggml-runtime`). It must never depend on
+// `:kggml-llama` or `:kggml-diffusion`, and uses no UI toolkit beyond the platform's own (android.widget /
+// UIKit), so its binaries contain nothing but the app, the runtime and whisper. Never published.
+//
+// Binary audit (scripts/audit-binary-symbols.sh, run by CI):
+//   ./gradlew :samples:whisper-only-minimal:assembleRelease -Pkggml.bundleNative=true
+//   ./scripts/audit-binary-symbols.sh apk samples/whisper-only-minimal/build/outputs/apk/release/whisper-only-minimal-release-unsigned.apk
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.application)
@@ -12,8 +16,11 @@ plugins {
 val jvmTargetVersion: String = libs.versions.jvmTarget.get()
 // Samples are not published, so they do not get `project.version`; reuse the SDK version for app metadata.
 val sampleVersion: String = providers.gradleProperty("VERSION_NAME").get()
-// Built by kggml-runtime/native/scripts/build-ios-xcframework.sh (macOS only).
+// Built by kggml-runtime/native/scripts/build-ios-xcframework.sh and kggml-whisper/native/scripts/build-ios-xcframework.sh
+// (macOS only).
 val iosXcframeworkDir: File = rootProject.layout.projectDirectory.dir("build/native-ios/GgmlRuntime.xcframework").asFile
+val iosWhisperXcframeworkDir: File =
+    rootProject.layout.projectDirectory.dir("build/native-ios/KggmlWhisper.xcframework").asFile
 
 kotlin {
     androidTarget {
@@ -22,23 +29,26 @@ kotlin {
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "WhisperOnlyMinimal"
-            // Static: GgmlRuntime.framework is embedded and linked by the Xcode host app, never duplicated here.
+            // Static: GgmlRuntime.framework and KggmlWhisper.framework are embedded and linked by the Xcode host
+            // app, never duplicated here.
             isStatic = true
         }
-        // Test executables are fully linked, so they need the locally built GgmlRuntime.framework.
+        // Test executables are fully linked, so they need the locally built dynamic frameworks.
         val slice = if (target.name == "iosSimulatorArm64") "ios-arm64-simulator" else "ios-arm64"
-        val frameworkSearchPath = iosXcframeworkDir.resolve(slice).absolutePath
-        target.binaries.getTest("DEBUG").linkerOpts("-F", frameworkSearchPath, "-rpath", frameworkSearchPath)
+        listOf(iosWhisperXcframeworkDir, iosXcframeworkDir).map { it.resolve(slice).absolutePath }.forEach { path ->
+            target.binaries.getTest("DEBUG").linkerOpts("-F", path, "-rpath", path)
+        }
     }
 
     sourceSets {
         commonMain.dependencies {
             // Kggml SDK: versions come from the BOM only.
             implementation(project.dependencies.platform(project(":kggml-bom")))
-            implementation(project(":kggml-runtime"))
+            implementation(project(":kggml-whisper"))
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
         }
     }
 }
@@ -87,9 +97,9 @@ val verifyMinimalDependencies by tasks.registering {
 }
 tasks.named("check") { dependsOn(verifyMinimalDependencies) }
 
-// iOS test executables link against GgmlRuntime.xcframework; skip them (like :kggml-runtime) until it is built.
+// iOS test executables link against the xcframeworks; skip them (like :kggml-whisper) until they are built.
 tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
-    onlyIf("GgmlRuntime.xcframework is built (kggml-runtime/native/scripts/build-ios-xcframework.sh)") {
-        iosXcframeworkDir.isDirectory
+    onlyIf("GgmlRuntime + KggmlWhisper xcframeworks are built (native/scripts/build-ios-xcframework.sh)") {
+        iosXcframeworkDir.isDirectory && iosWhisperXcframeworkDir.isDirectory
     }
 }

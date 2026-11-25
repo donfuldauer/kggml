@@ -6,7 +6,7 @@ module dependencies). They are never published.
 | Sample | Targets | Purpose |
 | --- | --- | --- |
 | `:samples:kggml-showcase` | Android, iOS, JVM Desktop (Compose Multiplatform) | Navigation shell (Backends, Models, Whisper, Chat, Diffusion) with a functional **Hardware Backend Inspector** backed by `KggmlRuntime`. The other screens are placeholders filled in by later phases. |
-| `:samples:whisper-only-minimal` | Android, iOS | Minimal app depending only on `kggml-bom` + `:kggml-runtime` (`:kggml-whisper` joins in Phase 2). Used for CI binary symbol leakage audits; `verifyMinimalDependencies` (part of `check`) fails if `:kggml-llama` or `:kggml-diffusion` is ever resolved. |
+| `:samples:whisper-only-minimal` | Android, iOS | Minimal app depending only on `kggml-bom` + `:kggml-whisper`: PCM file transcription, runtime `ComputeBackend` toggle and an iOS background `CPU_ONLY` test mode (see [its README](whisper-only-minimal/README.md)). Used for CI binary symbol leakage audits (`scripts/audit-binary-symbols.sh`); `verifyMinimalDependencies` (part of `check`) fails if `:kggml-llama` or `:kggml-diffusion` is ever resolved. |
 
 ## Running
 
