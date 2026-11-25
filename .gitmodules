@@ -7,3 +7,6 @@
 [submodule "kggml-llama/native/third_party/llama.cpp"]
 	path = kggml-llama/native/third_party/llama.cpp
 	url = https://github.com/ggml-org/llama.cpp
+[submodule "kggml-diffusion/native/third_party/stable-diffusion.cpp"]
+	path = kggml-diffusion/native/third_party/stable-diffusion.cpp
+	url = https://github.com/leejet/stable-diffusion.cpp

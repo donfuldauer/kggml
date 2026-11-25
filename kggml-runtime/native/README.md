@@ -30,6 +30,32 @@ dynamically and never carry their own copy of ggml.
 `libkggml_runtime` has `NEEDED` entries on `libggml`, `libggml-base` and `libggml-cpu`, and defines no
 `ggml_*` symbols. CI checks this with `readelf`/`nm`/`otool`.
 
+## ggml ABI: `GGML_MAX_NAME`
+
+ggml is built with **`GGML_MAX_NAME=128`** (upstream default: 64). The value sizes `char name[GGML_MAX_NAME]`
+inside `struct ggml_tensor`, so it changes the struct's layout: ggml itself and **every** translation unit that
+includes `ggml.h` (whisper.cpp, llama.cpp, stable-diffusion.cpp, the Kggml wrappers, JNI bridges and tests) must
+use the same value, or they read each other's tensors at the wrong offsets. 128 is required by
+`stable-diffusion.cpp` (`static_assert(GGML_MAX_NAME >= 128)` in `src/ggml_extend.hpp`; its tensor names exceed 64
+characters) and is what its upstream build uses; whisper.cpp and llama.cpp work with any value >= 64.
+
+How it is propagated:
+
+- `CMakeLists.txt` adds `GGML_MAX_NAME=128` as a **PUBLIC** compile definition to every ggml target
+  (`ggml-base`, `ggml`, `ggml-cpu`, backends) and to `kggml_runtime` (which is `kggml::ggml` in the monolithic iOS
+  layout). It is therefore part of the exported targets' `INTERFACE_COMPILE_DEFINITIONS`: everything that links
+  `kggml::runtime` / `kggml::ggml` (the whisper, llama and diffusion native builds, their JNI bridges and tests)
+  compiles with it automatically.
+- `kggml-runtime-config.cmake` exposes `KGGML_GGML_MAX_NAME` and fails if the exported `kggml::runtime` target does
+  not carry the definition; `:kggml-diffusion` refuses to configure against a runtime built with less than 128.
+- The Kotlin/Native cinterop `.def` files only include the `kggml_*.h` C ABIs, never `ggml.h`, so they are not
+  affected. Code that compiles against the installed / framework ggml headers **without** these CMake targets (for
+  example an Xcode target including `GgmlRuntime.framework/Headers/ggml.h` directly) must pass
+  `-DGGML_MAX_NAME=128` itself.
+- `tests/test_abi.cpp` asserts the compile-time value, round-trips a 100-character tensor name through
+  `ggml_set_name()` / `ggml_get_name()` of the shared library and checks that the library's `sizeof(ggml_tensor)`
+  (`ggml_tensor_overhead()`) matches the consumer's.
+
 ## Presets
 
 | Preset | Notes |

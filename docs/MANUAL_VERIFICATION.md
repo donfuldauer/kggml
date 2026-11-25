@@ -37,3 +37,6 @@ when it has been run; a failed check becomes a new issue.
   directories) — procedure in `kggml-llama/README.md` ("Manual verification", step 7).
 - [ ] [#14] CI re-run on Windows (billing / spending-limit refusal: MSVC build of the new `kggml_llama_jni` bridge +
   `:kggml-llama:jvmTest`) — https://github.com/donfuldauer/kggml/pull/46
+- [ ] [#16] `libkggml_diffusion` txt2img with a real SD 1.5-class GGUF through the C ABI on desktop (CPU, plus Metal on
+  macOS / Vulkan where available): steps reported in order, a coherent image, abort within one step and the context
+  reusable afterwards — procedure in `kggml-diffusion/native/README.md` ("Manual verification").
