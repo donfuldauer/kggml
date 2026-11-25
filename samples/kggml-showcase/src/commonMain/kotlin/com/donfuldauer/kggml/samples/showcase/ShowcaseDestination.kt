@@ -3,8 +3,8 @@ package com.donfuldauer.kggml.samples.showcase
 /**
  * Top-level screens of the showcase navigation shell.
  *
- * Only [BACKEND_INSPECTOR] is functional in Phase 1; the remaining screens are placeholders filled in by the
- * phase that delivers the corresponding engine.
+ * [BACKEND_INSPECTOR] (Phase 1) and [WHISPER_STUDIO] (Phase 3) are functional; the remaining screens are
+ * placeholders filled in by the phase that delivers the corresponding engine.
  */
 enum class ShowcaseDestination(
     val title: String,
@@ -26,10 +26,11 @@ enum class ShowcaseDestination(
         plannedPhase = 4,
     ),
     WHISPER_STUDIO(
-        title = "Whisper Studio",
+        title = "Live Whisper Dictation & Audio Studio",
         shortLabel = "Whisper",
-        summary = "Live dictation and audio transcription with whisper.cpp.",
-        plannedPhase = 3,
+        summary = "Live microphone dictation with partial and committed segments, plus PCM file transcription, " +
+            "with whisper.cpp.",
+        plannedPhase = null,
     ),
     LLM_CHAT(
         title = "LLM Chat / VLM",
