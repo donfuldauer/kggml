@@ -5,7 +5,6 @@ import com.donfuldauer.kggml.whisper.cinterop.KGGML_PCM_F32
 import com.donfuldauer.kggml.whisper.cinterop.KGGML_PCM_S16
 import com.donfuldauer.kggml.whisper.cinterop.KGGML_RESAMPLE_SINC
 import com.donfuldauer.kggml.whisper.cinterop.KGGML_WHISPER_SAMPLE_RATE
-import com.donfuldauer.kggml.whisper.cinterop.kggml_status_name
 import com.donfuldauer.kggml.whisper.cinterop.kggml_whisper_abort_requested
 import com.donfuldauer.kggml.whisper.cinterop.kggml_whisper_clear_abort
 import com.donfuldauer.kggml.whisper.cinterop.kggml_whisper_context_default_params
@@ -39,6 +38,7 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.cstr
+import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
@@ -48,7 +48,6 @@ import kotlinx.cinterop.toLong
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
 import platform.posix.size_tVar
-import platform.posix.strlen
 
 /**
  * [NativeWhisperBridge] calling the `kggml_whisper.h` C ABI directly through Kotlin/Native cinterop.
@@ -136,7 +135,12 @@ internal object IosWhisperBridge : NativeWhisperBridge {
         val seg = alloc<kggml_whisper_segment>()
         val status = kggml_whisper_get_segment(context(handle), index, seg.ptr).toInt()
         if (status != WhisperStatus.OK) return@memScoped RawSegmentResult(status)
-        val text = seg.text?.let { p -> p.readBytes(strlen(p).toInt()) } ?: ByteArray(0)
+        // Raw UTF-8 bytes (not toKString(): whisper.cpp may split a multi-byte character across segments).
+        val text = seg.text?.let { p ->
+            var length = 0
+            while (p[length] != 0.toByte()) length++
+            p.readBytes(length)
+        } ?: ByteArray(0)
         RawSegmentResult(status, seg.t0_ms, seg.t1_ms, seg.no_speech_prob, text)
     }
 
@@ -168,8 +172,9 @@ internal object IosWhisperBridge : NativeWhisperBridge {
         }
     }
 
-    override fun statusName(status: Int): String =
-        kggml_status_name(status.convert())?.toKString() ?: "KGGML_STATUS_$status"
+    // kggml_status_name() is declared in kggml_runtime.h, whose bindings live in :kggml-runtime's cinterop klib
+    // (cinterop does not regenerate a dependency's declarations), so the names are mapped here.
+    override fun statusName(status: Int): String = STATUS_NAMES[status] ?: "KGGML_STATUS_$status"
 
     override fun lastError(): String = kggml_whisper_last_error()?.toKString().orEmpty()
 
@@ -198,6 +203,19 @@ internal object IosWhisperBridge : NativeWhisperBridge {
     private fun context(handle: Long): CPointer<kggml_whisper_context>? = handle.toCPointer()
 
     private fun Boolean.toInt(): Int = if (this) 1 else 0
+
+    private val STATUS_NAMES: Map<Int, String> = mapOf(
+        0 to "KGGML_STATUS_OK",
+        1 to "KGGML_STATUS_MODEL_LOAD_FAILED",
+        2 to "KGGML_STATUS_INVALID_ARGUMENT",
+        3 to "KGGML_STATUS_BACKEND_UNAVAILABLE",
+        4 to "KGGML_STATUS_OUT_OF_MEMORY",
+        5 to "KGGML_STATUS_CANCELLED",
+        6 to "KGGML_STATUS_NATIVE_FAILURE",
+        100 to "KGGML_STATUS_NOT_INITIALIZED",
+        101 to "KGGML_STATUS_BUFFER_TOO_SMALL",
+        102 to "KGGML_STATUS_UNKNOWN",
+    )
 }
 
 internal actual fun createPlatformWhisperBridge(): NativeWhisperBridge = IosWhisperBridge
