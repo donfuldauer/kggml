@@ -12,7 +12,7 @@ You are invoked **exclusively** on the final issue of a Phase/Milestone (`phase-
    - Confirm every issue in the milestone is closed (except the current phase-final issue) and every deliverable in the Phase roadmap is implemented.
 2. **Phase Exit Criteria Verification:**
    - **Phase 1:** Sample app consumes `com.donfuldauer:kggml-bom:1.0.0` + `:kggml-runtime`, inspects hardware backends (`CPU`, `Metal`, `Vulkan`), and cross-compiles cleanly across Android, iOS, and Desktop in CI.
-   - **Phase 2:** `:samples:whisper-only-minimal` builds iOS & Android binaries with **zero** `llama` or `stable-diffusion` symbols verified by CI scripts; `ComputeBackend.CPU_ONLY` sets `use_gpu = false` and background iOS verification is satisfied.
+   - **Phase 2:** `:samples:whisper-only-minimal` builds iOS & Android binaries with **zero** `llama` or `stable-diffusion` symbols verified by CI scripts; `ComputeBackend.CPU_ONLY` sets `use_gpu = false` (proven by automated tests), the iOS background test mode exists, and the physical-device background check is documented and listed in `docs/MANUAL_VERIFICATION.md`.
    - **Phase 3:** Live streaming produces partial hypotheses (< 400 ms target) and commits punctuated segments across multi-minute speech with >= 1,000 ms floor padding, prompt-token carryover, zero temp WAV files, and passing Compose UI tests.
    - **Phase 4:** Dual-engine integration test loads `:kggml-whisper` + `:kggml-llama` simultaneously sharing one `:kggml-runtime` binary without symbol conflicts or OOM; `:samples:kggml-showcase` runs end-to-end across Android, iOS, and Desktop; `:samples:whisper-only-minimal` symbol audit still passes.
    - **Phase OSS:** MIT `LICENSE`, complete `NOTICE` with upstream commit SHAs and CC0/MIT fixtures, production `README.md` + governance docs, Maven Central staging/signing verified, full-history `gitleaks` & git history audit clean.
@@ -23,5 +23,6 @@ You are invoked **exclusively** on the final issue of a Phase/Milestone (`phase-
    - `scripts/verify-agent-parity.sh` and `gitleaks` pass cleanly.
 4. **Verdict Format:**
    - Output an explicit verdict: **`APPROVED`** or **`CHANGES REQUIRED`**.
+   - Manual or physical-device checks are deferred to the owner's final acceptance pass after all phases (AGENTS.md Section 3, "Deferred Manual & Physical Verification"). Their not having been run is **never** a blocking finding; only a missing procedure or a missing `docs/MANUAL_VERIFICATION.md` entry is.
    - Separate **Blocking Findings** (must be fixed and re-audited before merge) from **Non-Blocking Recommendations** (optional follow-ups).
 """
