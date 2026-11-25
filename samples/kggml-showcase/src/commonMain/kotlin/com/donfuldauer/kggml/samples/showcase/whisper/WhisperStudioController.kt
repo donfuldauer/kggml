@@ -131,7 +131,7 @@ class WhisperStudioController(
         if (current.isBusy || current.selectedBackend == backend) return
         mutableState.update { it.copy(selectedBackend = backend, error = null) }
         val loaded = transcriber ?: return
-        if (loaded.modelPath != current.modelPath) return
+        if (loaded.modelPath != current.modelPath.trim()) return
         launchWork(StudioActivity.LOADING_MODEL) { ensureTranscriber() }
     }
 
@@ -281,7 +281,15 @@ class WhisperStudioController(
         } else {
             releaseTranscriber()
             mutableState.update { it.copy(activity = StudioActivity.LOADING_MODEL, activeBackend = null) }
-            withContext(ioDispatcher) { factory.open(path, config) }.also {
+            // If the job is cancelled after the model loaded but before withContext resumes, the result would be
+            // discarded; keep a handle so it is closed instead of leaked.
+            var opened: Transcriber? = null
+            try {
+                withContext(ioDispatcher) { factory.open(path, config).also { opened = it } }
+            } catch (e: CancellationException) {
+                opened?.close()
+                throw e
+            }.also {
                 if (closed) {
                     it.close()
                     throw CancellationException("Whisper Studio closed")

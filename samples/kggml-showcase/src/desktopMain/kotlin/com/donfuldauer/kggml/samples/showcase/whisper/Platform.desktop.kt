@@ -17,7 +17,7 @@ import javax.sound.sampled.AudioFormat as JavaAudioFormat
 
 /**
  * Desktop microphone through `javax.sound.sampled`: 44.1 kHz, signed 16-bit little-endian, converted to float in
- * 100 ms chunks. Prefers stereo when the default input line supports it and otherwise uses mono.
+ * 100 ms chunks. Uses mono, or stereo when the default input line only supports stereo (downmixed natively).
  */
 class DesktopAudioCapture(private val sampleRate: Int = 44_100, private val chunkMs: Int = 100) : AudioCapture {
     @Volatile private var format: JavaAudioFormat? = null

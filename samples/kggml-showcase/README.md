@@ -12,7 +12,7 @@ Compose Multiplatform app (Android, iOS, JVM Desktop) that consumes the SDK only
 
 - **Live dictation:** microphone PCM is captured in memory (Android `AudioRecord` 48 kHz mono float; iOS
   `AVAudioEngine` input tap at the hardware format, usually 48 kHz; Desktop `javax.sound.sampled` 44.1 kHz 16-bit,
-  stereo when the default input supports it). Chunks are streamed as a `Flow<FloatArray>` straight into
+  mono, or stereo when the input only supports stereo). Chunks are streamed as a `Flow<FloatArray>` straight into
   `WhisperEngine.transcribeStream`, which resamples and downmixes them natively. **No WAV or other temporary file is
   ever written.**
 - **Transcript:** the unstable `PartialHypothesis` of the turn in progress is shown in italics with its lag behind the
