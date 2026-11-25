@@ -22,3 +22,5 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#12] On a physical iPhone, the Whisper Studio background stress toggle shows `CPU_ONLY` transcribing in the
   background while Metal is cut off, and the default `CPU_ONLY` fallback keeps the app alive — procedure in
   `samples/kggml-showcase/README.md` ("iOS background stress: `CPU_ONLY` vs. Metal").
+- [ ] [#12] CI re-run on macOS/Windows once Actions minutes reset (compiles the showcase iOS AVAudioEngine capture and
+  runs iOS simulator tests) — https://github.com/donfuldauer/kggml/pull/42
