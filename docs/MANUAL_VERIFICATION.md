@@ -42,3 +42,7 @@ when it has been run; a failed check becomes a new issue.
   reusable afterwards — procedure in `kggml-diffusion/native/README.md` ("Manual verification").
 - [ ] [#16] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC `kggml-diffusion` build
   incl. `/EHs /EHc-`, `GGML_MAX_NAME=128` runtime/whisper/llama rebuild + CTest) — https://github.com/donfuldauer/kggml/pull/49
+- [ ] [#17] `DiffusionEngine` with a real SD 1.5-class model on a physical iPhone and Android device and on desktop
+  (Metal / Vulkan / CPU, progress `0..N` in order, a coherent 512x512 image, same seed = same image, cancellation within
+  one step and the engine reusable afterwards, `CPU_ONLY` in the iOS background, stable memory across 10 generations) —
+  procedure in `kggml-diffusion/README.md` ("Manual verification").

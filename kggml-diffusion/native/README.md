@@ -63,7 +63,7 @@ ctest --test-dir build/native-diffusion --output-on-failure
 ./scripts/ci/verify-diffusion-pin.sh
 ./scripts/ci/audit-diffusion-linkage.sh host
 
-# Android arm64-v8a + x86_64 (needs ANDROID_NDK_HOME). Stages libkggml_diffusion.so in
+# Android arm64-v8a + x86_64 (needs ANDROID_NDK_HOME). Stages libkggml_diffusion.so + libkggml_diffusion_jni.so in
 # build/native-android-diffusion-jniLibs/<abi>.
 kggml-diffusion/native/scripts/build-android.sh
 ./scripts/ci/audit-diffusion-linkage.sh android
@@ -81,8 +81,11 @@ With an installed runtime, point CMake at its package: `-Dkggml-runtime_DIR=<pre
 The installed `kggml-diffusion` package exports `kggml::diffusion` (headers `kggml_diffusion.h`,
 `stable-diffusion.h`).
 
-The Kotlin `DiffusionEngine`, its JNI bridge (Android / JVM Desktop) and the Kotlin/Native cinterop bindings (iOS)
-are issue #17; this layer only provides the C ABI they will call.
+The build also produces `kggml_diffusion_jni` (`jni/kggml_diffusion_jni.cpp`, option `KGGML_DIFFUSION_BUILD_JNI`, on
+by default for Android and for desktop hosts with JNI headers): the JNI bridge of the Kotlin `DiffusionEngine` on
+Android / JVM Desktop. It links `kggml_diffusion` dynamically, exports only `Java_*` entry points (ELF version script
+`jni/kggml_diffusion_jni.map`) and is audited by `scripts/ci/audit-diffusion-linkage.sh`. iOS calls the C ABI directly
+through Kotlin/Native cinterop. See [`../README.md`](../README.md) for the Kotlin API.
 
 ## Backend selection
 
