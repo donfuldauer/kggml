@@ -46,3 +46,5 @@ when it has been run; a failed check becomes a new issue.
   (Metal / Vulkan / CPU, progress `0..N` in order, a coherent 512x512 image, same seed = same image, cancellation within
   one step and the engine reusable afterwards, `CPU_ONLY` in the iOS background, stable memory across 10 generations) —
   procedure in `kggml-diffusion/README.md` ("Manual verification").
+- [ ] [#17] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC `kggml_diffusion_jni`
+  build + `:kggml-diffusion:jvmTest` against the native libs) — https://github.com/donfuldauer/kggml/pull/51
