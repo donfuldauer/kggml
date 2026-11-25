@@ -68,10 +68,14 @@ class IosNativeWhisperTest {
     }
 
     @Test
-    fun reinitializeTogglesBetweenGpuAndCpu() = runBlocking {
-        WhisperEngine(modelPath, BackendConfig(backend = ComputeBackend.GPU_METAL)).use { engine ->
-            engine.reinitialize(BackendConfig.CPU)
+    fun reinitializeFreesAndReloadsTheNativeContext() = runBlocking {
+        // CPU -> CPU: the hosted iOS simulator cannot allocate Metal buffers (upstream whisper.cpp crashes in
+        // model load when that fails), so the GPU <-> CPU toggle policy is covered by the commonTest fakes and the
+        // native free + reload path is exercised here on the CPU.
+        WhisperEngine(modelPath, BackendConfig.CPU).use { engine ->
+            assertEquals(ComputeBackend.CPU_ONLY, engine.reinitialize(BackendConfig.CPU.copy(cpuThreads = 1)))
             assertFalse(engine.usesGpu)
+            assertEquals(1, engine.backendConfig.cpuThreads)
             assertEquals(ComputeBackend.CPU_ONLY, engine.transcribe(noise(16_000)).backend)
         }
     }
