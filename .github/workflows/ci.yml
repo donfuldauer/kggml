@@ -1,24 +1,37 @@
 name: CI (Phase 1 cross-platform matrix)
 
-# Phase 1 matrix (issue #6): every PR and push to main builds and tests the SDK and both samples on
-# Ubuntu and Windows. The macOS job is billed at 10x Linux minutes, so (per AGENTS.md "CI Minutes Policy")
-# it runs only on PRs labelled `ci:macos` (adding the label starts it at once) or on a manual dispatch.
-#   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + CTest, `./gradlew check` (commonTest, jvmTest, androidUnitTest,
-#              BOM checks, sample audits) with native-backed tests mandatory, Android NDK cross-compile,
+# Phase 1 matrix (issue #6). Billed minutes are limited on this private repository (see AGENTS.md
+# "CI Minutes Policy"), so only the 1x-billed Ubuntu job runs on every ready PR push:
+#   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + CTest + ggml pin + host linkage audits,
+#              `./gradlew check` (commonTest, jvmTest, androidUnitTest, BOM checks, sample audits) with
+#              native-backed tests mandatory, Android NDK cross-compile + linkage audits,
 #              whisper-only-minimal release APK binary symbol audit, Android APKs + desktop jar for both samples.
-#   - macOS:   macOS arm64 native runtime (Metal + Accelerate) + whisper + CTest, JVM tests against it,
-#              GgmlRuntime.xcframework + KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML), iosSimulatorArm64Test, sample iOS frameworks
-#              + whisper-only-minimal iOS binary symbol audit.
-#   - Windows: Windows x64 native runtime + whisper (MSVC) + CTest, JVM tests against it.
-# Deeper per-binary linkage audits live in runtime-native.yml; parity + gitleaks live in repo-hygiene.yml.
+#              (This job also covers everything runtime-native.yml used to run per PR, so that workflow is
+#              now manual-dispatch only and the same work is not billed twice.)
+#   - macOS (10x billed):  only on PRs labelled `ci:macos` or a manual dispatch. macOS arm64 native runtime
+#              (Metal + Accelerate) + whisper + CTest, JVM tests, GgmlRuntime/KggmlWhisper.xcframework
+#              (CoreML), iosSimulatorArm64Test, sample iOS frameworks + whisper-only-minimal iOS symbol audit.
+#   - Windows (2x billed): only on PRs labelled `ci:windows` or a manual dispatch. Windows x64 native
+#              runtime + whisper (MSVC) + CTest, JVM tests against it.
+# Not run: draft PRs, docs/agent-instruction-only PRs (paths-ignore below), and pushes to main (PRs
+# merge with a merge commit after this workflow passed on the PR head, so a main run repeats it).
+# Every Ubuntu step is reproducible locally with `./scripts/ci-local.sh --full`, the fallback gate
+# when the Actions quota is exhausted.
 
 on:
-  push:
-    branches: ["main"]
   pull_request:
-    # `labeled` lets adding `ci:macos` start the macOS job without a new push; the Ubuntu and
-    # Windows jobs skip `labeled` events because the PR's head already ran them.
-    types: [opened, synchronize, reopened, labeled]
+    # `labeled` lets adding `ci:macos` / `ci:windows` start that job without a new push; the Ubuntu job
+    # skips `labeled` events because the PR's head already ran it.
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".agents/**"
+      - ".claude/**"
+      - ".gemini/**"
+      - ".antigravity/**"
+      - ".codex/**"
+      - "LICENSE"
   workflow_dispatch:
 
 permissions:
@@ -28,8 +41,7 @@ concurrency:
   # A `labeled` run gets its own throwaway group so adding a label never cancels the head's build
   # (and is never cancelled by it).
   group: ci-${{ github.ref }}-${{ github.event.action == 'labeled' && github.run_id || 'build' }}
-  # Cancel superseded PR runs, but let every push to main finish.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 env:
   GRADLE_OPTS: -Dorg.gradle.daemon=false
@@ -41,9 +53,13 @@ env:
 jobs:
   linux:
     name: Ubuntu (Linux JVM, Android, CTest)
-    if: github.event.action != 'labeled'
+    # Draft PRs start no runner (skipped jobs are not billed); marking the PR ready runs it.
+    if: github.event.action != 'labeled' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - name: Checkout repository (with ggml submodule)
         uses: actions/checkout@v4
@@ -52,6 +68,11 @@ jobs:
 
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ci-linux
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -62,8 +83,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Native runtime (linux-x64) build + CTest
-        run: ./kggml-runtime/native/scripts/build-host.sh
+      - name: Native runtime (linux-x64) build + CTest + ggml pin + dynamic linkage audit
+        run: |
+          ./scripts/ci/verify-ggml-pin.sh
+          ./kggml-runtime/native/scripts/build-host.sh
+          ./scripts/ci/audit-host-linkage.sh
 
       - name: Native whisper (linux-x64) build + CTest + dynamic ggml linkage audit
         run: |
@@ -78,6 +102,7 @@ jobs:
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
           ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
+          ./scripts/ci/audit-android-linkage.sh arm64-v8a x86_64
           ./kggml-whisper/native/scripts/build-android.sh arm64-v8a x86_64
           ./scripts/ci/audit-whisper-linkage.sh android arm64-v8a x86_64
 
@@ -133,8 +158,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Native runtime (macos-arm64, Metal + Accelerate) build + CTest
-        run: ./kggml-runtime/native/scripts/build-host.sh
+      - name: Native runtime (macos-arm64, Metal + Accelerate) build + CTest + ggml pin + dynamic linkage audit
+        run: |
+          ./scripts/ci/verify-ggml-pin.sh
+          ./kggml-runtime/native/scripts/build-host.sh
+          ./scripts/ci/audit-host-linkage.sh
 
       - name: Native whisper (macos-arm64) build + CTest + dynamic ggml linkage audit
         run: |
@@ -193,7 +221,13 @@ jobs:
 
   windows:
     name: Windows (Windows x64 native, JVM, CTest)
-    if: github.event.action != 'labeled'
+    # Windows minutes are billed at 2x, so this runs only on `ci:windows`-labelled PRs or a manual
+    # dispatch, mirroring the macOS gate above.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.labels.*.name, 'ci:windows') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'ci:windows'))
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:

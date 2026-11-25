@@ -1,15 +1,12 @@
 name: Runtime Native (macOS)
 
-# Hosted macOS minutes are billed at 10x on private repositories, so this job never runs on every
-# PR push. It runs only when:
-#   - a PR carries the `ci:macos` label (required on phase-final PRs and on PRs that change
-#     macOS/iOS-specific native code, Metal, CoreML, cinterop or xcframework packaging);
+# Hosted macOS minutes are billed at 10x on private repositories. A `ci:macos`-labelled PR runs the
+# macOS job in ci.yml (which includes this workflow's pin check, host build + CTest, linkage audit and
+# jvmTest), so this workflow no longer runs on PRs. It runs only when:
 #   - it is dispatched manually (Actions tab -> Run workflow, any branch);
 #   - the weekly schedule fires AND main changed runtime paths in the past 7 days.
 
 on:
-  pull_request:
-    types: [labeled, synchronize, reopened, ready_for_review]
   schedule:
     - cron: "17 6 * * 1" # Mondays 06:17 UTC
   workflow_dispatch:
@@ -18,16 +15,12 @@ permissions:
   contents: read
 
 concurrency:
-  # Adding an unrelated label must not cancel an in-progress macOS run, so such events get their
-  # own throwaway group; everything else on the same ref supersedes the previous run.
-  group: runtime-native-macos-${{ github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'ci:macos') && github.run_id || 'build' }}
+  group: runtime-native-macos-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   gate:
     name: Decide whether macOS should run
-    # Skipped jobs are not billed: unlabelled PR pushes stop here without starting any runner.
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci:macos')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -43,30 +36,17 @@ jobs:
         id: decide
         env:
           EVENT: ${{ github.event_name }}
-          ACTION: ${{ github.event.action }}
-          LABEL: ${{ github.event.label.name }}
-          HAS_LABEL: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'ci:macos') }}
-          DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
         run: |
           run=false
           case "${EVENT}" in
             workflow_dispatch) run=true ;;
-            pull_request)
-              if [[ "${DRAFT}" == "true" || "${HAS_LABEL}" != "true" ]]; then
-                run=false
-              elif [[ "${ACTION}" == "labeled" ]]; then
-                # Only the ci:macos label itself starts a run, not unrelated labels on a labelled PR.
-                [[ "${LABEL}" == "ci:macos" ]] && run=true
-              else
-                run=true
-              fi ;;
             schedule)
               changes="$(git log --since='7 days ago' --format=%H -- \
                 kggml-runtime kggml-core-api/src/commonMain build-logic gradle gradle.properties \
                 .gitmodules NOTICE scripts/ci .github/workflows/runtime-native-macos.yml)"
               [[ -n "${changes}" ]] && run=true ;;
           esac
-          echo "event=${EVENT} action=${ACTION} label=${LABEL} has_label=${HAS_LABEL} draft=${DRAFT} -> run=${run}"
+          echo "event=${EVENT} -> run=${run}"
           echo "run=${run}" >> "${GITHUB_OUTPUT}"
 
   host:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Audits unversioned sonames and dynamic ggml linkage of the Android cross-compiled libraries.
 # Expects ./kggml-runtime/native/scripts/build-android.sh to have produced build/native-android-<abi>/lib.
-# Shared by CI (.github/workflows/runtime-native.yml) and ./scripts/ci-local.sh.
+# Shared by CI (.github/workflows/ci.yml Ubuntu job, runtime-native.yml) and ./scripts/ci-local.sh.
 #
 # Usage: scripts/ci/audit-android-linkage.sh [abi ...]   (default: arm64-v8a x86_64)
 set -euo pipefail

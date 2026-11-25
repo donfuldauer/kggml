@@ -17,7 +17,7 @@ Execute a Kggml GitHub issue from selection through implementation, verification
 Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, deleting the branch, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
 
 Stop and report to the user instead of merging **only** when:
-- a required CI check (or, on a `ci:macos`-labelled PR, the macOS check) is failing and cannot be fixed within the issue's scope;
+- a required CI check (or, on a `ci:macos`/`ci:windows`-labelled PR, that check) is failing and cannot be fixed within the issue's scope (checks that never started because the Actions quota is exhausted are not failures: use the local gate in AGENTS.md "When the Actions quota is exhausted");
 - the PR has a merge conflict that cannot be resolved cleanly;
 - a phase-final PR lacks `APPROVED` from `phase-reviewer`; or
 - a human reviewer has requested changes that are still unresolved.
@@ -103,10 +103,11 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
      --title "<concise PR title> (#<N>)" \
      --body "Closes #<N>\n\n## Summary\n...\n\n## Verification\n..."
    ```
-3. **Request the macOS run only when needed (AGENTS.md "CI Minutes Policy"):**
-   Add the `ci:macos` label if the PR is phase-final (see Step 4) or changes macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Otherwise leave it off.
+3. **Request the macOS / Windows runs only when needed (AGENTS.md "CI Minutes Policy"):**
+   Add the `ci:macos` label if the PR is phase-final (see Step 4) or changes macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Add `ci:windows` if the PR is phase-final or changes Windows-specific code (MSVC flags, `windows-x64` presets, `_WIN32` `#ifdef`s). Otherwise leave them off.
    ```bash
    gh pr edit <PR_NUMBER> --add-label "ci:macos"
+   gh pr edit <PR_NUMBER> --add-label "ci:windows"
    ```
 4. **Enable auto-fix on the PR immediately (mandatory, do not ask first):**
    As soon as the PR exists, subscribe to its activity so CI failures, review comments, and review requests are delivered back to the agent and fixed autonomously on `feat/issue-<N>-<slug>`.
@@ -131,7 +132,7 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 - **Mid-phase PR (other issues in the phase remain open):** Proceed directly to Step 5 once CI checks pass. Do **not** invoke `phase-reviewer`.
 - **Phase-final PR (only `#N` remains open in the phase):**
-  1. Make sure the PR has the `ci:macos` label so the macOS job runs, then invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against Section 5 Exit Criteria.
+  1. Make sure the PR has the `ci:macos` and `ci:windows` labels so the macOS and Windows jobs run, then invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against Section 5 Exit Criteria.
   2. Fix any blocking findings, push updates, re-run verification, and obtain `APPROVED` from `phase-reviewer` before merging.
 
 ---
@@ -140,10 +141,11 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it to finish (auto-fix events or `gh pr checks <PR_NUMBER> --watch`); do not end the workflow with an open, green PR. Manual/physical checks recorded in `docs/MANUAL_VERIFICATION.md` are not merge gates.
 
-1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes).** If the PR has the `ci:macos` label, the `Host build + CTest (macos-latest)` check must also be green:
+1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes).** If the PR has the `ci:macos` / `ci:windows` label, the `ci.yml` macOS / Windows check must also be green:
    ```bash
    gh pr checks <PR_NUMBER>
    ```
+   If checks never started because the Actions quota is exhausted (queued indefinitely, or failed instantly with a billing / spending-limit annotation and no logs), do not wait or re-push: follow AGENTS.md "When the Actions quota is exhausted" (`./scripts/ci-local.sh --full`, summary in the PR body, deferred macOS/Windows re-runs in `docs/MANUAL_VERIFICATION.md`) and merge on that local gate.
 2. **Merge with a merge commit and delete branch** (squash merges are disabled on the repository):
    ```bash
    gh pr merge <PR_NUMBER> --merge --delete-branch
