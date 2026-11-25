@@ -6,7 +6,7 @@
   recorded in `NOTICE`). Only `src/whisper.cpp` (plus `src/coreml/*` on iOS) is compiled. The vendored `ggml/`
   directory and whisper.cpp's own `CMakeLists.txt` are never used.
 - The Kggml C ABI in [`include/kggml_whisper.h`](include/kggml_whisper.h): backend toggle, CoreML gate, abort
-  plumbing, PCM conversion, and FFI error mapping.
+  plumbing, PCM conversion, streaming states, and FFI error mapping.
 
 ggml is **not** built here. The library links the shared ggml of `:kggml-runtime` dynamically through the
 runtime's CMake package (`find_package(kggml-runtime CONFIG)` → `kggml::runtime`, `kggml::ggml`):
@@ -76,6 +76,35 @@ load the `.mlmodelc`, so the upstream loader is compiled under a different name 
 - Input shorter than 1000 ms is zero-padded to 16000 samples before `whisper_full_with_state()`. Longer input is
   passed through without a copy.
 
+## Streaming states
+
+Live transcription (`WhisperEngine.transcribeStream`) does not use the context's built-in `whisper_state`. Each
+stream owns its own:
+
+| Function | Wraps | Notes |
+| --- | --- | --- |
+| `kggml_whisper_state_create(ctx, &state)` | `whisper_init_state` | Same backend / CoreML choice as the context. Free before the context. |
+| `kggml_whisper_state_free(state)` | `whisper_free_state` | `NULL` is a no-op. |
+| `kggml_whisper_transcribe_with_state(ctx, state, pcm, n, params, prompt_tokens, n_prompt, callback, user_data)` | `whisper_full_with_state` | Same 1000 ms padding and abort flag as `kggml_whisper_transcribe()`. Sets `prompt_tokens` / `prompt_n_tokens` and `new_segment_callback`. |
+| `kggml_whisper_state_segment_count` / `_get_segment` | `whisper_full_*_from_state` | Results of the state's last successful run. |
+| `kggml_whisper_state_get_segment_tokens` | `whisper_full_get_token_id_from_state` | Text tokens only (`id < whisper_token_eot`). Uses the `BUFFER_TOO_SMALL` size query. |
+| `kggml_whisper_max_prompt_tokens(ctx)` | `n_text_ctx / 2 - 1` | How many prompt tokens whisper.cpp actually uses (223 for released models). |
+
+- `prompt_tokens` must be vocabulary ids (`0 <= id < n_vocab`); anything else returns `INVALID_ARGUMENT` before
+  whisper.cpp can index with it. With `no_context = 1` (what the Kotlin stream passes) they are the decoder's
+  only history, so carry-over is explicit and deterministic. Upstream ignores `initial_prompt` when
+  `prompt_tokens` is set.
+- The `new_segment_callback` (`int32_t (*)(state, first_index, n_new, user_data)`) runs synchronously on the thread
+  inside `kggml_whisper_transcribe_with_state()`. The new segments can be read from inside the callback. A
+  non-`OK` return value stops decoding at the next abort poll and becomes the call's status (an abort request
+  wins and gives `CANCELLED`). Segments of a stopped, cancelled, or failed run are discarded.
+- The JNI bridge calls `WhisperSegmentListener.onNewSegments(int, int)` from that callback. Because JNI calls are
+  illegal while a `GetPrimitiveArrayCritical` region is open, this path copies the PCM once with
+  `GetFloatArrayRegion` and pins nothing. A Java exception thrown by the listener is cleared and returned as
+  `NATIVE_FAILURE`. Without a listener, the PCM is pinned zero-copy as usual. On iOS the callback is a
+  `staticCFunction`, and the listener travels as a `StableRef` that is disposed on every path.
+  `consumer-rules.pro` keeps the callback method and the JNI natives from being renamed by R8.
+
 ## Kotlin bindings (`WhisperEngine`)
 
 - **Android / JVM Desktop:** `jni/kggml_whisper_jni.cpp` builds `libkggml_whisper_jni` (`KGGML_WHISPER_BUILD_JNI`,
@@ -106,7 +135,7 @@ with 1–8 channels (averaged to mono) at 1–384 kHz:
 
 ## Tests
 
-`tests/` is a GoogleTest suite run by CTest (70 tests). It needs no model download: `tests/tiny_model.cpp` writes a
+`tests/` is a GoogleTest suite run by CTest (82 tests). It needs no model download: `tests/tiny_model.cpp` writes a
 structurally valid 1-layer whisper model with deterministic random weights at test time, so the real whisper.cpp
 encoder and decoder run. The suite covers:
 
@@ -114,5 +143,9 @@ encoder and decoder run. The suite covers:
 - Int16 normalization and downmixing;
 - the `use_gpu` mapping and backend availability;
 - abort before and during inference, including abort from another thread;
+- streaming states: create / free balance, short-buffer padding through `whisper_full_with_state`, the
+  `new_segment_callback` (ordering, readability from inside the callback, stop-by-status), `prompt_tokens`
+  validation and carry-over (checked against what reached `whisper_full_params`), multi-window input, and
+  isolation from the context's own results;
 - exception-to-status mapping through test-only fault injection (`KGGML_WHISPER_TEST_HOOKS`, never in release
   builds).

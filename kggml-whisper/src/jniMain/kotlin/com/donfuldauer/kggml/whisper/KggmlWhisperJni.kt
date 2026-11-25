@@ -67,6 +67,77 @@ internal object KggmlWhisperJni {
         text: Array<ByteArray?>,
     ): Int
 
+    @JvmStatic external fun nativeStateCreate(handle: Long, outHandle: LongArray): Int
+
+    @JvmStatic external fun nativeStateFree(state: Long)
+
+    @JvmStatic external fun nativeMaxPromptTokens(handle: Long, out: IntArray): Int
+
+    /**
+     * `ints` as for [nativeTranscribe]. [listener] (a [WhisperSegmentListener], may be null) is called back on this
+     * thread through `onNewSegments(II)I`.
+     */
+    @JvmStatic external fun nativeTranscribeWithState(
+        handle: Long,
+        state: Long,
+        samples: FloatArray,
+        count: Int,
+        language: String?,
+        initialPrompt: String?,
+        ints: IntArray,
+        temperature: Float,
+        temperatureInc: Float,
+        promptTokens: IntArray,
+        promptCount: Int,
+        listener: Any?,
+    ): Int
+
+    @JvmStatic external fun nativeStateSegmentCount(state: Long, out: IntArray): Int
+
+    /** Same out-arrays as [nativeGetSegment]. */
+    @JvmStatic external fun nativeStateGetSegment(
+        state: Long,
+        index: Int,
+        times: LongArray,
+        probs: FloatArray,
+        text: Array<ByteArray?>,
+    ): Int
+
+    /** `out[0]` receives the text token ids of the segment. */
+    @JvmStatic external fun nativeStateSegmentTokens(state: Long, index: Int, out: Array<IntArray?>): Int
+
+    @JvmStatic external fun nativeResamplerCreate(
+        inRate: Int,
+        channels: Int,
+        format: Int,
+        quality: Int,
+        outHandle: LongArray,
+    ): Int
+
+    @JvmStatic external fun nativeResamplerFree(handle: Long)
+
+    @JvmStatic external fun nativeResamplerMaxOutput(handle: Long, frames: Long): Long
+
+    @JvmStatic external fun nativeResamplerProcessF32(
+        handle: Long,
+        input: FloatArray,
+        frames: Int,
+        channels: Int,
+        output: FloatArray,
+        outFrames: IntArray,
+    ): Int
+
+    @JvmStatic external fun nativeResamplerProcessS16(
+        handle: Long,
+        input: ShortArray,
+        frames: Int,
+        channels: Int,
+        output: FloatArray,
+        outFrames: IntArray,
+    ): Int
+
+    @JvmStatic external fun nativeResamplerFlush(handle: Long, output: FloatArray, outFrames: IntArray): Int
+
     @JvmStatic external fun nativeResampledLength(frames: Long, sampleRate: Int): Long
 
     @JvmStatic external fun nativePcmF32ToWhisper(
@@ -97,4 +168,10 @@ internal object KggmlWhisperJni {
 
     /** Test hook: abort-callback polls during the last transcription, or -1 when unavailable. */
     @JvmStatic external fun nativeTestAbortPollCount(handle: Long): Long
+
+    /** Test hook: live native streaming states in this process, or -1 when unavailable. */
+    @JvmStatic external fun nativeTestLiveStateCount(): Long
+
+    /** Test hook: prompt tokens the last decode on [state] handed to whisper.cpp, or null when unavailable. */
+    @JvmStatic external fun nativeTestStateLastPrompt(state: Long): IntArray?
 }

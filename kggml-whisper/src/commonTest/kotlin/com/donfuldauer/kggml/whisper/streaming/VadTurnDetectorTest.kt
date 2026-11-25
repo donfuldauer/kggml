@@ -52,6 +52,39 @@ class VadTurnDetectorTest {
     }
 
     @Test
+    fun activeTurnIsExposedForPartialsWithoutChangingState() {
+        val h = Harness(small)
+        assertEquals(0, h.vad.activeTurnSamples)
+        assertEquals(-1L, h.vad.activeTurnStartSample)
+        assertEquals(0, h.vad.copyActiveTurn(FloatArray(0)))
+
+        h.feed(silence(100))
+        val voiced = speech(200)
+        h.feed(voiced)
+        assertEquals(VadState.SPEECH, h.vad.state)
+        val active = h.vad.activeTurnSamples
+        // pre-roll (2 frames) + all 20 voiced frames, starting 2 frames before the speech onset at 100 ms.
+        assertEquals(320 + 3_200, active)
+        assertEquals(1_600L - 320, h.vad.activeTurnStartSample)
+
+        val copy = FloatArray(active + 5)
+        assertEquals(active, h.vad.copyActiveTurn(copy, offset = 5))
+        assertContentEquals(voiced, copy.copyOfRange(5 + 320, 5 + active))
+        assertFailsWith<IndexOutOfBoundsException> { h.vad.copyActiveTurn(FloatArray(active - 1)) }
+        assertEquals(VadState.SPEECH, h.vad.state, "copying must not change the detector")
+        assertTrue(h.turns.isEmpty())
+
+        h.feed(silence(20)) // trailing pause: still part of the active turn
+        assertEquals(VadState.TRAILING_PAUSE, h.vad.state)
+        assertEquals(active + 320, h.vad.activeTurnSamples)
+
+        h.feed(silence(100)) // commits
+        assertEquals(1, h.turns.size)
+        assertEquals(0, h.vad.activeTurnSamples)
+        assertEquals(-1L, h.vad.activeTurnStartSample)
+    }
+
+    @Test
     fun blipShorterThanMinSpeechIsIgnored() {
         val h = Harness(small)
         h.feed(silence(100))

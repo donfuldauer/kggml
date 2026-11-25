@@ -12,6 +12,7 @@
 
 #include "whisper.h"
 
+#include <algorithm>
 #include <atomic>
 #include <climits>
 #include <cstdio>
@@ -56,6 +57,41 @@ struct kggml_whisper_context {
         if (holds_runtime_ref) {
             kggml_runtime_shutdown();
         }
+    }
+};
+
+#if defined(KGGML_WHISPER_TEST_HOOKS)
+namespace {
+std::atomic<int64_t> g_live_states{0};
+} // namespace
+#endif
+
+struct kggml_whisper_state {
+    const kggml_whisper_context * owner = nullptr; // identity check only, never dereferenced
+    whisper_state * state = nullptr;
+    whisper_token eot = 0;  // first non-text token id of the owner's vocabulary
+    int32_t n_vocab = 0;
+    int32_t n_segments = 0; // segments visible through the accessors
+    std::vector<float> pad_scratch;
+#if defined(KGGML_WHISPER_TEST_HOOKS)
+    std::vector<int32_t> last_prompt;
+#endif
+
+    kggml_whisper_state() {
+#if defined(KGGML_WHISPER_TEST_HOOKS)
+        g_live_states.fetch_add(1, std::memory_order_relaxed);
+#endif
+    }
+    kggml_whisper_state(const kggml_whisper_state &) = delete;
+    kggml_whisper_state & operator=(const kggml_whisper_state &) = delete;
+
+    ~kggml_whisper_state() {
+        if (state != nullptr) {
+            whisper_free_state(state);
+        }
+#if defined(KGGML_WHISPER_TEST_HOOKS)
+        g_live_states.fetch_sub(1, std::memory_order_relaxed);
+#endif
     }
 };
 
@@ -147,6 +183,140 @@ kggml_whisper_transcribe_params default_transcribe_params() {
     p.temperature = 0.0f;
     p.temperature_inc = 0.2f;
     return p;
+}
+
+kggml_status check_samples(const float * samples, size_t n_samples) {
+    if (samples == nullptr && n_samples > 0) {
+        return fail(KGGML_STATUS_INVALID_ARGUMENT, "samples is NULL");
+    }
+    if (n_samples > static_cast<size_t>(INT_MAX)) {
+        return fail(KGGML_STATUS_INVALID_ARGUMENT, "too many samples (max INT_MAX)");
+    }
+    return KGGML_STATUS_OK;
+}
+
+/// Validates `params` (NULL = defaults) and fills `wparams` with everything except the callbacks. The language
+/// pointer stored in `wparams` is either a static string or params->language, so it lives for the whole call.
+kggml_status make_full_params(const kggml_whisper_context * context, const kggml_whisper_transcribe_params * params,
+                              whisper_full_params & wparams) {
+    const kggml_whisper_transcribe_params p = params != nullptr ? *params : default_transcribe_params();
+    if (p.n_threads < 0 || p.max_tokens < 0 || p.temperature < 0.0f || p.temperature_inc < 0.0f) {
+        return fail(KGGML_STATUS_INVALID_ARGUMENT,
+                    "n_threads, max_tokens, temperature and temperature_inc must be >= 0");
+    }
+
+    const char * language = p.language;
+    if (language == nullptr || language[0] == '\0') {
+        language = whisper_is_multilingual(context->ctx) != 0 ? "auto" : "en";
+    }
+    if (std::string(language) != "auto" && whisper_lang_id(language) < 0) {
+        return fail(KGGML_STATUS_INVALID_ARGUMENT, (std::string("unknown language '") + language + "'").c_str());
+    }
+
+    int32_t n_threads = p.n_threads;
+    if (n_threads == 0 && kggml_runtime_performance_thread_count(&n_threads) != KGGML_STATUS_OK) {
+        n_threads = 4;
+    }
+
+    wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    wparams.n_threads = n_threads;
+    wparams.language = language;
+    wparams.detect_language = false;
+    wparams.translate = p.translate != 0;
+    wparams.no_context = p.no_context != 0;
+    wparams.single_segment = p.single_segment != 0;
+    wparams.no_timestamps = p.no_timestamps != 0;
+    wparams.max_tokens = p.max_tokens;
+    wparams.temperature = p.temperature;
+    wparams.temperature_inc = p.temperature_inc;
+    wparams.initial_prompt = p.initial_prompt;
+    wparams.print_progress = false;
+    wparams.print_realtime = false;
+    wparams.print_special = false;
+    wparams.print_timestamps = false;
+    return KGGML_STATUS_OK;
+}
+
+/// Per-call bookkeeping of kggml_whisper_transcribe_with_state(): routes whisper.cpp's callbacks to the
+/// context's abort flag and to the caller's new-segment callback.
+struct StreamCall {
+    kggml_whisper_context * context;
+    kggml_whisper_state * state;
+    kggml_whisper_new_segment_callback callback;
+    void * user_data;
+    // Written on the calling thread, read by abort polls that may run on ggml worker threads.
+    std::atomic<int32_t> callback_status{KGGML_STATUS_OK};
+};
+
+bool stream_abort_callback(void * user_data) {
+    auto * call = static_cast<StreamCall *>(user_data);
+    const bool aborted = abort_callback(call->context); // counts the poll, honours test countdowns
+    return aborted || call->callback_status.load(std::memory_order_acquire) != KGGML_STATUS_OK;
+}
+
+bool stream_encoder_begin_callback(whisper_context *, whisper_state *, void * user_data) {
+    return !stream_abort_callback(user_data);
+}
+
+/// whisper_full_params.new_segment_callback: runs on the thread inside whisper_full_with_state().
+void stream_new_segment_callback(whisper_context *, whisper_state * st, int n_new, void * user_data) {
+    auto * call = static_cast<StreamCall *>(user_data);
+    if (call->callback == nullptr || n_new <= 0 ||
+        call->callback_status.load(std::memory_order_acquire) != KGGML_STATUS_OK) {
+        return;
+    }
+    const int total = whisper_full_n_segments_from_state(st);
+    const int first = total > n_new ? total - n_new : 0;
+    call->state->n_segments = total; // make the new segments readable from inside the callback
+    int32_t status = KGGML_STATUS_UNKNOWN;
+    try {
+        status = call->callback(call->state, first, total - first, call->user_data);
+    } catch (...) {
+        status = KGGML_STATUS_UNKNOWN; // a C callback must not throw; never let it unwind through whisper.cpp
+    }
+    if (status != KGGML_STATUS_OK) {
+        call->callback_status.store(status, std::memory_order_release);
+    }
+}
+
+kggml_status check_state(const kggml_whisper_state * state) {
+    if (state == nullptr || state->state == nullptr) {
+        return fail(KGGML_STATUS_INVALID_ARGUMENT, "state is NULL");
+    }
+    return KGGML_STATUS_OK;
+}
+
+kggml_status check_segment_index(int32_t index, int32_t count) {
+    if (index < 0 || index >= count) {
+        return fail(KGGML_STATUS_INVALID_ARGUMENT,
+                    ("segment index " + std::to_string(index) + " out of range [0, " + std::to_string(count) + ")")
+                        .c_str());
+    }
+    return KGGML_STATUS_OK;
+}
+
+void read_segment(whisper_state * st, int32_t index, kggml_whisper_segment * out_segment) {
+    out_segment->t0_ms = whisper_full_get_segment_t0_from_state(st, index) * 10; // centiseconds -> ms
+    out_segment->t1_ms = whisper_full_get_segment_t1_from_state(st, index) * 10;
+    out_segment->no_speech_prob = whisper_full_get_segment_no_speech_prob_from_state(st, index);
+    const char * text = whisper_full_get_segment_text_from_state(st, index);
+    out_segment->text = text != nullptr ? text : "";
+}
+
+/// Copies `tokens` into the caller's buffer with the BUFFER_TOO_SMALL size-query protocol.
+kggml_status copy_tokens(const std::vector<int32_t> & tokens, int32_t * out_tokens, int32_t capacity,
+                         int32_t * out_count) {
+    if (out_count == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_count is NULL");
+    if (capacity < 0) return fail(KGGML_STATUS_INVALID_ARGUMENT, "capacity must be >= 0");
+    if (tokens.size() > static_cast<size_t>(INT32_MAX)) return fail(KGGML_STATUS_NATIVE_FAILURE, "too many tokens");
+    const auto n = static_cast<int32_t>(tokens.size());
+    *out_count = n;
+    if (n > capacity || (n > 0 && out_tokens == nullptr)) {
+        return fail(KGGML_STATUS_BUFFER_TOO_SMALL,
+                    ("token buffer too small, need " + std::to_string(n) + " entries").c_str());
+    }
+    std::copy(tokens.begin(), tokens.end(), out_tokens);
+    return KGGML_STATUS_OK;
 }
 
 } // namespace
@@ -369,30 +539,10 @@ KGGML_WHISPER_API kggml_status kggml_whisper_transcribe(kggml_whisper_context * 
     return guarded(__func__, [&] {
         if (const auto s = kggml::whisper::check_context(context); s != KGGML_STATUS_OK) return s;
         context->n_segments = 0;
-        if (samples == nullptr && n_samples > 0) {
-            return fail(KGGML_STATUS_INVALID_ARGUMENT, "samples is NULL");
-        }
-        if (n_samples > static_cast<size_t>(INT_MAX)) {
-            return fail(KGGML_STATUS_INVALID_ARGUMENT, "too many samples (max INT_MAX)");
-        }
-        const kggml_whisper_transcribe_params p =
-            params != nullptr ? *params : kggml::whisper::default_transcribe_params();
-        if (p.n_threads < 0 || p.max_tokens < 0 || p.temperature < 0.0f || p.temperature_inc < 0.0f) {
-            return fail(KGGML_STATUS_INVALID_ARGUMENT,
-                        "n_threads, max_tokens, temperature and temperature_inc must be >= 0");
-        }
-
-        const char * language = p.language;
-        if (language == nullptr || language[0] == '\0') {
-            language = whisper_is_multilingual(context->ctx) != 0 ? "auto" : "en";
-        }
-        if (std::string(language) != "auto" && whisper_lang_id(language) < 0) {
-            return fail(KGGML_STATUS_INVALID_ARGUMENT, (std::string("unknown language '") + language + "'").c_str());
-        }
-
-        int32_t n_threads = p.n_threads;
-        if (n_threads == 0 && kggml_runtime_performance_thread_count(&n_threads) != KGGML_STATUS_OK) {
-            n_threads = 4;
+        if (const auto s = kggml::whisper::check_samples(samples, n_samples); s != KGGML_STATUS_OK) return s;
+        whisper_full_params wparams{};
+        if (const auto s = kggml::whisper::make_full_params(context, params, wparams); s != KGGML_STATUS_OK) {
+            return s;
         }
 
         context->abort_polls.store(0, std::memory_order_relaxed);
@@ -400,22 +550,6 @@ KGGML_WHISPER_API kggml_status kggml_whisper_transcribe(kggml_whisper_context * 
             return fail(KGGML_STATUS_CANCELLED, "transcription cancelled before it started");
         }
 
-        whisper_full_params wparams = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-        wparams.n_threads = n_threads;
-        wparams.language = language;
-        wparams.detect_language = false;
-        wparams.translate = p.translate != 0;
-        wparams.no_context = p.no_context != 0;
-        wparams.single_segment = p.single_segment != 0;
-        wparams.no_timestamps = p.no_timestamps != 0;
-        wparams.max_tokens = p.max_tokens;
-        wparams.temperature = p.temperature;
-        wparams.temperature_inc = p.temperature_inc;
-        wparams.initial_prompt = p.initial_prompt;
-        wparams.print_progress = false;
-        wparams.print_realtime = false;
-        wparams.print_special = false;
-        wparams.print_timestamps = false;
         wparams.abort_callback = kggml::whisper::abort_callback;
         wparams.abort_callback_user_data = context;
         wparams.encoder_begin_callback = kggml::whisper::encoder_begin_callback;
@@ -454,19 +588,177 @@ KGGML_WHISPER_API kggml_status kggml_whisper_get_segment(const kggml_whisper_con
     return guarded(__func__, [&] {
         if (const auto s = kggml::whisper::check_context(context); s != KGGML_STATUS_OK) return s;
         if (out_segment == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_segment is NULL");
-        if (index < 0 || index >= context->n_segments) {
-            return fail(KGGML_STATUS_INVALID_ARGUMENT,
-                        ("segment index " + std::to_string(index) + " out of range [0, " +
-                         std::to_string(context->n_segments) + ")")
+        if (const auto s = kggml::whisper::check_segment_index(index, context->n_segments); s != KGGML_STATUS_OK) {
+            return s;
+        }
+        kggml::whisper::read_segment(context->state, index, out_segment);
+        return KGGML_STATUS_OK;
+    });
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Streaming states
+// ---------------------------------------------------------------------------------------------------------
+
+KGGML_WHISPER_API kggml_status kggml_whisper_state_create(kggml_whisper_context * context,
+                                                         kggml_whisper_state ** out_state) {
+    return guarded(__func__, [&] {
+        if (out_state == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_state is NULL");
+        *out_state = nullptr;
+        if (const auto s = kggml::whisper::check_context(context); s != KGGML_STATUS_OK) return s;
+
+        auto state = std::make_unique<kggml_whisper_state>();
+        state->owner = context;
+        state->eot = whisper_token_eot(context->ctx);
+        state->n_vocab = whisper_n_vocab(context->ctx);
+        {
+            // Same encoder choice as the context: CoreML only when the context actually loaded it.
+            kggml::whisper::coreml::Scope gate(context->backend == KGGML_BACKEND_COREML);
+            state->state = whisper_init_state(context->ctx);
+        }
+        if (state->state == nullptr) {
+            return fail(KGGML_STATUS_OUT_OF_MEMORY,
+                        "whisper_init_state failed (compute backend or KV cache allocation)");
+        }
+        *out_state = state.release();
+        return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_WHISPER_API void kggml_whisper_state_free(kggml_whisper_state * state) {
+    try {
+        delete state;
+    } catch (...) {
+        // whisper_free_state never throws in practice; never let anything escape.
+    }
+}
+
+KGGML_WHISPER_API kggml_status kggml_whisper_max_prompt_tokens(const kggml_whisper_context * context,
+                                                              int32_t * out_count) {
+    return guarded(__func__, [&] {
+        if (const auto s = kggml::whisper::check_context(context); s != KGGML_STATUS_OK) return s;
+        if (out_count == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_count is NULL");
+        // whisper_full_with_state: max_prompt_ctx = n_text_ctx / 2, one slot of which is the <|prev|> marker.
+        *out_count = std::max(0, whisper_n_text_ctx(context->ctx) / 2 - 1);
+        return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_WHISPER_API kggml_status kggml_whisper_transcribe_with_state(
+    kggml_whisper_context * context, kggml_whisper_state * state, const float * samples, size_t n_samples,
+    const kggml_whisper_transcribe_params * params, const int32_t * prompt_tokens, int32_t n_prompt_tokens,
+    kggml_whisper_new_segment_callback callback, void * user_data) {
+    return guarded(__func__, [&] {
+        if (const auto s = kggml::whisper::check_context(context); s != KGGML_STATUS_OK) return s;
+        if (const auto s = kggml::whisper::check_state(state); s != KGGML_STATUS_OK) return s;
+        if (state->owner != context) {
+            return fail(KGGML_STATUS_INVALID_ARGUMENT, "state was created on a different context");
+        }
+        state->n_segments = 0;
+        if (const auto s = kggml::whisper::check_samples(samples, n_samples); s != KGGML_STATUS_OK) return s;
+        if (n_prompt_tokens < 0 || (n_prompt_tokens > 0 && prompt_tokens == nullptr)) {
+            return fail(KGGML_STATUS_INVALID_ARGUMENT, "prompt_tokens is NULL or n_prompt_tokens < 0");
+        }
+        for (int32_t i = 0; i < n_prompt_tokens; ++i) {
+            if (prompt_tokens[i] < 0 || prompt_tokens[i] >= state->n_vocab) {
+                return fail(KGGML_STATUS_INVALID_ARGUMENT,
+                            ("prompt token " + std::to_string(prompt_tokens[i]) + " at " + std::to_string(i) +
+                             " is not a vocabulary id [0, " + std::to_string(state->n_vocab) + ")")
+                                .c_str());
+            }
+        }
+        whisper_full_params wparams{};
+        if (const auto s = kggml::whisper::make_full_params(context, params, wparams); s != KGGML_STATUS_OK) {
+            return s;
+        }
+
+#if defined(KGGML_WHISPER_TEST_HOOKS)
+        state->last_prompt.assign(prompt_tokens, prompt_tokens + n_prompt_tokens);
+#endif
+        context->abort_polls.store(0, std::memory_order_relaxed);
+        if (context->abort.load(std::memory_order_acquire)) {
+            return fail(KGGML_STATUS_CANCELLED, "transcription cancelled before it started");
+        }
+
+        kggml::whisper::StreamCall call{context, state, callback, user_data};
+        wparams.prompt_tokens = n_prompt_tokens > 0 ? prompt_tokens : nullptr;
+        wparams.prompt_n_tokens = n_prompt_tokens;
+        wparams.abort_callback = kggml::whisper::stream_abort_callback;
+        wparams.abort_callback_user_data = &call;
+        wparams.encoder_begin_callback = kggml::whisper::stream_encoder_begin_callback;
+        wparams.encoder_begin_callback_user_data = &call;
+        wparams.new_segment_callback = kggml::whisper::stream_new_segment_callback;
+        wparams.new_segment_callback_user_data = &call;
+
+        size_t n_feed = 0;
+        const float * feed = kggml::whisper::pad_to_min_length(samples, n_samples, KGGML_WHISPER_MIN_SAMPLES,
+                                                               state->pad_scratch, n_feed);
+
+        const int rc = whisper_full_with_state(context->ctx, state->state, wparams, feed, static_cast<int>(n_feed));
+        state->n_segments = 0;
+
+        if (context->abort.load(std::memory_order_acquire)) {
+            return fail(KGGML_STATUS_CANCELLED, "transcription cancelled");
+        }
+        const int32_t callback_status = call.callback_status.load(std::memory_order_acquire);
+        if (callback_status != KGGML_STATUS_OK) {
+            return fail(static_cast<kggml_status>(callback_status),
+                        ("new_segment_callback stopped the transcription with status " +
+                         std::to_string(callback_status))
                             .c_str());
         }
-        whisper_state * st = context->state;
-        out_segment->t0_ms = whisper_full_get_segment_t0_from_state(st, index) * 10; // centiseconds -> ms
-        out_segment->t1_ms = whisper_full_get_segment_t1_from_state(st, index) * 10;
-        out_segment->no_speech_prob = whisper_full_get_segment_no_speech_prob_from_state(st, index);
-        const char * text = whisper_full_get_segment_text_from_state(st, index);
-        out_segment->text = text != nullptr ? text : "";
+        if (rc != 0) {
+            return fail(KGGML_STATUS_NATIVE_FAILURE,
+                        ("whisper_full_with_state failed with code " + std::to_string(rc)).c_str());
+        }
+        state->n_segments = whisper_full_n_segments_from_state(state->state);
         return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_WHISPER_API kggml_status kggml_whisper_state_segment_count(const kggml_whisper_state * state,
+                                                                int32_t * out_count) {
+    return guarded(__func__, [&] {
+        if (const auto s = kggml::whisper::check_state(state); s != KGGML_STATUS_OK) return s;
+        if (out_count == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_count is NULL");
+        *out_count = state->n_segments;
+        return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_WHISPER_API kggml_status kggml_whisper_state_get_segment(const kggml_whisper_state * state, int32_t index,
+                                                              kggml_whisper_segment * out_segment) {
+    return guarded(__func__, [&] {
+        if (const auto s = kggml::whisper::check_state(state); s != KGGML_STATUS_OK) return s;
+        if (out_segment == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_segment is NULL");
+        if (const auto s = kggml::whisper::check_segment_index(index, state->n_segments); s != KGGML_STATUS_OK) {
+            return s;
+        }
+        kggml::whisper::read_segment(state->state, index, out_segment);
+        return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_WHISPER_API kggml_status kggml_whisper_state_get_segment_tokens(const kggml_whisper_state * state,
+                                                                     int32_t index, int32_t * out_tokens,
+                                                                     int32_t capacity, int32_t * out_count) {
+    return guarded(__func__, [&] {
+        if (const auto s = kggml::whisper::check_state(state); s != KGGML_STATUS_OK) return s;
+        if (out_count == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_count is NULL");
+        *out_count = 0;
+        if (const auto s = kggml::whisper::check_segment_index(index, state->n_segments); s != KGGML_STATUS_OK) {
+            return s;
+        }
+        const int n = whisper_full_n_tokens_from_state(state->state, index);
+        std::vector<int32_t> text_tokens;
+        text_tokens.reserve(static_cast<size_t>(n > 0 ? n : 0));
+        for (int j = 0; j < n; ++j) {
+            const whisper_token id = whisper_full_get_token_id_from_state(state->state, index, j);
+            if (id >= 0 && id < state->eot) {
+                text_tokens.push_back(id); // drop <|endoftext|>, task/language markers and timestamps
+            }
+        }
+        return kggml::whisper::copy_tokens(text_tokens, out_tokens, capacity, out_count);
     });
 }
 
@@ -519,6 +811,19 @@ KGGML_WHISPER_API kggml_status kggml_whisper_test_resolve_use_gpu(const kggml_wh
         *out_use_gpu = r.use_gpu ? 1 : 0;
         *out_coreml_allowed = r.coreml_allowed ? 1 : 0;
         return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_WHISPER_API int64_t kggml_whisper_test_live_state_count(void) {
+    return g_live_states.load(std::memory_order_relaxed);
+}
+
+KGGML_WHISPER_API kggml_status kggml_whisper_test_state_last_prompt(const kggml_whisper_state * state,
+                                                                   int32_t * out_tokens, int32_t capacity,
+                                                                   int32_t * out_count) {
+    return guarded(__func__, [&] {
+        if (const auto s = kggml::whisper::check_state(state); s != KGGML_STATUS_OK) return s;
+        return kggml::whisper::copy_tokens(state->last_prompt, out_tokens, capacity, out_count);
     });
 }
 #endif

@@ -14,7 +14,8 @@
  * Threading: a kggml_whisper_context is NOT thread-safe. Callers serialize init / transcribe / free on one
  * thread (the Kotlin engines use a dedicated single-threaded dispatcher per instance). The only exceptions
  * are kggml_whisper_request_abort() and kggml_whisper_abort_requested(), which are lock-free and may be
- * called from any thread at any time while the context is alive.
+ * called from any thread at any time while the context is alive. Streaming states (kggml_whisper_state) belong
+ * to their context and follow the same rule: serialize them with the context's other calls.
  *
  * Resamplers and the stateless PCM helpers have no shared state: each kggml_whisper_resampler must be
  * used by one thread at a time, different instances are independent.
@@ -269,6 +270,81 @@ KGGML_WHISPER_API kggml_status kggml_whisper_segment_count(const kggml_whisper_c
 /** Segment `index` (0 <= index < count) of the last transcription. */
 KGGML_WHISPER_API kggml_status kggml_whisper_get_segment(const kggml_whisper_context * context, int32_t index,
                                                         kggml_whisper_segment * out_segment);
+
+/* ------------------------------------------------------------------------------------------------------ */
+/* Streaming states (whisper_init_state / whisper_free_state)                                              */
+/* ------------------------------------------------------------------------------------------------------ */
+
+/**
+ * An additional, separately allocated whisper_state (KV caches, compute buffers, decoded results) on a loaded
+ * context. A live audio stream owns one so that its decodes never disturb kggml_whisper_transcribe() results
+ * (which use the context's built-in state) or other streams. States share the context's model weights and
+ * its abort flag. Like the context, a state is not thread-safe: every call on a context and its states is
+ * serialized on one thread.
+ */
+typedef struct kggml_whisper_state kggml_whisper_state;
+
+/**
+ * Creates a state on `context` via whisper_init_state() (same backend / CoreML choice as the context). Free it
+ * with kggml_whisper_state_free() BEFORE kggml_whisper_free() of its context.
+ */
+KGGML_WHISPER_API kggml_status kggml_whisper_state_create(kggml_whisper_context * context,
+                                                         kggml_whisper_state ** out_state);
+
+/** Frees a state via whisper_free_state(). NULL is a no-op. Must not race with any call on the state. */
+KGGML_WHISPER_API void kggml_whisper_state_free(kggml_whisper_state * state);
+
+/**
+ * Maximum number of prompt tokens whisper.cpp conditions a decode on (n_text_ctx / 2 - 1, i.e. 223 for every
+ * released Whisper model). Longer prompt_tokens arrays are accepted; whisper.cpp keeps their newest tokens.
+ */
+KGGML_WHISPER_API kggml_status kggml_whisper_max_prompt_tokens(const kggml_whisper_context * context,
+                                                              int32_t * out_count);
+
+/**
+ * Called synchronously on the thread running kggml_whisper_transcribe_with_state() each time whisper.cpp
+ * finalizes new segments: segments [first_index, first_index + n_new) of `state` are then readable through
+ * kggml_whisper_state_get_segment() / kggml_whisper_state_get_segment_tokens() (from inside the callback).
+ * Return KGGML_STATUS_OK (0) to continue; any other kggml_status stops decoding at the next abort poll and
+ * becomes the result of kggml_whisper_transcribe_with_state() (unless an abort request makes it CANCELLED).
+ * The callback must not call kggml_whisper_transcribe*() or free the context / state.
+ */
+typedef int32_t (*kggml_whisper_new_segment_callback)(kggml_whisper_state * state, int32_t first_index,
+                                                       int32_t n_new, void * user_data);
+
+/**
+ * Like kggml_whisper_transcribe(), but runs whisper_full_with_state() on `state` (which must have been created
+ * on `context`) and additionally:
+ *   - conditions the decoder on `prompt_tokens` (whisper_full_params.prompt_tokens; NULL / 0 = none). Every
+ *     id must be a vocabulary id (0 <= id < n_vocab), normally text tokens carried over from earlier segments
+ *     (kggml_whisper_state_get_segment_tokens()). When prompt tokens are given, params->initial_prompt is
+ *     ignored (upstream semantics). With params->no_context = 1 they are the ONLY decoder history, which makes
+ *     a stream's carry-over explicit and deterministic.
+ *   - invokes `callback` (optional) for every newly finalized segment.
+ * Input shorter than KGGML_WHISPER_MIN_SAMPLES is zero-padded to 1000 ms exactly as in kggml_whisper_transcribe().
+ * Segments of a cancelled or failed run are discarded (count 0).
+ */
+KGGML_WHISPER_API kggml_status kggml_whisper_transcribe_with_state(
+    kggml_whisper_context * context, kggml_whisper_state * state, const float * samples, size_t n_samples,
+    const kggml_whisper_transcribe_params * params, const int32_t * prompt_tokens, int32_t n_prompt_tokens,
+    kggml_whisper_new_segment_callback callback, void * user_data);
+
+/** Number of segments of the last successful kggml_whisper_transcribe_with_state() on `state`. */
+KGGML_WHISPER_API kggml_status kggml_whisper_state_segment_count(const kggml_whisper_state * state,
+                                                                int32_t * out_count);
+
+/** Segment `index` of `state` (text valid until the next transcription on / free of the state). */
+KGGML_WHISPER_API kggml_status kggml_whisper_state_get_segment(const kggml_whisper_state * state, int32_t index,
+                                                              kggml_whisper_segment * out_segment);
+
+/**
+ * Text token ids of segment `index` of `state`, in decode order, excluding special and timestamp tokens
+ * (ids >= whisper_token_eot). These are what a stream carries forward as prompt_tokens. If `capacity` is too
+ * small (or `out_tokens` is NULL), returns KGGML_STATUS_BUFFER_TOO_SMALL with the required count in `out_count`.
+ */
+KGGML_WHISPER_API kggml_status kggml_whisper_state_get_segment_tokens(const kggml_whisper_state * state,
+                                                                     int32_t index, int32_t * out_tokens,
+                                                                     int32_t capacity, int32_t * out_count);
 
 #ifdef __cplusplus
 }
