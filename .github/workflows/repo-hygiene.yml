@@ -45,3 +45,6 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The action downloads to a fixed name in the temp dir and fails if it is already there; runner.temp
+          # is emptied for every job, so this also works on a self-hosted runner.
+          TMPDIR: ${{ runner.temp }}
