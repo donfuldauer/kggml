@@ -1,9 +1,10 @@
 name: Repo Hygiene & Agent Parity
 
+# Cheap Linux checks on every PR. Not re-run on pushes to main: PRs merge with a merge commit after
+# these passed on the PR head.
 on:
-  push:
-    branches: ["main"]
   pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: repo-hygiene-${{ github.ref }}

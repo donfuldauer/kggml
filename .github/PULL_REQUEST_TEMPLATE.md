@@ -18,6 +18,8 @@ Closes #<ISSUE_NUMBER>
 - [ ] `NOTICE` updated if upstream C/C++ dependencies or test fixtures changed
 - [ ] Manual / physical-device checks (if any) documented and listed in `docs/MANUAL_VERIFICATION.md` — deferred to final acceptance, not a merge gate
 - [ ] `ci:macos` label added (phase-final PRs, or changes to macOS/iOS-specific native code)
+- [ ] `ci:windows` label added (phase-final PRs, or changes to Windows-specific code)
+- [ ] Actions quota exhausted: `./scripts/ci-local.sh --full` summary pasted below instead of hosted CI (AGENTS.md "When the Actions quota is exhausted")
 
 ```text
 <ci-local.sh summary>

@@ -3,17 +3,20 @@
 #
 # Mirrors:
 #   .github/workflows/repo-hygiene.yml    -> agent parity, gitleaks
-#   .github/workflows/runtime-native.yml  -> ggml + whisper.cpp pins, host build + CTest (runtime and
+#   .github/workflows/ci.yml (Ubuntu)     -> ggml + whisper.cpp pins, host build + CTest (runtime and
 #                                            whisper), host linkage audits, :kggml-runtime + :kggml-whisper jvmTest,
-#                                            Android cross-compile + audits
-#   .github/workflows/ci.yml (Ubuntu)     -> :samples:whisper-only-minimal check + release APK binary symbol
-#                                            audit (scripts/ci/audit-minimal-sample.sh)
-# The macOS/iOS jobs (.github/workflows/runtime-native-macos.yml) cannot run on a Linux host;
+#                                            Android cross-compile + audits, :samples:whisper-only-minimal check +
+#                                            release APK binary symbol audit; with --full also `./gradlew check`
+#                                            and the sample assemble tasks
+# The macOS/iOS jobs (ci.yml macOS, runtime-native-macos.yml) cannot run on a Linux host;
 # on a macOS host the host build, CTest, linkage audit and jvmTest steps below cover the macOS job.
 #
-# Usage: ./scripts/ci-local.sh [--only <steps>] [--skip <steps>] [--strict] [--clean]
-#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample
-#   --strict   fail instead of skipping when a tool (gitleaks, Android NDK) is missing
+# Usage: ./scripts/ci-local.sh [--only <steps>] [--skip <steps>] [--strict] [--clean] [--full]
+#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample,check
+#   --full     run every step regardless of what changed, including `check` (./gradlew check + sample
+#              assembles, which need an Android SDK). This is the merge gate when GitHub Actions cannot
+#              run (quota exhausted); see AGENTS.md "When the Actions quota is exhausted".
+#   --strict   fail instead of skipping when a tool (gitleaks, Android NDK/SDK) is missing
 #   --clean    pass --clean to the host native build
 #   The Android NDK comes from ANDROID_NDK_HOME / ANDROID_NDK_ROOT, else the newest NDK under
 #   ANDROID_HOME, ANDROID_SDK_ROOT, local.properties sdk.dir, or /opt/android-sdk.
@@ -26,11 +29,12 @@ cd "${REPO_ROOT}"
 # Make sure commit attribution hooks (.githooks/) are active in this clone.
 ./scripts/install-git-hooks.sh
 
-all_steps=(parity gitleaks pin native jvm android sample)
+all_steps=(parity gitleaks pin native jvm android sample check)
 only=""
 skip=""
 strict=0
 clean_flag=()
+full=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,7 +42,8 @@ while [[ $# -gt 0 ]]; do
     --skip) skip="${2:?--skip needs a step list}"; shift ;;
     --strict) strict=1 ;;
     --clean) clean_flag=(--clean) ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    --full) full=1 ;;
+    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -46,9 +51,9 @@ done
 
 in_list() { [[ ",$2," == *",$1,"* ]]; }
 
-# Same path filter as runtime-native.yml.
+# Native-relevant paths (what used to be runtime-native.yml's PR path filter, plus ci.yml).
 native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-core-api/src/commonMain build-logic gradle gradle.properties .gitmodules NOTICE
-  scripts/ci .github/workflows/runtime-native.yml .github/workflows/runtime-native-macos.yml)
+  scripts/ci .github/workflows/ci.yml .github/workflows/runtime-native.yml .github/workflows/runtime-native-macos.yml)
 native_changed() {
   local base
   base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
@@ -73,7 +78,9 @@ selected() {
   local step="$1"
   if [[ -n "${only}" ]]; then in_list "${step}" "${only}"; return; fi
   in_list "${step}" "${skip}" && return 1
+  [[ ${full} -eq 1 ]] && return 0
   case "${step}" in
+    check) return 1 ;;   # full Gradle check only with --full or --only check
     pin|native|jvm|android) native_changed ;;
     sample) sample_changed ;;
     *) return 0 ;;
@@ -97,6 +104,18 @@ find_ndk() {
     [[ -n "${sdk}" && -d "${sdk}/ndk" ]] || continue
     candidate="$(find "${sdk}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
     if is_ndk "${candidate}"; then echo "${candidate}"; return 0; fi
+  done
+  return 1
+}
+
+# Prints the Android SDK root for Gradle, or fails.
+find_sdk() {
+  local sdk sdk_dir=""
+  if [[ -f local.properties ]]; then
+    sdk_dir="$(sed -n 's/^sdk\.dir=//p' local.properties | tail -n 1)"
+  fi
+  for sdk in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "${sdk_dir}" /opt/android-sdk; do
+    if [[ -n "${sdk}" && -d "${sdk}/platforms" ]]; then echo "${sdk}"; return 0; fi
   done
   return 1
 }
@@ -159,6 +178,15 @@ for step in "${all_steps[@]}"; do
       else
         run_step s-audit-t ./scripts/tests/test-audit-binary-symbols.sh
         missing s-audit "Android NDK not found (APK binary symbol audit)"
+      fi ;;
+    check)
+      if sdk="$(find_sdk)"; then
+        export ANDROID_HOME="${sdk}"
+        run_step g-check ./gradlew check --console=plain
+        run_step g-assemble ./gradlew --console=plain :samples:kggml-showcase:assembleDebug \
+          :samples:kggml-showcase:desktopJar :samples:whisper-only-minimal:assembleDebug
+      else
+        missing check "Android SDK not found (./gradlew check needs ANDROID_HOME)"
       fi ;;
   esac
 done

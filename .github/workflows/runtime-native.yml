@@ -1,26 +1,11 @@
 name: Runtime Native (Linux + Android)
 
-# Linux-only PR gate (1x billed minutes). The macOS job lives in runtime-native-macos.yml and runs
-# only on demand (`ci:macos` label / manual dispatch) or on the weekly schedule, because hosted
-# macOS minutes are billed at 10x on private repositories.
-# Every step here is reproducible locally with ./scripts/ci-local.sh.
+# Manual dispatch only. Every check here (ggml/whisper pins, host build + CTest, linkage audits,
+# jvmTest, Android cross-compile + audits) also runs in the Ubuntu job of ci.yml on every ready PR,
+# so running this workflow per PR billed the same Linux work twice. Keep it for an isolated rerun of
+# the native gate (Actions tab -> Run workflow). Locally: ./scripts/ci-local.sh --only pin,native,jvm,android
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "kggml-runtime/**"
-      - "kggml-whisper/native/**"
-      - "kggml-whisper/src/**"
-      - "kggml-whisper/build.gradle.kts"
-      - "kggml-core-api/src/commonMain/**"
-      - "build-logic/**"
-      - "gradle/**"
-      - "gradle.properties"
-      - ".gitmodules"
-      - "NOTICE"
-      - "scripts/ci/**"
-      - ".github/workflows/runtime-native.yml"
   workflow_dispatch:
 
 permissions:
@@ -37,7 +22,6 @@ env:
 jobs:
   host:
     name: Host build + CTest (ubuntu-latest)
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -96,7 +80,6 @@ jobs:
 
   android:
     name: Android cross-compile (arm64-v8a, x86_64)
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
