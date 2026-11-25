@@ -49,7 +49,7 @@ env:
   # The native runtime is built explicitly by a dedicated step on every runner, so Gradle must not rebuild it
   # (its Exec task shells out to bash, which on Windows may resolve to WSL). -Pkggml.requireNative=true then
   # turns every native-backed test from "skip if missing" into "fail if missing".
-  NATIVE_GRADLE_ARGS: -Pkggml.requireNative=true -x :kggml-runtime:buildNativeHost -x :kggml-whisper:buildNativeHost --console=plain
+  NATIVE_GRADLE_ARGS: -Pkggml.requireNative=true -x :kggml-runtime:buildNativeHost -x :kggml-whisper:buildNativeHost -x :kggml-llama:buildNativeHost --console=plain
 
 jobs:
   linux:

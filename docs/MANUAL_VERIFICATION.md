@@ -29,3 +29,6 @@ when it has been run; a failed check becomes a new issue.
 
 - [ ] [#13] CI re-run on macOS/Windows once Actions minutes reset (macOS arm64 + `KggmlLlama.xcframework` iOS device /
   simulator build and Mach-O audit, Windows MSVC `kggml-llama` build + CTest) — https://github.com/donfuldauer/kggml/pull/44
+- [ ] [#14] `LlamaEngine` with a real instruct / embedding GGUF on a physical iPhone and Android device and on desktop
+  (Metal / Vulkan / CPU offload, coherent streaming, prompt cancellation latency, JSON-schema output, session
+  restore, embedding similarity) — procedure in `kggml-llama/README.md` ("Manual verification").
