@@ -305,7 +305,60 @@ export(EXPORT kggmlDiffusionTargets
     NAMESPACE kggml::
     FILE "${CMAKE_CURRENT_BINARY_DIR}/kggml-diffusion-targets.cmake")
 
-# The JNI bridge (Android / JVM Desktop) and the Kotlin/Native cinterop bindings of DiffusionEngine are issue #17.
+# ---------------------------------------------------------------------------------------------------------
+# kggml_diffusion_jni: JNI bridge for the Kotlin DiffusionEngine on Android + JVM Desktop (not used on iOS, where
+# Kotlin/Native calls the C ABI directly through cinterop). Links kggml_diffusion dynamically.
+# ---------------------------------------------------------------------------------------------------------
+
+set(KGGML_DIFFUSION_JNI_INCLUDE_DIRS "")
+if (ANDROID)
+    set(_kggml_diffusion_jni_default ON) # jni.h ships in the NDK sysroot
+elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(_kggml_diffusion_jni_default OFF)
+else()
+    # Only the headers are needed (the JVM provides the symbols at load time).
+    find_package(JNI QUIET)
+    if (JAVA_INCLUDE_PATH AND JAVA_INCLUDE_PATH2)
+        set(_kggml_diffusion_jni_default ON)
+        set(KGGML_DIFFUSION_JNI_INCLUDE_DIRS "${JAVA_INCLUDE_PATH}" "${JAVA_INCLUDE_PATH2}")
+    else()
+        set(_kggml_diffusion_jni_default OFF)
+    endif()
+endif()
+option(KGGML_DIFFUSION_BUILD_JNI "kggml-diffusion: build the kggml_diffusion_jni JNI bridge (Android / JVM Desktop)"
+    ${_kggml_diffusion_jni_default})
+
+if (KGGML_DIFFUSION_BUILD_JNI)
+    if (NOT ANDROID AND NOT KGGML_DIFFUSION_JNI_INCLUDE_DIRS)
+        message(FATAL_ERROR "KGGML_DIFFUSION_BUILD_JNI=ON but JNI headers were not found (set JAVA_HOME)")
+    endif()
+    add_library(kggml_diffusion_jni SHARED jni/kggml_diffusion_jni.cpp)
+    target_include_directories(kggml_diffusion_jni PRIVATE ${KGGML_DIFFUSION_JNI_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(kggml_diffusion_jni PRIVATE kggml_diffusion kggml::runtime)
+    target_compile_definitions(kggml_diffusion_jni PRIVATE
+        $<$<BOOL:${KGGML_DIFFUSION_TEST_HOOKS}>:KGGML_DIFFUSION_TEST_HOOKS=1>)
+    # Exports only the Java_* entry points. Unversioned (loaded by file name from Java), like on Android.
+    set_target_properties(kggml_diffusion_jni PROPERTIES
+        C_VISIBILITY_PRESET hidden
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+    if (NOT APPLE AND NOT WIN32)
+        # ELF: hidden visibility does not cover std:: template instantiations, so an explicit version script keeps
+        # every non-JNI symbol local.
+        set(_kggml_jni_map "${CMAKE_CURRENT_SOURCE_DIR}/jni/kggml_diffusion_jni.map")
+        target_link_options(kggml_diffusion_jni PRIVATE "LINKER:--version-script=${_kggml_jni_map}")
+        set_property(TARGET kggml_diffusion_jni APPEND PROPERTY LINK_DEPENDS "${_kggml_jni_map}")
+    endif()
+    if (MSVC)
+        target_compile_options(kggml_diffusion_jni PRIVATE /W4 /EHsc)
+    else()
+        target_compile_options(kggml_diffusion_jni PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    # Installed next to kggml_diffusion but not part of the exported CMake package (private to the Kotlin bindings).
+    install(TARGETS kggml_diffusion_jni
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
 
 # ---------------------------------------------------------------------------------------------------------
 # Tests
@@ -317,4 +370,4 @@ if (KGGML_DIFFUSION_BUILD_TESTS)
 endif()
 
 message(STATUS "kggml-diffusion: ${PROJECT_VERSION}, stable-diffusion.cpp ${KGGML_DIFFUSION_UPSTREAM_VERSION} @ ${KGGML_DIFFUSION_UPSTREAM_COMMIT}")
-message(STATUS "kggml-diffusion: tests=${KGGML_DIFFUSION_BUILD_TESTS} hooks=${KGGML_DIFFUSION_TEST_HOOKS}")
+message(STATUS "kggml-diffusion: jni=${KGGML_DIFFUSION_BUILD_JNI} tests=${KGGML_DIFFUSION_BUILD_TESTS} hooks=${KGGML_DIFFUSION_TEST_HOOKS}")

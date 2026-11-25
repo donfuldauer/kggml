@@ -3,10 +3,11 @@
 # (arm64-v8a, x86_64).
 #
 # Links against the :kggml-runtime Android builds in <repo>/build/native-android-<abi> (built first with
-# kggml-runtime/native/scripts/build-android.sh when missing). Outputs an unversioned libkggml_diffusion.so per ABI
-# under <repo>/build/native-diffusion-android-<abi>/lib and stages it in
+# kggml-runtime/native/scripts/build-android.sh when missing). Outputs an unversioned libkggml_diffusion.so and
+# libkggml_diffusion_jni.so (JNI bridge of DiffusionEngine) per ABI under <repo>/build/native-diffusion-android-<abi>/lib
+# and stages them in
 # <repo>/build/native-android-diffusion-jniLibs/<abi>/ (the :kggml-diffusion AAR jniLibs; the runtime libraries stay
-# in build/native-android-jniLibs so no .so is packaged by two AARs). The JNI bridge is added by issue #17.
+# in build/native-android-jniLibs so no .so is packaged by two AARs).
 #
 # Requires ANDROID_NDK_HOME (or ANDROID_NDK_ROOT / ANDROID_HOME/ndk/<latest>).
 # Usage: kggml-diffusion/native/scripts/build-android.sh [abi ...]   (default: arm64-v8a x86_64)
@@ -56,6 +57,7 @@ for abi in "${abis[@]}"; do
   out="${REPO_ROOT}/build/native-android-diffusion-jniLibs/${abi}"
   mkdir -p "${out}"
   cp "${REPO_ROOT}/build/native-diffusion-${preset}/lib/libkggml_diffusion.so" "${out}/"
+  cp "${REPO_ROOT}/build/native-diffusion-${preset}/lib/libkggml_diffusion_jni.so" "${out}/"
 done
 
-echo "==> libkggml_diffusion.so staged under ${REPO_ROOT}/build/native-android-diffusion-jniLibs"
+echo "==> libkggml_diffusion.so + libkggml_diffusion_jni.so staged under ${REPO_ROOT}/build/native-android-diffusion-jniLibs"
