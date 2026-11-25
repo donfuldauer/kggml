@@ -19,6 +19,13 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.Dispatchers
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.coroutines.CoroutineContext
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancelAndJoin
@@ -388,6 +395,70 @@ class LlamaEngineTest {
             assertIs<TokenEvent.Token>(first)
             awaitCondition { bridge.live.values.none { it == "sampler" } }
         }
+    }
+
+    /**
+     * Single-threaded dispatcher that, like Kotlin/Native's `newSingleThreadContext`, cannot run anything once closed:
+     * every dispatch after close() is recorded as a violation (and still executed elsewhere so the test cannot hang).
+     */
+    private class NativeLikeDispatcher : CoroutineDispatcher(), AutoCloseable {
+        private val delegate = Dispatchers.Default.limitedParallelism(1)
+        val closed = AtomicInt(0)
+        val lateDispatches = AtomicInt(0)
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            if (closed.load() != 0) lateDispatches.addAndFetch(1)
+            delegate.dispatch(context, block)
+        }
+
+        override fun close() {
+            closed.store(1)
+        }
+    }
+
+    @Test
+    fun closeFromASlowCollectorNeverStrandsTheGenerationOnAClosedEngineThread() = runTest {
+        val bridge = FakeLlamaBridge(script = List(50) { FakeLlamaBridge.tokensOf("y").single() })
+        val dispatchers = ConcurrentLog<NativeLikeDispatcher>()
+        val engine = LlamaEngine.open(
+            modelPath = "/models/tiny.gguf",
+            backendConfig = BackendConfig.CPU,
+            contextConfig = LlamaContextConfig(contextLength = 64, batchSize = 8),
+            options = LlamaEngineOptions(),
+            bridges = LlamaBridgeHolder { bridge },
+            availableBackends = { setOf(ComputeBackend.CPU_ONLY) },
+            dispatcherFactory = SerialDispatcherFactory { NativeLikeDispatcher().also(dispatchers::add) },
+        )
+        // Rendezvous: the generation is suspended in send() on the engine thread whenever the collector holds a token.
+        val events = withContext(Dispatchers.Default) {
+            engine.generate("p", GenerationOptions.GREEDY.copy(maxTokens = GenerationOptions.UNLIMITED))
+                .buffer(Channel.RENDEZVOUS)
+                .onEach { if (!engine.isClosed) engine.close() }
+                .toList()
+        }
+        assertIs<InferenceCancelledException>(assertIs<TokenEvent.Error>(events.last()).exception)
+        val dispatcher = dispatchers.items.single()
+        awaitCondition { bridge.live.isEmpty() && dispatcher.closed.load() != 0 }
+        assertEquals(0, dispatcher.lateDispatches.load(), "the engine thread was shut down under a suspended generation")
+        assertFailsWith<IllegalStateException> { engine.generate("p") }
+    }
+
+    @Test
+    fun callsQueuedBehindAGenerationFailOnceTheEngineCloses() = runTest {
+        val bridge = FakeLlamaBridge(script = List(50) { FakeLlamaBridge.tokensOf("y").single() })
+        bridge.onDecode = { b, ctx, pos ->
+            if (pos > 0) while (!b.abortRequested(ctx)) { /* spin */ }
+            if (pos > 0) LlamaStatus.CANCELLED else LlamaStatus.OK
+        }
+        val engine = open(bridge)
+        val generation = async(Dispatchers.Default) { engine.generate("p").toList() }
+        awaitCondition { bridge.decodes.items.size >= 2 }
+        val queued = async(Dispatchers.Default) { runCatching { engine.embed("abc") } }
+        delay(50)
+        engine.close()
+        assertIs<TokenEvent.Error>(generation.await().last())
+        assertIs<IllegalStateException>(queued.await().exceptionOrNull())
+        awaitCondition { bridge.live.isEmpty() }
     }
 
     // ---- sessions -----------------------------------------------------------------------------------------

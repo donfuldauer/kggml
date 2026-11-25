@@ -15,7 +15,6 @@ import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.AtomicReference
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -106,6 +105,9 @@ public class LlamaEngine internal constructor(
     private val abortGate = AbortGate()
     private val sessionSize = AtomicInt(0)
 
+    /** [generate] collections between entering and leaving the engine thread (see [close]). */
+    private val activeGenerations = AtomicInt(0)
+
     // Native handles and session state: only touched on the executor thread.
     private var model: Long = 0L
     private var context: Long = 0L
@@ -172,14 +174,14 @@ public class LlamaEngine internal constructor(
     public fun generate(prompt: String, options: GenerationOptions = GenerationOptions.DEFAULT): Flow<TokenEvent> {
         check(!isClosed) { "LlamaEngine is closed" }
         return channelFlow {
+            // A generation suspends on the engine thread (in send()) while the collector is slow. close() must not shut
+            // that thread down underneath it: on Kotlin/Native the terminated worker would never resume the producer
+            // and the flow would hang. So the last generation to leave shuts the executor down instead (see close()).
+            activeGenerations.addAndFetch(1)
             try {
-                executor.execute { runGeneration(prompt, options, this@channelFlow) }
-            } catch (e: CancellationException) {
-                // close() shuts the engine thread down; a generation suspended in send() at that moment cannot resume
-                // on it and is cancelled by the dispatcher ("task was rejected"). Report it like any other close.
-                currentCoroutineContext().ensureActive() // the collector itself was cancelled: propagate
-                if (!isClosed) throw e
-                send(TokenEvent.Error(InferenceCancelledException("LlamaEngine was closed during generation", e)))
+                serial { runGeneration(prompt, options, this@channelFlow) }
+            } finally {
+                if (activeGenerations.addAndFetch(-1) == 0 && isClosed) shutDownExecutor()
             }
         }
     }
@@ -214,10 +216,10 @@ public class LlamaEngine internal constructor(
      * @param parseSpecial parse control tokens written as text.
      */
     public suspend fun tokenize(text: String, addSpecial: Boolean = false, parseSpecial: Boolean = false): IntArray =
-        executor.execute { tokenizeOnThread(text, addSpecial, parseSpecial) }
+        serial { tokenizeOnThread(text, addSpecial, parseSpecial) }
 
     /** Concatenates the pieces of [tokens] and decodes them as UTF-8. */
-    public suspend fun detokenize(tokens: IntArray, renderSpecial: Boolean = false): String = executor.execute {
+    public suspend fun detokenize(tokens: IntArray, renderSpecial: Boolean = false): String = serial {
         val bridge = bridges.get()
         val bytes = ArrayList<ByteArray>(tokens.size)
         for (token in tokens) bytes += piece(bridge, token, renderSpecial)
@@ -239,7 +241,7 @@ public class LlamaEngine internal constructor(
      * @throws InvalidInputException if [text] is empty or longer than [LlamaContextConfig.embeddingContextLength]
      *   tokens.
      */
-    public suspend fun embed(text: String, normalize: Boolean = true): FloatArray = executor.execute {
+    public suspend fun embed(text: String, normalize: Boolean = true): FloatArray = serial {
         val bridge = bridges.get()
         val tokens = tokenizeOnThread(text, addSpecial = true, parseSpecial = false)
         if (tokens.isEmpty()) throw InvalidInputException("text produced no tokens")
@@ -261,7 +263,7 @@ public class LlamaEngine internal constructor(
      *
      * @return an opaque blob for [restoreSession] on an engine with the same model and a context at least as large.
      */
-    public suspend fun saveSession(): ByteArray = executor.execute {
+    public suspend fun saveSession(): ByteArray = serial {
         val bridge = bridges.get()
         val state = bridge.stateSave(context, SEQ)
         bridge.check(state.status, "kggml_llama_state_save")
@@ -276,7 +278,7 @@ public class LlamaEngine internal constructor(
      *   engine's context. A container rejected before reaching llama.cpp leaves the current session untouched; if
      *   llama.cpp rejects the KV-cache payload, the session is empty afterwards.
      */
-    public suspend fun restoreSession(session: ByteArray): Unit = executor.execute {
+    public suspend fun restoreSession(session: ByteArray): Unit = serial {
         val bridge = bridges.get()
         val decoded = SessionCodec.decode(session)
         if (decoded.fingerprint != fingerprint) {
@@ -301,7 +303,7 @@ public class LlamaEngine internal constructor(
     }
 
     /** Empties the session (KV cache and token history). */
-    public suspend fun clearSession(): Unit = executor.execute { clearSessionOnThread(bridges.get()) }
+    public suspend fun clearSession(): Unit = serial { clearSessionOnThread(bridges.get()) }
 
     /**
      * Requests the native abort of the generation or embedding currently executing, if any; a [generate] flow then
@@ -320,7 +322,21 @@ public class LlamaEngine internal constructor(
     override fun close() {
         if (!closed.compareAndSet(expectedValue = false, newValue = true)) return
         abortActiveGeneration()
-        executor.close(release = ::freeAll)
+        // With a generation in flight, its collector shuts the executor down when the generation leaves the engine
+        // thread (it observes the abort or isClosed at its next native call or suspension point).
+        if (activeGenerations.load() == 0) shutDownExecutor()
+    }
+
+    /** Frees every native object on the engine thread after queued work, then stops it. Idempotent. */
+    private fun shutDownExecutor() = executor.close(release = ::freeAll)
+
+    /**
+     * Runs [block] on the engine thread, serialized with every other call. Calls still queued when the engine closes
+     * fail with [IllegalStateException] instead of touching native state that is about to be released.
+     */
+    private suspend fun <T> serial(block: suspend () -> T): T = executor.execute {
+        check(!isClosed) { "LlamaEngine is closed" }
+        block()
     }
 
     // ------------------------------------------------------------------------------------------------------

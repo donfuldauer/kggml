@@ -32,3 +32,5 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#14] `LlamaEngine` with a real instruct / embedding GGUF on a physical iPhone and Android device and on desktop
   (Metal / Vulkan / CPU offload, coherent streaming, prompt cancellation latency, JSON-schema output, session
   restore, embedding similarity) — procedure in `kggml-llama/README.md` ("Manual verification").
+- [ ] [#14] CI re-run on Windows (billing / spending-limit refusal: MSVC build of the new `kggml_llama_jni` bridge +
+  `:kggml-llama:jvmTest`) — https://github.com/donfuldauer/kggml/pull/46
