@@ -11,6 +11,8 @@ on:
     paths:
       - "kggml-runtime/**"
       - "kggml-whisper/native/**"
+      - "kggml-whisper/src/**"
+      - "kggml-whisper/build.gradle.kts"
       - "kggml-core-api/src/commonMain/**"
       - "build-logic/**"
       - "gradle/**"
@@ -79,8 +81,8 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Kotlin JNI bindings against the native runtime (jvmTest)
-        run: ./gradlew :kggml-runtime:jvmTest -Pkggml.requireNative=true --console=plain
+      - name: Kotlin JNI bindings against the native runtime + whisper (jvmTest)
+        run: ./gradlew :kggml-runtime:jvmTest :kggml-whisper:jvmTest -Pkggml.requireNative=true --console=plain
 
       - name: Upload CTest logs on failure
         if: failure()

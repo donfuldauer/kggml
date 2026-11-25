@@ -1,0 +1,13 @@
+# Kotlin/Native bindings for the kggml_whisper C ABI (iosArm64, iosSimulatorArm64).
+#
+# The include directories (kggml-whisper/native/include + kggml-runtime/native/include) are supplied by
+# kggml-whisper/build.gradle.kts. Symbols resolve at link time against the dynamic KggmlWhisper.framework from
+# KggmlWhisper.xcframework (kggml-whisper/native/scripts/build-ios-xcframework.sh), which itself links
+# GgmlRuntime.framework; the consuming app or test binary supplies the framework search paths and embeds both.
+package = com.donfuldauer.kggml.whisper.cinterop
+headers = kggml_whisper.h
+# kggml_runtime.h is included for kggml_status. (kggml_status_name() is bound by :kggml-runtime, not here.)
+headerFilter = kggml_whisper.h kggml_runtime.h
+# Keep enums as plain integers so unknown (future) native values never crash the bindings.
+nonStrictEnums = kggml_status kggml_backend_kind kggml_pcm_format kggml_resample_quality
+linkerOpts = -framework KggmlWhisper -framework GgmlRuntime
