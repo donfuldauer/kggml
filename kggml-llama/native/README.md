@@ -38,7 +38,8 @@ ctest --test-dir build/native-llama --output-on-failure
 ./scripts/ci/verify-llama-pin.sh
 ./scripts/ci/audit-llama-linkage.sh host
 
-# Android arm64-v8a + x86_64 (needs ANDROID_NDK_HOME). Stages libkggml_llama.so in build/native-android-llama-jniLibs/<abi>.
+# Android arm64-v8a + x86_64 (needs ANDROID_NDK_HOME). Stages libkggml_llama.so + libkggml_llama_jni.so in
+# build/native-android-llama-jniLibs/<abi>.
 kggml-llama/native/scripts/build-android.sh
 ./scripts/ci/audit-llama-linkage.sh android
 
@@ -55,8 +56,12 @@ With an installed runtime, point CMake at its package: `-Dkggml-runtime_DIR=<pre
 The installed `kggml-llama` package exports `kggml::llama` (headers `kggml_llama.h`, `llama.h`, `mtmd.h`,
 `mtmd-helper.h`).
 
-The Kotlin `LlamaEngine` (JNI on Android / JVM, cinterop on iOS) is built on this C ABI in issue #14; the VLM API in
-issue #15.
+The Kotlin `LlamaEngine` (see [`../README.md`](../README.md)) is built on this C ABI: through `libkggml_llama_jni`
+(`jni/kggml_llama_jni.cpp`, built when JNI headers are found or on Android; `-DKGGML_LLAMA_BUILD_JNI=OFF` skips it)
+on Android / JVM Desktop, and through Kotlin/Native cinterop (`src/nativeInterop/cinterop/kggmlLlama.def`) on iOS.
+The JNI bridge links `libkggml_llama` dynamically, pins token arrays with `GetPrimitiveArrayCritical` (zero-copy),
+passes text as UTF-8 `byte[]`, runs every entry point behind a `try/catch` firewall and exports only `Java_*`
+symbols (version script on ELF; audited by `scripts/ci/audit-llama-linkage.sh`). The VLM API follows in issue #15.
 
 ## Backend selection
 
@@ -98,7 +103,7 @@ default it follows the model.
   `KGGML_STATUS_INVALID_ARGUMENT`. Logits are not part of the restored state: decode the next token before sampling.
 - `kggml_llama_sampler_create` builds `[grammar] → [penalties] → top-k → top-p → min-p → temperature → dist`
   (or greedy for `temperature <= 0`). The GBNF grammar (`llama_sampler_init_grammar`) constrains every sampled token;
-  JSON output is a GBNF grammar (JSON-schema → GBNF conversion belongs to the Kotlin layer, issue #14).
+  JSON output is a GBNF grammar (JSON-schema → GBNF conversion lives in the Kotlin layer, `LlamaGrammar.jsonSchema()`).
 - `kggml_llama_get_embeddings` returns the pooled sequence embedding (or the last token's for `POOLING_NONE`),
   optionally L2-normalized.
 - `kggml_llama_mtmd_eval` takes images as raw RGB888 buffers (wrapped with `mtmd_bitmap_init`) or encoded bytes

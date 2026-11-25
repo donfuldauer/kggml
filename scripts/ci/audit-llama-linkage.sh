@@ -9,7 +9,8 @@
 # Checks: NEEDED / LC_LOAD_DYLIB entries on libggml, libggml-base and libkggml_runtime; no symbol that ggml
 # exports is *defined* in libkggml_llama (any binding, so a static copy hidden by visibility is caught too);
 # the llama.cpp + libmtmd + kggml C ABI is exported; no whisper.cpp symbol is defined; Android sonames are
-# unversioned and test hooks are absent from release (Android) builds. Shared by CI and ./scripts/ci-local.sh.
+# unversioned and test hooks are absent from release (Android) builds; the libkggml_llama_jni bridge (ELF) links
+# libkggml_llama dynamically and exports only Java_* entry points. Shared by CI and ./scripts/ci-local.sh.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -61,7 +62,34 @@ elf_audit() {
   if [[ "${expect_versioned}" == "no" ]] && contains "${exports}" '^kggml_llama_test_'; then
     fail "${label}: release build exports test hooks"
   fi
+  jni_elf_audit "${label}" "$(dirname "${llama_so}")/libkggml_llama_jni.so" "${ggml_exports}" "${expect_versioned}"
   echo "${label}: OK"
+}
+
+# The LlamaEngine JNI bridge must link libkggml_llama dynamically, embed neither ggml nor llama.cpp, and export
+# nothing but its JNI entry points (version script).
+jni_elf_audit() {
+  local label="$1" jni_so="$2" ggml_exports="$3" expect_versioned="$4"
+  [[ -f "${jni_so}" ]] || fail "${label}: ${jni_so} not found (KggmlLlama JNI bridge)"
+  local dyn defs exports
+  dyn="$(readelf -d "${jni_so}")"
+  contains "${dyn}" 'NEEDED.*\[libkggml_llama\.so' || fail "${label}: libkggml_llama_jni does not link libkggml_llama.so"
+  if [[ "${expect_versioned}" == "no" ]] && contains "${dyn}" 'NEEDED.*\.so\.[0-9]'; then
+    fail "${label}: libkggml_llama_jni has a versioned NEEDED entry (Android loads by file name)"
+  fi
+  defs="$(nm --defined-only "${jni_so}" 2>/dev/null | awk 'NF >= 3 {print $3}')"
+  check_no_duplicate_ggml "${label} (jni)" "${defs}" "${ggml_exports}"
+  if grep -Eq '^_?(llama_decode|llama_model_load_from_file|mtmd_init_from_file)$' <<<"${defs}"; then
+    fail "${label}: libkggml_llama_jni embeds llama.cpp"
+  fi
+  exports="$(nm -D --defined-only "${jni_so}" | awk '{print $3}')"
+  contains "${exports}" '^Java_com_donfuldauer_kggml_llama_KggmlLlamaJni_nativeDecode$' \
+    || fail "${label}: libkggml_llama_jni does not export nativeDecode"
+  if grep -Ev '^(Java_|JNI_On|_init$|_fini$|_edata$|_end$|__bss_start)' <<<"${exports}" | grep -q .; then
+    grep -Ev '^(Java_|JNI_On|_init$|_fini$|_edata$|_end$|__bss_start)' <<<"${exports}" | head -n 10 >&2
+    fail "${label}: libkggml_llama_jni exports non-JNI symbols"
+  fi
+  echo "${label}: libkggml_llama_jni OK"
 }
 
 macho_audit() {

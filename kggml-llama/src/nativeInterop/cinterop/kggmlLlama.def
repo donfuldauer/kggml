@@ -1,0 +1,16 @@
+# Kotlin/Native bindings for the kggml_llama C ABI (iosArm64, iosSimulatorArm64).
+#
+# The include directories (kggml-llama/native/include + kggml-runtime/native/include) are supplied by
+# kggml-llama/build.gradle.kts. Symbols resolve at link time against the dynamic KggmlLlama.framework from
+# KggmlLlama.xcframework (kggml-llama/native/scripts/build-ios-xcframework.sh), which itself links
+# GgmlRuntime.framework; the consuming app or test binary supplies the framework search paths and embeds both.
+package = com.donfuldauer.kggml.llama.cinterop
+headers = kggml_llama.h
+# kggml_runtime.h is included for kggml_status. (kggml_status_name() is bound by :kggml-runtime, not here.)
+headerFilter = kggml_llama.h kggml_runtime.h
+# Keep enums as plain integers so unknown (future) native values never crash the bindings.
+nonStrictEnums = kggml_status kggml_backend_kind
+linkerOpts = -framework KggmlLlama -framework GgmlRuntime
+# kggml_llama_tokenize takes (text, text_len): keep `const char *` a raw pointer so pinned UTF-8 bytes are passed
+# with their exact length instead of a re-encoded, NUL-terminated Kotlin String.
+noStringConversion = kggml_llama_tokenize

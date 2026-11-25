@@ -3,8 +3,8 @@
 # (arm64-v8a, x86_64).
 #
 # Links against the :kggml-runtime Android builds in <repo>/build/native-android-<abi> (built first with
-# kggml-runtime/native/scripts/build-android.sh when missing). Outputs an unversioned libkggml_llama.so per ABI
-# under <repo>/build/native-llama-android-<abi>/lib and stages it in
+# kggml-runtime/native/scripts/build-android.sh when missing). Outputs an unversioned libkggml_llama.so and
+# libkggml_llama_jni.so (JNI bridge of LlamaEngine) per ABI under <repo>/build/native-llama-android-<abi>/lib and stages it in
 # <repo>/build/native-android-llama-jniLibs/<abi>/ (the :kggml-llama AAR jniLibs; the runtime libraries stay in
 # build/native-android-jniLibs so no .so is packaged by two AARs).
 #
@@ -55,6 +55,7 @@ for abi in "${abis[@]}"; do
   out="${REPO_ROOT}/build/native-android-llama-jniLibs/${abi}"
   mkdir -p "${out}"
   cp "${REPO_ROOT}/build/native-llama-${preset}/lib/libkggml_llama.so" "${out}/"
+  cp "${REPO_ROOT}/build/native-llama-${preset}/lib/libkggml_llama_jni.so" "${out}/"
 done
 
-echo "==> libkggml_llama.so staged under ${REPO_ROOT}/build/native-android-llama-jniLibs"
+echo "==> libkggml_llama.so + libkggml_llama_jni.so staged under ${REPO_ROOT}/build/native-android-llama-jniLibs"

@@ -4,7 +4,7 @@
 # Mirrors:
 #   .github/workflows/repo-hygiene.yml    -> agent parity, gitleaks
 #   .github/workflows/ci.yml (Ubuntu)     -> ggml + whisper.cpp + llama.cpp pins, host build + CTest (runtime,
-#                                            whisper and llama), host linkage audits, :kggml-runtime + :kggml-whisper jvmTest,
+#                                            whisper and llama), host linkage audits, :kggml-runtime + :kggml-whisper + :kggml-llama jvmTest,
 #                                            Android cross-compile + audits, :samples:whisper-only-minimal check +
 #                                            release APK binary symbol audit; with --full also `./gradlew check`
 #                                            and the sample assemble tasks
@@ -52,7 +52,7 @@ done
 in_list() { [[ ",$2," == *",$1,"* ]]; }
 
 # Native-relevant paths (what used to be runtime-native.yml's PR path filter, plus ci.yml).
-native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/native kggml-core-api/src/commonMain build-logic gradle gradle.properties .gitmodules NOTICE
+native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/native kggml-llama/src kggml-llama/build.gradle.kts kggml-core-api/src/commonMain build-logic gradle gradle.properties .gitmodules NOTICE
   scripts/ci .github/workflows/ci.yml .github/workflows/runtime-native.yml .github/workflows/runtime-native-macos.yml)
 native_changed() {
   local base
@@ -184,7 +184,7 @@ for step in "${all_steps[@]}"; do
       run_step llama ./kggml-llama/native/scripts/build-host.sh ${clean_flag[@]+"${clean_flag[@]}"}
       run_step l-audit ./scripts/ci/audit-llama-linkage.sh host ;;
     jvm)
-      run_step jvm ./gradlew :kggml-runtime:jvmTest :kggml-whisper:jvmTest -Pkggml.requireNative=true --console=plain ;;
+      run_step jvm ./gradlew :kggml-runtime:jvmTest :kggml-whisper:jvmTest :kggml-llama:jvmTest -Pkggml.requireNative=true --console=plain ;;
     android)
       if ndk="$(find_ndk)"; then
         echo "Using Android NDK: ${ndk}"
