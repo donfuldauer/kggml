@@ -54,7 +54,7 @@ done
 in_list() { [[ ",$2," == *",$1,"* ]]; }
 
 # Native-relevant paths (what used to be runtime-native.yml's PR path filter, plus ci.yml).
-native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/native kggml-llama/src kggml-llama/build.gradle.kts kggml-diffusion/native kggml-diffusion/src kggml-diffusion/build.gradle.kts kggml-core-api/src/commonMain build-logic gradle gradle.properties .gitmodules NOTICE
+native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/native kggml-llama/src kggml-llama/build.gradle.kts kggml-diffusion/native kggml-diffusion/src kggml-diffusion/build.gradle.kts kggml-core-api/src/commonMain integration-tests build-logic gradle gradle.properties .gitmodules NOTICE
   scripts/ci .github/workflows/ci.yml .github/workflows/runtime-native.yml .github/workflows/runtime-native-macos.yml)
 native_changed() {
   local base
@@ -190,7 +190,7 @@ for step in "${all_steps[@]}"; do
       run_step diffusion ./kggml-diffusion/native/scripts/build-host.sh ${clean_flag[@]+"${clean_flag[@]}"}
       run_step d-audit ./scripts/ci/audit-diffusion-linkage.sh host ;;
     jvm)
-      run_step jvm ./gradlew :kggml-runtime:jvmTest :kggml-whisper:jvmTest :kggml-llama:jvmTest :kggml-diffusion:jvmTest -Pkggml.requireNative=true --console=plain ;;
+      run_step jvm ./gradlew :kggml-runtime:jvmTest :kggml-whisper:jvmTest :kggml-llama:jvmTest :kggml-diffusion:jvmTest :integration-tests:jvmTest -Pkggml.requireNative=true --console=plain ;;
     android)
       if ndk="$(find_ndk)"; then
         echo "Using Android NDK: ${ndk}"

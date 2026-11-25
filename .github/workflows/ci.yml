@@ -5,7 +5,8 @@ name: CI (Phase 1 cross-platform matrix)
 #   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + llama (llama.cpp + libmtmd) + diffusion
 #              (stable-diffusion.cpp) + CTest + ggml / upstream pins + host linkage audits,
 #              `./gradlew check` (commonTest, jvmTest, androidUnitTest, BOM checks, sample audits) with
-#              native-backed tests mandatory, Android NDK cross-compile + linkage audits,
+#              native-backed tests mandatory (incl. the :integration-tests dual-engine coexistence suite: whisper +
+#              llama inferring concurrently in one JVM on the single shared ggml runtime, plus diffusion), Android NDK cross-compile + linkage audits,
 #              whisper-only-minimal release APK binary symbol audit, Android APKs + desktop jar for both samples.
 #              (This job also covers everything runtime-native.yml used to run per PR, so that workflow is
 #              now manual-dispatch only and the same work is not billed twice.)
@@ -154,7 +155,7 @@ jobs:
           ./kggml-diffusion/native/scripts/build-host.sh
           ./scripts/ci/audit-diffusion-linkage.sh host
 
-      - name: Gradle check (commonTest, jvmTest, androidUnitTest, samples, BOM) with native tests required
+      - name: Gradle check (commonTest, jvmTest, androidUnitTest, dual-engine coexistence, showcase UI tests, BOM) with native tests required
         run: ./gradlew check $NATIVE_GRADLE_ARGS
 
       - name: Android NDK cross-compile (arm64-v8a, x86_64)
@@ -270,7 +271,7 @@ jobs:
         timeout-minutes: 20
         run: ./kggml-diffusion/native/scripts/build-ios-xcframework.sh
 
-      - name: JVM tests against the macOS native runtime
+      - name: JVM tests (incl. dual-engine coexistence) against the macOS native runtime
         timeout-minutes: 20
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
 
@@ -399,7 +400,7 @@ jobs:
           cmake --build build/native-diffusion --config Release -j 4 || exit /b 1
           ctest --test-dir build/native-diffusion --build-config Release --output-on-failure -j 4
 
-      - name: JVM tests against the Windows native runtime
+      - name: JVM tests (incl. dual-engine coexistence) against the Windows native runtime
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
 
       - name: Upload reports on failure
