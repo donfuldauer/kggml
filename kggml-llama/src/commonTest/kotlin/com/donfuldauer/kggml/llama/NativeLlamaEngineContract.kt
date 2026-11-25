@@ -252,7 +252,9 @@ abstract class NativeLlamaEngineContract {
     @Test
     fun contextFullEndsGeneration() = nativeTest {
         cpuEngine(LlamaContextConfig(contextLength = 32, batchSize = 8)).use { engine ->
-            val result = engine.generateText("ab z", GenerationOptions.GREEDY.copy(maxTokens = GenerationOptions.UNLIMITED))
+            // A grammar that can never complete makes end-of-generation inadmissible, so the outcome does not depend on
+            // what the random-weight model would emit on this CPU's float path.
+            val result = engine.generateText("ab z", ENDLESS)
             assertEquals(StopReason.CONTEXT_FULL, result.stopReason)
             assertEquals(engine.contextLength, engine.sessionTokenCount)
         }
@@ -261,7 +263,7 @@ abstract class NativeLlamaEngineContract {
     @Test
     fun collectorCancellationStopsGenerationAndKeepsTheEngineUsable() = nativeTest {
         cpuEngine().use { engine ->
-            val taken = engine.generate("ab", GenerationOptions.GREEDY.copy(maxTokens = GenerationOptions.UNLIMITED))
+            val taken = engine.generate("ab", ENDLESS)
                 .buffer(Channel.RENDEZVOUS)
                 .take(3)
                 .toList()
@@ -278,7 +280,7 @@ abstract class NativeLlamaEngineContract {
     fun abortActiveGenerationEndsTheStreamWithACancelledError() = nativeTest {
         cpuEngine().use { engine ->
             var aborted = false
-            val events = engine.generate("ab", GenerationOptions.GREEDY.copy(maxTokens = GenerationOptions.UNLIMITED))
+            val events = engine.generate("ab", ENDLESS)
                 .buffer(Channel.RENDEZVOUS)
                 .onEach { if (!aborted) aborted = engine.abortActiveGeneration() }
                 .toList()
@@ -292,7 +294,7 @@ abstract class NativeLlamaEngineContract {
     @Test
     fun closeDuringGenerationEndsTheStreamAndRejectsFurtherCalls() = nativeTest {
         val engine = cpuEngine()
-        val events = engine.generate("ab", GenerationOptions.GREEDY.copy(maxTokens = GenerationOptions.UNLIMITED))
+        val events = engine.generate("ab", ENDLESS)
             .buffer(Channel.RENDEZVOUS)
             .onEach { if (!engine.isClosed) engine.close() }
             .toList()
@@ -304,6 +306,13 @@ abstract class NativeLlamaEngineContract {
     }
 
     protected companion object {
+        /**
+         * Greedy, unlimited and constrained by a grammar that never completes, so end-of-generation is inadmissible:
+         * generation only stops on cancellation or a full context, whatever the model would emit on this CPU.
+         */
+        val ENDLESS: GenerationOptions =
+            GenerationOptions.GREEDY.copy(maxTokens = GenerationOptions.UNLIMITED, grammar = LlamaGrammar.gbnf("root ::= [a-z] root"))
+
         val SMALL: LlamaContextConfig = LlamaContextConfig(contextLength = 256, batchSize = 16, embeddingContextLength = 64)
     }
 }
