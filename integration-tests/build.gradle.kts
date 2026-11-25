@@ -62,6 +62,12 @@ val hostLibDirs: Map<String, Pair<File, String>> = mapOf(
 
 tasks.named<Test>("jvmTest") {
     useJUnitPlatform()
+    // Like the engine modules: build the host natives first when they are required (CI excludes these with -x
+    // because it builds them in explicit steps). The libraries are inputs, so a native-only rebuild reruns the tests.
+    if (requireNative) {
+        dependsOn(":kggml-runtime:buildNativeHost", ":kggml-whisper:buildNativeHost", ":kggml-llama:buildNativeHost", ":kggml-diffusion:buildNativeHost")
+    }
+    hostLibDirs.values.forEach { (dir, _) -> inputs.files(fileTree(dir)).withPropertyName("nativeLibs-${dir.parentFile.name}").optional() }
     // One test JVM loads every engine: one process == the one shared ggml runtime under test.
     maxParallelForks = 1
     systemProperty("kggml.test.requireNative", requireNative.toString())
