@@ -40,3 +40,5 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#16] `libkggml_diffusion` txt2img with a real SD 1.5-class GGUF through the C ABI on desktop (CPU, plus Metal on
   macOS / Vulkan where available): steps reported in order, a coherent image, abort within one step and the context
   reusable afterwards — procedure in `kggml-diffusion/native/README.md` ("Manual verification").
+- [ ] [#16] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC `kggml-diffusion` build
+  incl. `/EHs /EHc-`, `GGML_MAX_NAME=128` runtime/whisper/llama rebuild + CTest) — https://github.com/donfuldauer/kggml/pull/49
