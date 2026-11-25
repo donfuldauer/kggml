@@ -88,7 +88,7 @@ class IosNativeWhisperStreamTest {
 
             // int16 at 48 kHz stereo through the native streaming resampler.
             val pcm = ShortArray(48 * 2 * 2_000) { ((it / 2 % 300) - 150).toShort() }
-            val events16 = engine.transcribeStream(flow { emit(pcm); emit(ShortArray(48 * 2 * 900)) }, sampleRate = 48_000, channels = 2).toList()
+            val events16 = engine.transcribeStream(flow<ShortArray> { emit(pcm); emit(ShortArray(48 * 2 * 900)) }, sampleRate = 48_000, channels = 2).toList()
             assertEquals(2_900L, assertIs<Completed>(events16.last()).audioDurationMs)
         }
         assertEquals(emptySet(), tempFiles() - before, "no temporary audio files")
