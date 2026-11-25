@@ -11,6 +11,7 @@ import com.donfuldauer.kggml.llama.LlamaEngine
 import com.donfuldauer.kggml.llama.TinyLlamaModel
 import com.donfuldauer.kggml.runtime.KggmlRuntime
 import com.donfuldauer.kggml.whisper.TinyWhisperModel
+import com.donfuldauer.kggml.whisper.TranscriptionOptions
 import com.donfuldauer.kggml.whisper.TranscriptionResult
 import com.donfuldauer.kggml.whisper.WhisperEngine
 import java.io.File
@@ -74,7 +75,10 @@ class EngineCoexistenceTest {
 
     private suspend fun llamaEngine(): LlamaEngine = LlamaEngine(llamaModel.absolutePath, CPU, SMALL)
 
-    private suspend fun WhisperEngine.run(seed: Int): TranscriptionResult = transcribe(noise(16_000, seed))
+    // Pure greedy decoding: whisper.cpp's temperature fallback samples from a per-state RNG that advances between
+    // calls, which would make repeated runs of even a single engine differ.
+    private suspend fun WhisperEngine.run(seed: Int): TranscriptionResult =
+        transcribe(noise(16_000, seed), options = TranscriptionOptions(temperatureIncrement = 0f))
 
     private suspend fun LlamaEngine.run(prompt: String): GenerationResult =
         generateText(prompt, GenerationOptions.GREEDY.copy(maxTokens = 12, seed = 7))
