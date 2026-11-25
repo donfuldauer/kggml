@@ -55,7 +55,29 @@ elf_audit() {
   if [[ "${expect_versioned}" == "no" ]] && contains "${exports}" '^kggml_whisper_test_'; then
     fail "${label}: release build exports test hooks"
   fi
+  jni_elf_audit "${label}" "$(dirname "${whisper_so}")/libkggml_whisper_jni.so" "${ggml_exports}"
   echo "${label}: OK"
+}
+
+# The WhisperEngine JNI bridge must link libkggml_whisper dynamically, embed neither ggml nor whisper.cpp, and
+# export only Java_* entry points.
+jni_elf_audit() {
+  local label="$1" jni_so="$2" ggml_exports="$3"
+  [[ -f "${jni_so}" ]] || fail "${label}: ${jni_so} not found (KggmlWhisper JNI bridge)"
+  local dyn defs exports
+  dyn="$(readelf -d "${jni_so}")"
+  contains "${dyn}" 'NEEDED.*\[libkggml_whisper\.so' || fail "${label}: libkggml_whisper_jni does not link libkggml_whisper.so"
+  defs="$(nm --defined-only "${jni_so}" 2>/dev/null | awk 'NF >= 3 {print $3}')"
+  check_no_duplicate_ggml "${label} (jni)" "${defs}" "${ggml_exports}"
+  if grep -Eq '^_?whisper_(full|init)' <<<"${defs}"; then fail "${label}: libkggml_whisper_jni embeds whisper.cpp"; fi
+  exports="$(nm -D --defined-only "${jni_so}" | awk '{print $3}')"
+  contains "${exports}" '^Java_com_donfuldauer_kggml_whisper_KggmlWhisperJni_nativeTranscribe$' \
+    || fail "${label}: libkggml_whisper_jni does not export nativeTranscribe"
+  if grep -Ev '^(Java_|JNI_On|_init$|_fini$|_edata$|_end$|__bss_start)' <<<"${exports}" | grep -q .; then
+    grep -Ev '^(Java_|JNI_On|_init$|_fini$|_edata$|_end$|__bss_start)' <<<"${exports}" | head -n 10 >&2
+    fail "${label}: libkggml_whisper_jni exports non-JNI symbols"
+  fi
+  echo "${label}: libkggml_whisper_jni OK"
 }
 
 macho_audit() {

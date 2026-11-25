@@ -2,9 +2,10 @@
 # Cross-compiles the :kggml-whisper native layer for Android (arm64-v8a, x86_64).
 #
 # Links against the :kggml-runtime Android builds in <repo>/build/native-android-<abi> (built first with
-# kggml-runtime/native/scripts/build-android.sh when missing). Outputs an unversioned libkggml_whisper.so per
-# ABI under <repo>/build/native-whisper-android-<abi>/lib and copies it next to the runtime libraries in
-# <repo>/build/native-android-jniLibs/<abi>/.
+# kggml-runtime/native/scripts/build-android.sh when missing). Outputs unversioned libkggml_whisper.so and
+# libkggml_whisper_jni.so (JNI bridge of WhisperEngine) per ABI under <repo>/build/native-whisper-android-<abi>/lib
+# and stages them in <repo>/build/native-android-whisper-jniLibs/<abi>/ (the :kggml-whisper AAR jniLibs; the
+# runtime libraries stay in build/native-android-jniLibs so no .so is packaged by two AARs).
 #
 # Requires ANDROID_NDK_HOME (or ANDROID_NDK_ROOT / ANDROID_HOME/ndk/<latest>).
 # Usage: kggml-whisper/native/scripts/build-android.sh [abi ...]   (default: arm64-v8a x86_64)
@@ -45,9 +46,10 @@ for abi in "${abis[@]}"; do
   echo "==> ${preset}"
   cmake -S "${NATIVE_DIR}" --preset "${preset}"
   cmake --build "${REPO_ROOT}/build/native-whisper-${preset}" -j "${jobs}"
-  out="${REPO_ROOT}/build/native-android-jniLibs/${abi}"
+  out="${REPO_ROOT}/build/native-android-whisper-jniLibs/${abi}"
   mkdir -p "${out}"
   cp "${REPO_ROOT}/build/native-whisper-${preset}/lib/libkggml_whisper.so" "${out}/"
+  cp "${REPO_ROOT}/build/native-whisper-${preset}/lib/libkggml_whisper_jni.so" "${out}/"
 done
 
-echo "==> libkggml_whisper.so staged under ${REPO_ROOT}/build/native-android-jniLibs"
+echo "==> libkggml_whisper.so + libkggml_whisper_jni.so staged under ${REPO_ROOT}/build/native-android-whisper-jniLibs"

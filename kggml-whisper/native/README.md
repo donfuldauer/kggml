@@ -30,7 +30,7 @@ kggml-whisper/native/scripts/build-host.sh
 ctest --test-dir build/native-whisper --output-on-failure
 ./scripts/ci/audit-whisper-linkage.sh host
 
-# Android arm64-v8a + x86_64 (needs ANDROID_NDK_HOME). Stages libkggml_whisper.so in build/native-android-jniLibs/<abi>.
+# Android arm64-v8a + x86_64 (needs ANDROID_NDK_HOME). Stages libkggml_whisper.so + libkggml_whisper_jni.so in build/native-android-whisper-jniLibs/<abi>.
 kggml-whisper/native/scripts/build-android.sh
 ./scripts/ci/audit-whisper-linkage.sh android
 
@@ -67,14 +67,28 @@ load the `.mlmodelc`, so the upstream loader is compiled under a different name 
   `whisper_full_params.abort_callback`, which runs inside every ggml graph compute, and by
   `encoder_begin_callback`. The interrupted `kggml_whisper_transcribe()` returns `KGGML_STATUS_CANCELLED` and
   discards partial segments. The flag stays set until `kggml_whisper_clear_abort()`.
-- A context is not thread-safe. The Kotlin engine (issue #8) runs init, transcribe, and free on its own
-  single-threaded dispatcher.
+- A context is not thread-safe. The Kotlin `WhisperEngine` runs init, transcribe, and free on its own
+  single-threaded dispatcher and calls `kggml_whisper_request_abort()` from a coroutine cancellation handler.
 - Every `extern "C"` function catches all C++ exceptions, including ones thrown inside whisper.cpp, and maps them:
   `std::bad_alloc` → `OUT_OF_MEMORY`, `std::exception` → `NATIVE_FAILURE`, anything else → `UNKNOWN`. The
   message is stored thread-locally and is read with `kggml_whisper_last_error()`. Status codes `0..6` equal
   `NativeErrorCode`.
 - Input shorter than 1000 ms is zero-padded to 16000 samples before `whisper_full_with_state()`. Longer input is
   passed through without a copy.
+
+## Kotlin bindings (`WhisperEngine`)
+
+- **Android / JVM Desktop:** `jni/kggml_whisper_jni.cpp` builds `libkggml_whisper_jni` (`KGGML_WHISPER_BUILD_JNI`,
+  on by default when JNI headers are found; never on iOS). It links `libkggml_whisper` dynamically, exports only
+  `Java_*` symbols (checked by `audit-whisper-linkage.sh`), and runs every entry point behind a `try/catch` that
+  returns a `kggml_status`. `float[]` / `short[]` PCM is pinned with `GetPrimitiveArrayCritical` and read in place;
+  an RAII guard releases it on every path, and no other JNI call happens while it is held. Segment text is
+  returned as raw UTF-8 bytes and decoded leniently in Kotlin.
+- **iOS:** Kotlin/Native calls this C ABI directly through cinterop (`src/nativeInterop/cinterop/kggmlWhisper.def`),
+  pinning arrays with `usePinned { it.addressOf(0) }`, and links `KggmlWhisper.framework` + `GgmlRuntime.framework`.
+- On the JVM, `JvmWhisperLibraryLoader` loads the runtime first (via `KggmlRuntime`), then `kggml_whisper` and
+  `kggml_whisper_jni` from `-Dkggml.whisper.native.path` (Gradle points it at `build/native-whisper/lib` for
+  `:kggml-whisper:jvmTest`), the `kggml.native.path` directory, or `java.library.path`.
 
 ## PCM conversion
 

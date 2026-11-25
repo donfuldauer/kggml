@@ -245,6 +245,54 @@ if (APPLE AND CMAKE_SYSTEM_NAME STREQUAL "iOS")
 endif()
 
 # ---------------------------------------------------------------------------------------------------------
+# kggml_whisper_jni: JNI bridge for the Kotlin WhisperEngine on Android + JVM Desktop (not used on iOS, where
+# Kotlin/Native calls the C ABI directly through cinterop). Links kggml_whisper dynamically.
+# ---------------------------------------------------------------------------------------------------------
+
+set(KGGML_WHISPER_JNI_INCLUDE_DIRS "")
+if (ANDROID)
+    set(_kggml_whisper_jni_default ON) # jni.h ships in the NDK sysroot
+elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(_kggml_whisper_jni_default OFF)
+else()
+    # Only the headers are needed (the JVM provides the symbols at load time).
+    find_package(JNI QUIET)
+    if (JAVA_INCLUDE_PATH AND JAVA_INCLUDE_PATH2)
+        set(_kggml_whisper_jni_default ON)
+        set(KGGML_WHISPER_JNI_INCLUDE_DIRS "${JAVA_INCLUDE_PATH}" "${JAVA_INCLUDE_PATH2}")
+    else()
+        set(_kggml_whisper_jni_default OFF)
+    endif()
+endif()
+option(KGGML_WHISPER_BUILD_JNI "kggml-whisper: build the kggml_whisper_jni JNI bridge (Android / JVM Desktop)"
+    ${_kggml_whisper_jni_default})
+
+if (KGGML_WHISPER_BUILD_JNI)
+    if (NOT ANDROID AND NOT KGGML_WHISPER_JNI_INCLUDE_DIRS)
+        message(FATAL_ERROR "KGGML_WHISPER_BUILD_JNI=ON but JNI headers were not found (set JAVA_HOME)")
+    endif()
+    add_library(kggml_whisper_jni SHARED jni/kggml_whisper_jni.cpp)
+    target_include_directories(kggml_whisper_jni PRIVATE ${KGGML_WHISPER_JNI_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(kggml_whisper_jni PRIVATE kggml_whisper kggml::runtime)
+    target_compile_definitions(kggml_whisper_jni PRIVATE
+        $<$<BOOL:${KGGML_WHISPER_TEST_HOOKS}>:KGGML_WHISPER_TEST_HOOKS=1>)
+    # Exports only the Java_* entry points. Unversioned (loaded by file name from Java), like on Android.
+    set_target_properties(kggml_whisper_jni PROPERTIES
+        C_VISIBILITY_PRESET hidden
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+    if (MSVC)
+        target_compile_options(kggml_whisper_jni PRIVATE /W4 /EHsc)
+    else()
+        target_compile_options(kggml_whisper_jni PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    # Installed next to kggml_whisper but not part of the exported CMake package (private to the Kotlin bindings).
+    install(TARGETS kggml_whisper_jni
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
+
+# ---------------------------------------------------------------------------------------------------------
 # Install + exported CMake package (kggml-whisper-config.cmake -> kggml::whisper)
 # ---------------------------------------------------------------------------------------------------------
 
@@ -290,4 +338,4 @@ if (KGGML_WHISPER_BUILD_TESTS)
 endif()
 
 message(STATUS "kggml-whisper: ${PROJECT_VERSION}, whisper.cpp ${KGGML_WHISPER_UPSTREAM_VERSION} @ ${KGGML_WHISPER_UPSTREAM_COMMIT}")
-message(STATUS "kggml-whisper: coreml=${KGGML_WHISPER_COREML} tests=${KGGML_WHISPER_BUILD_TESTS} hooks=${KGGML_WHISPER_TEST_HOOKS}")
+message(STATUS "kggml-whisper: coreml=${KGGML_WHISPER_COREML} jni=${KGGML_WHISPER_BUILD_JNI} tests=${KGGML_WHISPER_BUILD_TESTS} hooks=${KGGML_WHISPER_TEST_HOOKS}")

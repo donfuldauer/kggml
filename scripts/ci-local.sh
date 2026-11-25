@@ -4,7 +4,7 @@
 # Mirrors:
 #   .github/workflows/repo-hygiene.yml    -> agent parity, gitleaks
 #   .github/workflows/runtime-native.yml  -> ggml + whisper.cpp pins, host build + CTest (runtime and
-#                                            whisper), host linkage audits, :kggml-runtime:jvmTest,
+#                                            whisper), host linkage audits, :kggml-runtime + :kggml-whisper jvmTest,
 #                                            Android cross-compile + audits
 # The macOS/iOS jobs (.github/workflows/runtime-native-macos.yml) cannot run on a Linux host;
 # on a macOS host the host build, CTest, linkage audit and jvmTest steps below cover the macOS job.
@@ -45,7 +45,7 @@ done
 in_list() { [[ ",$2," == *",$1,"* ]]; }
 
 # Same path filter as runtime-native.yml.
-native_paths=(kggml-runtime kggml-whisper/native kggml-core-api/src/commonMain build-logic gradle gradle.properties .gitmodules NOTICE
+native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-core-api/src/commonMain build-logic gradle gradle.properties .gitmodules NOTICE
   scripts/ci .github/workflows/runtime-native.yml .github/workflows/runtime-native-macos.yml)
 native_changed() {
   local base
@@ -125,7 +125,7 @@ for step in "${all_steps[@]}"; do
       run_step whisper ./kggml-whisper/native/scripts/build-host.sh ${clean_flag[@]+"${clean_flag[@]}"}
       run_step w-audit ./scripts/ci/audit-whisper-linkage.sh host ;;
     jvm)
-      run_step jvm ./gradlew :kggml-runtime:jvmTest -Pkggml.requireNative=true --console=plain ;;
+      run_step jvm ./gradlew :kggml-runtime:jvmTest :kggml-whisper:jvmTest -Pkggml.requireNative=true --console=plain ;;
     android)
       if ndk="$(find_ndk)"; then
         echo "Using Android NDK: ${ndk}"
