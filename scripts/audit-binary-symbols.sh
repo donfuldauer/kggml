@@ -22,6 +22,7 @@
 # errors. Shared by .github/workflows/ci.yml and ./scripts/ci-local.sh; tested by
 # scripts/tests/test-audit-binary-symbols.sh.
 set -euo pipefail
+# Portable to the macOS system bash 3.2 (no mapfile / associative arrays; empty "${a[@]}" is guarded).
 
 # Symbols / names that must never appear in a whisper-only artifact. ggml_* / gguf_* symbols are exempt (the
 # ggml CPU backend exports e.g. ggml_cpu_has_llamafile); their uniqueness is checked separately. ggml's own
@@ -70,8 +71,11 @@ forbidden_in() { grep -Ev "${GGML_SYMBOL_RE}" | grep -Eiv "${ALLOWED_SYMBOL_RE}"
 audit_set() {
   local label="$1" list="$2" mode="$3"
   local f base defs exported bad
-  local -a bins
-  mapfile -t bins <"${list}"
+  local -a bins=()
+  local line
+  while IFS= read -r line; do
+    if [[ -n "${line}" ]]; then bins+=("${line}"); fi
+  done <"${list}"
   [[ ${#bins[@]} -gt 0 ]] || { fail "${label}: no native binaries found"; return; }
 
   local ggml_owners="" have_ggml=0 have_whisper=0 tmp_exports="${WORK}/ggml-defs.tsv"
@@ -143,9 +147,13 @@ audit_apk() {
   else
     entries="$(unzip -Z1 "${apk}")"
   fi
-  local -a abis=("$@")
+  local -a abis=()
+  if [[ $# -gt 0 ]]; then abis=("$@"); fi
   if [[ ${#abis[@]} -eq 0 ]]; then
-    mapfile -t abis < <(sed -n 's|^lib/\([^/]*\)/[^/]*\.so$|\1|p' <<<"${entries}" | sort -u)
+    local abi_line
+    while IFS= read -r abi_line; do
+      if [[ -n "${abi_line}" ]]; then abis+=("${abi_line}"); fi
+    done < <(sed -n 's|^lib/\([^/]*\)/[^/]*\.so$|\1|p' <<<"${entries}" | sort -u)
   fi
   [[ ${#abis[@]} -gt 0 ]] || die "${apk}: contains no native libraries (build with -Pkggml.bundleNative=true)"
 
@@ -213,8 +221,11 @@ audit_ios() {
     ios_binaries "${p}"
   done >"${work}/all.tsv"
   # "all" entries (single frameworks / binaries) belong to every slice.
-  local -a slices
-  mapfile -t slices < <(awk -F'\t' '$1 != "all" {print $1}' "${work}/all.tsv" | sort -u)
+  local -a slices=()
+  local slice_line
+  while IFS= read -r slice_line; do
+    if [[ -n "${slice_line}" ]]; then slices+=("${slice_line}"); fi
+  done < <(awk -F'\t' '$1 != "all" {print $1}' "${work}/all.tsv" | sort -u)
   [[ ${#slices[@]} -gt 0 ]] || slices=(all)
   local slice
   for slice in "${slices[@]}"; do
