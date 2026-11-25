@@ -120,6 +120,29 @@ find_sdk() {
   return 1
 }
 
+# The Android audits call readelf, which macOS does not ship. Without one on PATH, use the NDK's
+# llvm-readelf (GNU-compatible output when invoked as `readelf`).
+if ! command -v readelf >/dev/null 2>&1 && ndk="$(find_ndk)"; then
+  for tool in "${ndk}"/toolchains/llvm/prebuilt/*/bin/llvm-readelf; do
+    [[ -x "${tool}" ]] || continue
+    mkdir -p build/ci-tools
+    ln -sf "${tool}" build/ci-tools/readelf
+    export PATH="${REPO_ROOT}/build/ci-tools:${PATH}"
+    break
+  done
+fi
+
+# This gate mirrors the Ubuntu job, where iOS targets are disabled. On macOS `check` would also publish iOS
+# klibs to the BOM verification repo (which fails for modules without sources, e.g. :kggml-llama) and run the
+# simulator tests; both belong to the ci.yml macOS job, so leave them out here.
+mac_check_args=()
+if [[ "$(uname -s)" == Darwin ]]; then
+  for target in IosArm64 IosSimulatorArm64; do
+    mac_check_args+=(-x "publish${target}PublicationToKggmlVerificationRepository")
+  done
+  mac_check_args+=(-x iosSimulatorArm64Test)
+fi
+
 results=()
 record() { results+=("$(printf '%-9s %s' "$1" "$2")"); }
 missing() {
@@ -187,7 +210,7 @@ for step in "${all_steps[@]}"; do
     check)
       if sdk="$(find_sdk)"; then
         export ANDROID_HOME="${sdk}"
-        run_step g-check ./gradlew check --console=plain
+        run_step g-check ./gradlew check --console=plain ${mac_check_args[@]+"${mac_check_args[@]}"}
         run_step g-assemble ./gradlew --console=plain :samples:kggml-showcase:assembleDebug \
           :samples:kggml-showcase:desktopJar :samples:whisper-only-minimal:assembleDebug
       else
