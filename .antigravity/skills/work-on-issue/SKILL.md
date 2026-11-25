@@ -113,7 +113,12 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
    As soon as the PR exists, subscribe to its activity so CI failures, review comments, and review requests are delivered back to the agent and fixed autonomously on `feat/issue-<N>-<slug>`.
    - **Claude Code:** call the `subscribe_pr_activity` tool with `owner`, `repo`, and `pullNumber=<PR_NUMBER>` right after `gh pr create` (or the GitHub MCP `create_pull_request`) returns. This is part of opening the PR, not an optional follow-up.
    - **Other harnesses:** use the harness's equivalent PR watch / auto-fix mechanism.
-   - **Never wait on CI open-endedly.** Before ending any turn while a check is pending, also schedule a safety-net check-in (`send_later`, about 30 minutes, naming the PR and what to check); a subscription alone can miss events if the session's container is reclaimed. On each check-in, apply the deadlines and the infrastructure-vs-code split in AGENTS.md "When a runner fails or hangs".
+   - **Wait for CI in the turn; never end a turn with a check pending** (AGENTS.md "Waiting for CI"). Subscriptions wake you only for failures, comments, reviews and the merge, and **not** when a check turns green. Right after every push or label change, start `scripts/ci/wait-pr-checks.sh <PR_NUMBER>` (Claude Code: Bash `run_in_background: true`, which re-invokes you when it exits) and act on its exit code:
+     - `0` green: Step 5.
+     - `1` failed: fix it, or apply the infrastructure rules.
+     - `2` deadline: infrastructure failure.
+     - `3` no `gh`: poll the GitHub MCP `get_check_runs` every 1–2 min, paced by a background `sleep 90`.
+     Do not use 30-minute safety-net check-ins. If a turn has to end with checks pending, schedule one check-in at most 10 minutes out and confirm it exists (`CronList`).
    - Auto-fix pushes only to the PR's own feature branch; it never skips or disables tests to get green, and never force-pushes. Re-run `./scripts/ci-local.sh` before each auto-fix push and batch related fixes into a single push. Auto-fix only makes the PR mergeable; the merge itself happens in Step 5. Unsubscribe (`unsubscribe_pr_activity`) once the PR is merged or closed.
 5. **Transition issue status to `status:in-review`:**
    ```bash
@@ -140,7 +145,7 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 ## Step 5: PR Merge & Downstream DAG Unblocking
 
-Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it to finish (auto-fix events plus a scheduled safety-net check-in, or `gh pr checks <PR_NUMBER> --watch`), but only up to the deadlines in AGENTS.md "When a runner fails or hangs"; do not end the workflow with an open, green PR. Manual/physical checks recorded in `docs/MANUAL_VERIFICATION.md` are not merge gates.
+Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it with `scripts/ci/wait-pr-checks.sh <PR_NUMBER>` (or the MCP poll fallback) as in Step 3.4, up to the deadlines in AGENTS.md "When a runner fails or hangs". A missing event is never a reason to stop waiting; do not end the workflow with an open, green PR. Manual/physical checks recorded in `docs/MANUAL_VERIFICATION.md` are not merge gates.
 
 1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes).** If the PR has the `ci:macos` / `ci:windows` label, the `ci.yml` macOS / Windows check must also be green:
    ```bash

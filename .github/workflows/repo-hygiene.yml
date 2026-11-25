@@ -29,6 +29,9 @@ jobs:
       - name: Verify parity across AGENTS.md, .agents, .claude, .gemini, .antigravity, and .codex
         run: ./scripts/verify-agent-parity.sh
 
+      - name: Test the agent CI waiter (scripts/ci/wait-pr-checks.sh)
+        run: ./scripts/tests/test-wait-pr-checks.sh
+
   secret-scan:
     name: Gitleaks Secret Scan
     runs-on: >-
