@@ -21,6 +21,9 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
+# Make sure commit attribution hooks (.githooks/) are active in this clone.
+./scripts/install-git-hooks.sh
+
 all_steps=(parity gitleaks pin native jvm android)
 only=""
 skip=""
