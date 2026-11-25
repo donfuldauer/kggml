@@ -22,6 +22,8 @@ Stop and report to the user instead of merging **only** when:
 - a phase-final PR lacks `APPROVED` from `phase-reviewer`; or
 - a human reviewer has requested changes that are still unresolved.
 
+Never stop, wait, or leave a PR open for manual or physical-device testing (AGENTS.md Section 3, "Deferred Manual & Physical Verification"). Those checks are deferred to the owner's final acceptance pass after all phases: document the procedure, add a line to `docs/MANUAL_VERIFICATION.md`, and merge on the automated gates.
+
 ---
 
 ## Step 1: Issue Selection & Atomic Claiming
@@ -84,7 +86,8 @@ Stop and report to the user instead of merging **only** when:
    # ./gradlew check
    # ./gradlew iosSimulatorArm64Test   # macOS hosts only; otherwise covered by the ci:macos run
    ```
-   Include `ci-local.sh`'s summary block in the PR's Verification section. Do not push to see whether CI passes: CI minutes are limited, so fix failures locally first.
+   Include `ci-local.sh`'s summary block in the PR's Verification section.
+   If any acceptance criterion needs a person or a physical device, write its procedure (module or sample `README.md`) and add a `- [ ] [#<N>] <check> — <procedure link>` line to `docs/MANUAL_VERIFICATION.md` in this PR; in the PR body mark that item **Deferred to final acceptance**, not as a pending blocker. Do not push to see whether CI passes: CI minutes are limited, so fix failures locally first.
 2. **Commit, push, and open PR:**
    ```bash
    git status
@@ -135,7 +138,7 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 ## Step 5: PR Merge & Downstream DAG Unblocking
 
-Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it to finish (auto-fix events or `gh pr checks <PR_NUMBER> --watch`); do not end the workflow with an open, green PR.
+Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it to finish (auto-fix events or `gh pr checks <PR_NUMBER> --watch`); do not end the workflow with an open, green PR. Manual/physical checks recorded in `docs/MANUAL_VERIFICATION.md` are not merge gates.
 
 1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes).** If the PR has the `ci:macos` label, the `Host build + CTest (macos-latest)` check must also be green:
    ```bash

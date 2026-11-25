@@ -16,6 +16,7 @@ Closes #<ISSUE_NUMBER>
 - [ ] Native C++ tests (`ctest`) pass (if native code touched)
 - [ ] Platform integration / UI / binary symbol audit checks pass (as applicable)
 - [ ] `NOTICE` updated if upstream C/C++ dependencies or test fixtures changed
+- [ ] Manual / physical-device checks (if any) documented and listed in `docs/MANUAL_VERIFICATION.md` — deferred to final acceptance, not a merge gate
 - [ ] `ci:macos` label added (phase-final PRs, or changes to macOS/iOS-specific native code)
 
 ```text
