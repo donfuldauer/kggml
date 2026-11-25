@@ -93,8 +93,15 @@ Included Actions minutes are limited, and hosted Windows and macOS runners are b
 - New CI jobs must put shared logic in `scripts/ci/` and call it from both the workflow and `./scripts/ci-local.sh`, so every Linux CI check can be reproduced locally. Any new macOS/iOS job goes in the label-gated macOS workflow, not the per-PR one.
 - Batch fixes into one push where possible: every push to an open PR starts the Linux jobs again. Open PRs as drafts while iterating and mark them ready once `./scripts/ci-local.sh` passes.
 
+#### Runner order
+1. **Owner's Mac (self-hosted, label `local-mac`)** while the repo variable `MAC_RUNNER` is `on` (the runner sets it to `on` when it starts and `off` when it stops). `Mac (full local gate)` replaces the Ubuntu job, and the `ci:macos` job and `repo-hygiene.yml` run there too, at no billed minutes. It does not build linux-x64: for PRs that change Linux-specific code (`__linux__` `#ifdef`s, `linux-x64` presets, ELF packaging), also run `gh workflow run ci.yml --ref <branch> -f runner=hosted` (this starts the hosted Windows and macOS jobs as well).
+2. **GitHub-hosted runners** when `MAC_RUNNER` is not `on`. Windows always uses these. Fork PRs never run on the Mac.
+3. **Local gate** when hosted jobs are refused (next section).
+
+If a Mac job is still queued after 10 minutes while the Mac is not busy with another job, the flag is stale: run `gh variable set MAC_RUNNER --body off`, cancel the run, then close and reopen the PR to start it on hosted runners. A Mac job that fails is a real failure: fix it, do not fall back.
+
 #### When the Actions quota is exhausted
-GitHub stops starting hosted jobs once the included minutes (and any spending limit) are used up: checks stay queued or fail at once with a billing / spending-limit annotation and no logs. That is not a code failure and must not block work:
+This applies when the Mac is off (`MAC_RUNNER` is not `on`). GitHub stops starting hosted jobs once the included minutes (and any spending limit) are used up: checks stay queued or fail at once with a billing / spending-limit annotation and no logs. That is not a code failure and must not block work:
 - Do not re-run, re-push or wait for CI. Run `./scripts/ci-local.sh --full` (every Linux check regardless of what changed, plus `./gradlew check` and the sample builds) and paste its summary into the PR's Verification section under the heading `CI unavailable (Actions quota exhausted): local gate`.
 - Any step reported `SKIPPED` for a missing tool (NDK, SDK, gitleaks) is listed in the PR body. Labelled macOS/Windows checks that cannot run are added to `docs/MANUAL_VERIFICATION.md` as `- [ ] [#<issue>] CI re-run on macOS/Windows once Actions minutes reset — <PR link>`.
 - With a green local gate the PR is mergeable under "Autonomous merge" below; the quota is not a reason to escalate. Phase-final PRs still need `phase-reviewer` approval.

@@ -1,7 +1,7 @@
 name: Repo Hygiene & Agent Parity
 
 # Cheap Linux checks on every PR. Not re-run on pushes to main: PRs merge with a merge commit after
-# these passed on the PR head.
+# these passed on the PR head. Both jobs follow the same runner order as ci.yml (AGENTS.md "Runner order").
 on:
   pull_request:
   workflow_dispatch:
@@ -18,7 +18,9 @@ permissions:
 jobs:
   agent-parity:
     name: Verify Multi-Harness Agent & Skill Parity
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -29,7 +31,9 @@ jobs:
 
   secret-scan:
     name: Gitleaks Secret Scan
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Checkout full history
