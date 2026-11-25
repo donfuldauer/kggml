@@ -30,6 +30,7 @@ add_executable(kggml_runtime_tests
     test_cpu_topology.cpp
     test_versions.cpp
     test_errors.cpp
+    test_abi.cpp
     # Internal (hidden-visibility) code under test is compiled straight into the test binary.
     ${PROJECT_SOURCE_DIR}/src/cpu_topology.cpp)
 

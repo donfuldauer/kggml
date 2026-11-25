@@ -62,7 +62,7 @@ jobs:
       - name: Checkout repository (with ggml submodule)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: true
 
       - name: Install Ninja
         run: brew install ninja || true

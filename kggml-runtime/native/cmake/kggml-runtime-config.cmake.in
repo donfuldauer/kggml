@@ -13,6 +13,9 @@
 set(KGGML_RUNTIME_MONOLITHIC @KGGML_RUNTIME_MONOLITHIC@)
 set(KGGML_GGML_PINNED_COMMIT "@KGGML_GGML_PINNED_COMMIT@")
 set(KGGML_GGML_PINNED_VERSION "@KGGML_GGML_PINNED_VERSION@")
+# ggml ABI: size of ggml_tensor::name. Already a PUBLIC compile definition (GGML_MAX_NAME=...) of every exported
+# target; exposed here so consumers can assert it or pass it to code that does not link these targets.
+set(KGGML_GGML_MAX_NAME @KGGML_GGML_MAX_NAME@)
 
 include(CMakeFindDependencyMacro)
 find_dependency(Threads)
@@ -23,5 +26,12 @@ if (NOT TARGET kggml::ggml)
     add_library(kggml::ggml INTERFACE IMPORTED)
     set_target_properties(kggml::ggml PROPERTIES INTERFACE_LINK_LIBRARIES kggml::runtime)
 endif()
+
+# Fail fast if an exported target lost the ABI definition (it must reach every TU that includes ggml.h).
+get_target_property(_kggml_runtime_defs kggml::runtime INTERFACE_COMPILE_DEFINITIONS)
+if (NOT "GGML_MAX_NAME=${KGGML_GGML_MAX_NAME}" IN_LIST _kggml_runtime_defs)
+    message(FATAL_ERROR "kggml::runtime does not export GGML_MAX_NAME=${KGGML_GGML_MAX_NAME} (ggml ABI)")
+endif()
+unset(_kggml_runtime_defs)
 
 check_required_components(kggml-runtime)
