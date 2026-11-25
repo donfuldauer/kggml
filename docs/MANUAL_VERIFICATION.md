@@ -68,3 +68,6 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#20] Whisper live dictation and LLM Chat streaming at the same time in `:samples:kggml-showcase` on a physical
   Android phone, an iPhone and desktop (both keep producing output, no crash or OOM, one mapping per `libggml*` library
   on Android) — procedure in `integration-tests/README.md` ("Whisper and Llama together on devices").
+- [ ] [#20] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC runtime / whisper /
+  llama / diffusion build + CTest and root `jvmTest` incl. `:integration-tests` dual-engine coexistence) —
+  https://github.com/donfuldauer/kggml/pull/54
