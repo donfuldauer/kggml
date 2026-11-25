@@ -48,3 +48,6 @@ when it has been run; a failed check becomes a new issue.
   procedure in `kggml-diffusion/README.md` ("Manual verification").
 - [ ] [#17] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC `kggml_diffusion_jni`
   build + `:kggml-diffusion:jvmTest` against the native libs) — https://github.com/donfuldauer/kggml/pull/51
+- [ ] [#18] Model manager on physical Android/iOS devices (real GGUF download resumed after airplane mode and app
+  kill, SHA-256 mismatch leaves no `.part`, `send-trim-memory` / iOS memory warning closes idle resident engines,
+  peak-RAM estimate within ~±30% of measured RSS) — procedure in `kggml-model-manager/README.md` ("Manual verification").
