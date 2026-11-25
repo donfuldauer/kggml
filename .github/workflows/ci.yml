@@ -16,6 +16,13 @@ name: CI (Phase 1 cross-platform matrix)
 #              runtime + whisper + llama (MSVC) + CTest, JVM tests against it.
 # Not run: draft PRs, docs/agent-instruction-only PRs (paths-ignore below), and pushes to main (PRs
 # merge with a merge commit after this workflow passed on the PR head, so a main run repeats it).
+# Runner order: the owner's self-hosted Mac while it is on (repo variable MAC_RUNNER == 'on', published by the
+# runner itself), else GitHub-hosted, else (hosted refused: quota / billing) the local gate. On the Mac the
+# Ubuntu job is replaced by `linux-mac` (`ci-local.sh --full`: the same checks on macOS arm64, so the linux-x64
+# build itself is not exercised); the macOS job runs unchanged on either. Windows is always hosted. Fork PRs
+# never run on the Mac. See AGENTS.md "Runner order". Every job and slow step has a timeout, so a check always
+# ends; a runner that never starts, is lost, or times out is handled per AGENTS.md "When a runner fails or hangs"
+# (agents never wait on CI open-endedly).
 # Every Ubuntu step is reproducible locally with `./scripts/ci-local.sh --full`, the fallback gate
 # when the Actions quota is exhausted.
 
@@ -34,6 +41,12 @@ on:
       - ".codex/**"
       - "LICENSE"
   workflow_dispatch:
+    inputs:
+      runner:
+        description: "auto = this repo's Mac when it is on, else hosted"
+        type: choice
+        options: [auto, hosted]
+        default: auto
 
 permissions:
   contents: read
@@ -52,10 +65,38 @@ env:
   NATIVE_GRADLE_ARGS: -Pkggml.requireNative=true -x :kggml-runtime:buildNativeHost -x :kggml-whisper:buildNativeHost -x :kggml-llama:buildNativeHost --console=plain
 
 jobs:
+  linux-mac:
+    name: Mac (full local gate)
+    if: >-
+      github.event.action != 'labeled' && !github.event.pull_request.draft &&
+      vars.MAC_RUNNER == 'on' && inputs.runner != 'hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, macOS, ARM64, local-mac]
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository (full history for gitleaks, with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # Also covers repo-hygiene.yml (agent parity, gitleaks). --strict: a missing tool is a failure.
+      - name: Full local gate
+        timeout-minutes: 100
+        run: ./scripts/ci-local.sh --full --strict
+
   linux:
     name: Ubuntu (Linux JVM, Android, CTest)
     # Draft PRs start no runner (skipped jobs are not billed); marking the PR ready runs it.
-    if: github.event.action != 'labeled' && !github.event.pull_request.draft
+    # Skipped while the Mac is on (linux-mac runs instead).
+    if: >-
+      github.event.action != 'labeled' && !github.event.pull_request.draft &&
+      !(vars.MAC_RUNNER == 'on' && inputs.runner != 'hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository))
     runs-on: ubuntu-latest
     # llama.cpp + libmtmd (host + 2 Android ABIs) roughly doubles the cold native compile time; ccache keeps
     # warm runs well below this.
@@ -150,8 +191,14 @@ jobs:
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'ci:macos') &&
        (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
-    runs-on: macos-latest
-    timeout-minutes: 75
+    # The owner's Mac when it is on (free), else hosted (10x).
+    runs-on: >-
+      ${{ vars.MAC_RUNNER == 'on' && inputs.runner != 'hosted' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'macos-latest' }}
+    # Every step below has its own timeout so a hang fails in minutes with a named step instead of holding the
+    # PR (and the agent waiting on it) for hours; the job cap is only a backstop. Agents treat a timed-out or
+    # runner-lost job per AGENTS.md "When a runner fails or hangs".
+    timeout-minutes: 90
     steps:
       - name: Checkout repository (with ggml submodule)
         uses: actions/checkout@v4
@@ -171,35 +218,49 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Native runtime (macos-arm64, Metal + Accelerate) build + CTest + ggml pin + dynamic linkage audit
+        timeout-minutes: 20
         run: |
           ./scripts/ci/verify-ggml-pin.sh
           ./kggml-runtime/native/scripts/build-host.sh
           ./scripts/ci/audit-host-linkage.sh
 
       - name: Native whisper (macos-arm64) build + CTest + dynamic ggml linkage audit
+        timeout-minutes: 20
         run: |
           ./kggml-whisper/native/scripts/build-host.sh
           ./scripts/ci/audit-whisper-linkage.sh host
 
       - name: Native llama (macos-arm64) build + CTest + dynamic ggml linkage audit
+        timeout-minutes: 25
         run: |
           ./kggml-llama/native/scripts/build-host.sh
           ./scripts/ci/audit-llama-linkage.sh host
 
       - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64)
+        timeout-minutes: 20
         run: ./kggml-runtime/native/scripts/build-ios-xcframework.sh
 
       - name: Build KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML, linked to GgmlRuntime)
+        timeout-minutes: 20
         run: ./kggml-whisper/native/scripts/build-ios-xcframework.sh
 
       - name: Build KggmlLlama.xcframework (iosArm64 + iosSimulatorArm64, llama.cpp + libmtmd, linked to GgmlRuntime)
+        timeout-minutes: 20
         run: ./kggml-llama/native/scripts/build-ios-xcframework.sh
 
       - name: JVM tests against the macOS native runtime
+        timeout-minutes: 20
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
+
+      # The self-hosted Mac keeps simulators between jobs; a device left booted or wedged by an earlier
+      # (possibly cancelled) run can stall the next test run, so start from a clean slate.
+      - name: Shut down leftover simulators
+        timeout-minutes: 3
+        run: xcrun simctl shutdown all || true
 
       - name: Pick an available iPhone simulator
         id: sim
+        timeout-minutes: 2
         run: |
           udid="$(xcrun simctl list devices available --json | python3 -c '
           import json, sys
@@ -210,12 +271,17 @@ jobs:
           echo "Using simulator ${udid}"
           echo "udid=${udid}" >> "$GITHUB_OUTPUT"
 
+      # Each test task is also capped in Gradle (kggml.iosTestTimeoutMinutes, root build.gradle.kts) and logs
+      # every test as it starts, so a hang names the module and test before this step's own timeout.
       - name: iOS simulator tests (iosSimulatorArm64Test)
+        timeout-minutes: 30
         run: >
-          ./gradlew iosSimulatorArm64Test $NATIVE_GRADLE_ARGS
+          ./gradlew iosSimulatorArm64Test $NATIVE_GRADLE_ARGS --continue
           -Pkggml.iosSimulatorDevice=${{ steps.sim.outputs.udid }}
+          -Pkggml.iosTestTimeoutMinutes=12
 
       - name: Link iOS frameworks (SDK modules + samples, iosArm64 + iosSimulatorArm64)
+        timeout-minutes: 20
         run: >
           ./gradlew --console=plain
           :kggml-runtime:compileKotlinIosArm64
@@ -226,7 +292,13 @@ jobs:
           :samples:whisper-only-minimal:linkDebugFrameworkIosSimulatorArm64
 
       - name: whisper-only-minimal binary symbol audit (iOS framework + xcframework slices)
+        timeout-minutes: 10
         run: ./scripts/ci/audit-minimal-sample.sh ios
+
+      - name: Shut down simulators
+        if: always()
+        timeout-minutes: 3
+        run: xcrun simctl shutdown all || true
 
       - name: Upload reports on failure
         if: failure()

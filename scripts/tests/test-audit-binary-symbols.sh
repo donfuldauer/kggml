@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tests for scripts/audit-binary-symbols.sh with tiny synthetic binaries (no real ggml / whisper build needed).
 #
-# Builds fake ELF shared libraries (host cc) and, when clang can target iOS, fake Mach-O objects, packs them the
+# Builds fake ELF shared libraries (host cc; the NDK's clang on macOS) and, when clang can target iOS, fake Mach-O objects, packs them the
 # way an APK / framework would, and asserts the audit passes for a clean whisper-only set and FAILS for:
 # a forbidden llama / stable-diffusion / mtmd symbol, a hidden (local) llama symbol, a forbidden native library
 # file, a duplicate ggml definition (statically embedded ggml), an engine library without a dynamic ggml link,
@@ -12,6 +12,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AUDIT="${REPO_ROOT}/scripts/audit-binary-symbols.sh"
+# The fake libraries must be ELF; the macOS host cc emits Mach-O, so use the NDK's clang there.
+if [[ -z "${CC:-}" && "$(uname -s)" == Darwin && -n "${ANDROID_NDK_HOME:-}" ]]; then
+  for ndk_cc in "${ANDROID_NDK_HOME}"/toolchains/llvm/prebuilt/*/bin/aarch64-linux-android26-clang; do
+    if [[ -x "${ndk_cc}" ]]; then CC="${ndk_cc}"; fi
+  done
+fi
 CC="${CC:-cc}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
