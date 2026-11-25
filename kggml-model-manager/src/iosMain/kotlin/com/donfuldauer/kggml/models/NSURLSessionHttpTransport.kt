@@ -8,6 +8,7 @@ import platform.Foundation.NSData
 import platform.Foundation.NSHTTPURLResponse
 import platform.Foundation.NSMutableURLRequest
 import platform.Foundation.NSURL
+import platform.Foundation.NSURLRequestReloadIgnoringLocalCacheData
 import platform.Foundation.NSURLSession
 import platform.Foundation.dataTaskWithRequest
 import platform.Foundation.setValue
@@ -28,9 +29,12 @@ public class NSURLSessionHttpTransport(
 
     override suspend fun <T> get(url: String, headers: Map<String, String>, handle: suspend (HttpResponse) -> T): T {
         val nsUrl = NSURL.URLWithString(url) ?: throw DownloadProtocolException("invalid URL $url")
-        val request = NSMutableURLRequest(uRL = nsUrl).apply {
-            HTTPMethod = "GET"
-            timeoutInterval = timeoutSeconds
+        val request = NSMutableURLRequest(
+            uRL = nsUrl,
+            // Never serve a Range chunk from the URL cache; GET is the default method.
+            cachePolicy = NSURLRequestReloadIgnoringLocalCacheData,
+            timeoutInterval = timeoutSeconds,
+        ).apply {
             setValue("identity", forHTTPHeaderField = "Accept-Encoding")
             headers.forEach { (k, v) -> setValue(v, forHTTPHeaderField = k) }
         }
