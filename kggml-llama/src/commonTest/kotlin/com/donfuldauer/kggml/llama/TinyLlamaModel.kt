@@ -42,7 +42,7 @@ internal object TinyLlamaModel {
 
     /** The model file contents. */
     fun bytes(): ByteArray {
-        val kv = Writer()
+        val kv = GgufWriter()
         var kvCount = 0
         fun key(name: String, type: Int) {
             kv.str(name)
@@ -101,7 +101,7 @@ internal object TinyLlamaModel {
 
         // Tensors (F32), created in the same order (and drawing from the same xorshift stream) as tiny_model.cpp.
         val nEmbdKv = EMBD / HEADS * HEADS_KV
-        val rng = Rng(0x9E3779B9.toInt())
+        val rng = XorShiftRng(0x9E3779B9.toInt())
         class Tensor(val name: String, val ne: LongArray, val data: FloatArray)
         val tensors = ArrayList<Tensor>()
         fun tensor(name: String, ne0: Int, ne1: Int, norm: Boolean) {
@@ -122,7 +122,7 @@ internal object TinyLlamaModel {
         tensor("blk.0.ffn_down.weight", FF, EMBD, false)
         tensor("blk.0.ffn_up.weight", EMBD, FF, false)
 
-        val out = Writer()
+        val out = GgufWriter()
         out.raw(byteArrayOf('G'.code.toByte(), 'G'.code.toByte(), 'U'.code.toByte(), 'F'.code.toByte()))
         out.u32(3)
         out.u64(tensors.size.toLong())
@@ -146,59 +146,60 @@ internal object TinyLlamaModel {
     }
 
     private fun pad(n: Long): Long = (n + ALIGNMENT - 1) / ALIGNMENT * ALIGNMENT
+}
 
-    /** Deterministic xorshift32 weights in [-scale, scale] (same stream as tiny_model.cpp). */
-    private class Rng(private var s: Int) {
-        fun next(scale: Float): Float {
-            s = s xor (s shl 13)
-            s = s xor (s ushr 17)
-            s = s xor (s shl 5)
-            return ((s and 0xFFFFFF).toFloat() / 0xFFFFFF.toFloat() * 2.0f - 1.0f) * scale
-        }
+/** Deterministic xorshift32 weights in [-scale, scale] (same stream as tiny_model.cpp). */
+internal class XorShiftRng(private var s: Int) {
+    fun next(scale: Float): Float {
+        s = s xor (s shl 13)
+        s = s xor (s ushr 17)
+        s = s xor (s shl 5)
+        return ((s and 0xFFFFFF).toFloat() / 0xFFFFFF.toFloat() * 2.0f - 1.0f) * scale
+    }
+}
+
+/** Little-endian GGUF byte writer shared by the synthetic fixtures. */
+internal class GgufWriter {
+    private var buf = ByteArray(1 shl 16)
+    var size = 0
+        private set
+
+    private fun ensure(n: Int) {
+        if (size + n > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, size + n))
     }
 
-    private class Writer {
-        private var buf = ByteArray(1 shl 16)
-        var size = 0
-            private set
-
-        private fun ensure(n: Int) {
-            if (size + n > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, size + n))
-        }
-
-        fun u8(v: Int) {
-            ensure(1)
-            buf[size++] = v.toByte()
-        }
-
-        fun u32(v: Int) {
-            ensure(4)
-            for (i in 0 until 4) buf[size++] = (v ushr (8 * i)).toByte()
-        }
-
-        fun u64(v: Long) {
-            ensure(8)
-            for (i in 0 until 8) buf[size++] = (v ushr (8 * i)).toByte()
-        }
-
-        fun f32(v: Float) = u32(v.toRawBits())
-
-        fun raw(bytes: ByteArray) {
-            ensure(bytes.size)
-            bytes.copyInto(buf, size)
-            size += bytes.size
-        }
-
-        fun str(s: String) {
-            val bytes = s.encodeToByteArray()
-            u64(bytes.size.toLong())
-            raw(bytes)
-        }
-
-        fun padTo(alignment: Int) {
-            while (size % alignment != 0) u8(0)
-        }
-
-        fun toByteArray(): ByteArray = buf.copyOf(size)
+    fun u8(v: Int) {
+        ensure(1)
+        buf[size++] = v.toByte()
     }
+
+    fun u32(v: Int) {
+        ensure(4)
+        for (i in 0 until 4) buf[size++] = (v ushr (8 * i)).toByte()
+    }
+
+    fun u64(v: Long) {
+        ensure(8)
+        for (i in 0 until 8) buf[size++] = (v ushr (8 * i)).toByte()
+    }
+
+    fun f32(v: Float) = u32(v.toRawBits())
+
+    fun raw(bytes: ByteArray) {
+        ensure(bytes.size)
+        bytes.copyInto(buf, size)
+        size += bytes.size
+    }
+
+    fun str(s: String) {
+        val bytes = s.encodeToByteArray()
+        u64(bytes.size.toLong())
+        raw(bytes)
+    }
+
+    fun padTo(alignment: Int) {
+        while (size % alignment != 0) u8(0)
+    }
+
+    fun toByteArray(): ByteArray = buf.copyOf(size)
 }

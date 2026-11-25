@@ -60,14 +60,67 @@ public enum class LlamaPooling(internal val nativeValue: Int) {
  * @property allowBackendFallback when the requested backend is unavailable, fall back along
  *   [ComputeBackend.fallback] (eventually [ComputeBackend.CPU_ONLY]) instead of failing.
  * @property useMlock lock the model weights in RAM (`mlock`).
+ * @property projectorPath multimodal projector GGUF (`mmproj-*.gguf`) matching the model. When set, it is loaded
+ *   with libmtmd next to the model, on the same backend ([com.donfuldauer.kggml.core.ComputeBackend.CPU_ONLY]
+ *   creates no GPU backend for the image encoder either), and enables the image overloads of
+ *   [LlamaEngine.generate]. `null` = text only.
+ * @property imageMinTokens minimum embeddings per image for projectors with dynamic resolution, `0` = the
+ *   projector's default.
+ * @property imageMaxTokens maximum embeddings per image for projectors with dynamic resolution, `0` = the
+ *   projector's default.
  */
 public data class LlamaEngineOptions(
     val gpuDevice: Int = 0,
     val allowBackendFallback: Boolean = true,
     val useMlock: Boolean = false,
+    val projectorPath: String? = null,
+    val imageMinTokens: Int = 0,
+    val imageMaxTokens: Int = 0,
 ) {
     init {
         require(gpuDevice >= 0) { "gpuDevice must be >= 0, was $gpuDevice" }
+        require(projectorPath == null || projectorPath.isNotEmpty()) { "projectorPath must not be empty (use null)" }
+        require(imageMinTokens >= 0) { "imageMinTokens must be >= 0, was $imageMinTokens" }
+        require(imageMaxTokens >= 0) { "imageMaxTokens must be >= 0, was $imageMaxTokens" }
+        require(imageMaxTokens == 0 || imageMaxTokens >= imageMinTokens) {
+            "imageMaxTokens ($imageMaxTokens) must be >= imageMinTokens ($imageMinTokens)"
+        }
+    }
+}
+
+/**
+ * An image attached to a multimodal prompt ([LlamaEngine.generate] with images). Images live in memory only: the
+ * bytes are handed to libmtmd zero-copy (pinned for the duration of tokenization, never copied by Kotlin, never
+ * written to a temporary file) and must not be modified until the `generate` collection has started evaluating.
+ */
+public sealed class LlamaImage {
+    /**
+     * An encoded image file — PNG, JPEG, BMP, GIF (first frame), TGA, PSD, HDR, PIC or PNM, as decoded by
+     * libmtmd's bundled `stb_image` — decoded in memory.
+     */
+    public class Encoded(public val bytes: ByteArray) : LlamaImage() {
+        init {
+            require(bytes.isNotEmpty()) { "encoded image bytes must not be empty" }
+        }
+
+        override fun toString(): String = "LlamaImage.Encoded(${bytes.size} bytes)"
+    }
+
+    /** Raw packed RGB888 pixels, row by row from the top-left: `width * height * 3` bytes. */
+    public class Rgb(public val width: Int, public val height: Int, public val pixels: ByteArray) : LlamaImage() {
+        init {
+            require(width > 0 && height > 0) { "width and height must be > 0, was ${width}x$height" }
+            require(pixels.size.toLong() == width.toLong() * height * 3) {
+                "pixels must hold width * height * 3 = ${width.toLong() * height * 3} bytes, was ${pixels.size}"
+            }
+        }
+
+        override fun toString(): String = "LlamaImage.Rgb(${width}x$height)"
+    }
+
+    internal fun toRaw(): RawImage = when (this) {
+        is Encoded -> RawImage(RawImage.FORMAT_ENCODED, 0, 0, bytes)
+        is Rgb -> RawImage(RawImage.FORMAT_RGB, width, height, pixels)
     }
 }
 

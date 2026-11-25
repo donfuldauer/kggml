@@ -3,8 +3,8 @@ package com.donfuldauer.kggml.llama
 /**
  * [NativeLlamaBridge] over the `kggml_llama_jni` JNI library (Android + JVM Desktop).
  *
- * Token arrays are passed by reference; the native side pins them with `GetPrimitiveArrayCritical` (zero-copy) and
- * releases them on every path.
+ * Token arrays and image bytes are passed by reference; the native side pins them with `GetPrimitiveArrayCritical`
+ * (zero-copy) and releases them on every path (images only for the duration of [mtmdTokenize]).
  *
  * @param loadLibraries loads `kggml_llama_jni` and its dependencies; invoked once, before any native call.
  */
@@ -150,6 +150,52 @@ internal class JniLlamaBridge(loadLibraries: () -> Unit) : NativeLlamaBridge {
         KggmlLlamaJni.nativeSamplerAccept(sampler, token, applyGrammar.toInt())
 
     override fun samplerReset(sampler: Long): Int = KggmlLlamaJni.nativeSamplerReset(sampler)
+
+    override fun mtmdInit(model: Long, projectorPath: String, params: RawMtmdParams): RawHandleResult {
+        val ints = IntArray(KggmlLlamaJni.MTMD_PARAM_COUNT)
+        ints[0] = params.backend
+        ints[1] = params.threads
+        ints[2] = params.flashAttention
+        ints[3] = params.imageMinTokens
+        ints[4] = params.imageMaxTokens
+        ints[5] = params.warmup.toInt()
+        return handleResult { KggmlLlamaJni.nativeMtmdInit(model, projectorPath.encodeToByteArray(), ints, it) }
+    }
+
+    override fun mtmdFree(mtmd: Long) = KggmlLlamaJni.nativeMtmdFree(mtmd)
+
+    override fun mtmdCaps(mtmd: Long): RawMtmdCaps {
+        val out = IntArray(KggmlLlamaJni.MTMD_CAPS_COUNT)
+        val status = KggmlLlamaJni.nativeMtmdCaps(mtmd, out)
+        return if (status != LlamaStatus.OK) RawMtmdCaps(status) else RawMtmdCaps(status, out[0] != 0, out[1] != 0, out[2])
+    }
+
+    override fun mtmdDefaultMarker(): String = KggmlLlamaJni.nativeMtmdDefaultMarker() ?: "<__media__>"
+
+    override fun mtmdTokenize(mtmd: Long, prompt: String, images: List<RawImage>, addSpecial: Boolean, parseSpecial: Boolean): RawHandleResult {
+        val stride = KggmlLlamaJni.IMAGE_META_STRIDE
+        val meta = IntArray(images.size * stride)
+        images.forEachIndexed { i, image ->
+            meta[i * stride] = image.format
+            meta[i * stride + 1] = image.width
+            meta[i * stride + 2] = image.height
+        }
+        val arrays = Array(images.size) { images[it].bytes }
+        return handleResult {
+            KggmlLlamaJni.nativeMtmdTokenize(mtmd, prompt.encodeToByteArray(), arrays, meta, addSpecial.toInt(), parseSpecial.toInt(), it)
+        }
+    }
+
+    override fun mtmdChunksFree(chunks: Long) = KggmlLlamaJni.nativeMtmdChunksFree(chunks)
+
+    override fun mtmdChunksInfo(chunks: Long): RawChunksInfo {
+        val out = IntArray(KggmlLlamaJni.CHUNKS_INFO_COUNT)
+        val status = KggmlLlamaJni.nativeMtmdChunksInfo(chunks, out)
+        return if (status != LlamaStatus.OK) RawChunksInfo(status) else RawChunksInfo(status, out[0], out[1], out[2])
+    }
+
+    override fun mtmdEvalChunks(mtmd: Long, context: Long, chunks: Long, nPast: Int, seqId: Int, logitsLast: Boolean): RawIntResult =
+        intResult { KggmlLlamaJni.nativeMtmdEvalChunks(mtmd, context, chunks, nPast, seqId, logitsLast.toInt(), it) }
 
     private fun version(which: Int): String = KggmlLlamaJni.nativeVersionString(which).orEmpty()
 

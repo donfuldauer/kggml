@@ -8,6 +8,8 @@
 //  * Token arrays cross the boundary zero-copy: int[] is pinned with GetPrimitiveArrayCritical and read in place
 //    by llama_decode(). CriticalArray releases it on every path (RAII, including exceptions). No other JNI
 //    function is called on the same thread while an array is held.
+//  * Image byte[]s for multimodal prompts are pinned the same way, but only for kggml_llama_mtmd_tokenize(), which
+//    wraps / decodes them into preprocessed chunks; the (long) image encode then runs with nothing pinned.
 //  * Text (prompts, grammars, model paths) crosses as raw UTF-8 byte[] rather than jstring, so supplementary
 //    characters and embedded bytes are never mangled by JNI's modified UTF-8.
 //  * Models, contexts and samplers cross as opaque jlong handles; Kotlin serializes every call on one engine
@@ -26,6 +28,7 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
+#include <memory>
 #include <new>
 #include <string>
 #include <vector>
@@ -47,6 +50,10 @@ constexpr jsize kContextParamCount = 9; // n_ctx, n_batch, n_ubatch, n_seq_max, 
                                         // flash_attn, embeddings, pooling
 constexpr jsize kSamplerIntCount = 3;   // top_k, repeat_last_n, seed (uint32 bits)
 constexpr jsize kSamplerFloatCount = 4; // temperature, top_p, min_p, repeat_penalty
+constexpr jsize kMtmdParamCount = 6;    // backend, n_threads, flash_attn, image_min_tokens, image_max_tokens, warmup
+constexpr jsize kMtmdCapsCount = 3;     // vision, audio, audio_sample_rate
+constexpr jsize kImageMetaStride = 3;   // per image: format, width, height
+constexpr jsize kChunksInfoCount = 3;   // n_tokens, n_pos, n_images
 
 /// Runs `body` (returning jint status) behind the FFI exception firewall.
 template <typename Fn>
@@ -494,6 +501,146 @@ KGGML_JNI(jint, nativeSamplerReset)(JNIEnv *, jclass, jlong sampler) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Multimodal (libmtmd)
+// ---------------------------------------------------------------------------------------------------------------
+
+/// `ints`: backend, n_threads, flash_attn, image_min_tokens, image_max_tokens, warmup.
+KGGML_JNI(jint, nativeMtmdInit)(JNIEnv * env, jclass, jlong model, jbyteArray path_utf8, jintArray ints,
+                                jlongArray out_handle) {
+    return jni_guard([&]() -> jint {
+        if (path_utf8 == nullptr || !has_length(env, ints, kMtmdParamCount) || !has_length(env, out_handle, 1)) {
+            return KGGML_STATUS_INVALID_ARGUMENT;
+        }
+        const Utf8Bytes path(env, path_utf8);
+        jint v[kMtmdParamCount] = {};
+        env->GetIntArrayRegion(ints, 0, kMtmdParamCount, v);
+        kggml_llama_mtmd_params params{};
+        if (const auto s = kggml_llama_mtmd_default_params(&params); s != KGGML_STATUS_OK) return s;
+        params.backend = v[0];
+        params.n_threads = v[1];
+        params.flash_attn = v[2];
+        params.image_min_tokens = v[3];
+        params.image_max_tokens = v[4];
+        params.warmup = v[5];
+        kggml_llama_mtmd * mtmd = nullptr;
+        const kggml_status s = kggml_llama_mtmd_init(from_handle<kggml_llama_model>(model), path.c_str(), &params, &mtmd);
+        set_long(env, out_handle, s == KGGML_STATUS_OK ? to_handle(mtmd) : 0);
+        return s;
+    });
+}
+
+KGGML_JNI(void, nativeMtmdFree)(JNIEnv *, jclass, jlong handle) {
+    kggml_llama_mtmd_free(from_handle<kggml_llama_mtmd>(handle));
+}
+
+/// `out`: vision, audio, audio_sample_rate.
+KGGML_JNI(jint, nativeMtmdCaps)(JNIEnv * env, jclass, jlong handle, jintArray out) {
+    return jni_guard([&]() -> jint {
+        if (!has_length(env, out, kMtmdCapsCount)) return KGGML_STATUS_INVALID_ARGUMENT;
+        int32_t v[kMtmdCapsCount] = {0, 0, -1};
+        const kggml_status s = kggml_llama_mtmd_get_caps(from_handle<kggml_llama_mtmd>(handle), &v[0], &v[1], &v[2]);
+        if (s != KGGML_STATUS_OK) return s;
+        const jint values[kMtmdCapsCount] = {v[0], v[1], v[2]};
+        env->SetIntArrayRegion(out, 0, kMtmdCapsCount, values);
+        return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_JNI(jstring, nativeMtmdDefaultMarker)(JNIEnv * env, jclass) {
+    return static_cast<jstring>(
+        jni_guard_object([&]() -> jobject { return to_ascii_jstring(env, kggml_llama_mtmd_default_marker()); }));
+}
+
+/**
+ * Tokenizes a multimodal prompt. `images` is a byte[][] and `meta` holds (format, width, height) per image. The
+ * image arrays are pinned with GetPrimitiveArrayCritical (zero-copy) only for the duration of
+ * kggml_llama_mtmd_tokenize(): every array reference and length is fetched first, so no JNI call happens while
+ * any of them is held, and all are released before `out_handle` is written.
+ */
+KGGML_JNI(jint, nativeMtmdTokenize)(JNIEnv * env, jclass, jlong mtmd, jbyteArray prompt_utf8, jobjectArray images,
+                                    jintArray meta, jint add_special, jint parse_special, jlongArray out_handle) {
+    return jni_guard([&]() -> jint {
+        if (prompt_utf8 == nullptr || images == nullptr || meta == nullptr || !has_length(env, out_handle, 1)) {
+            return KGGML_STATUS_INVALID_ARGUMENT;
+        }
+        const jsize n = env->GetArrayLength(images);
+        if (env->GetArrayLength(meta) != n * kImageMetaStride) return KGGML_STATUS_INVALID_ARGUMENT;
+        const Utf8Bytes prompt(env, prompt_utf8);
+        std::vector<jint> m(static_cast<size_t>(n) * kImageMetaStride);
+        if (n > 0) env->GetIntArrayRegion(meta, 0, n * kImageMetaStride, m.data());
+        if (env->EnsureLocalCapacity(n + 4) != JNI_OK) return KGGML_STATUS_OUT_OF_MEMORY;
+
+        std::vector<jbyteArray> arrays(static_cast<size_t>(n), nullptr);
+        std::vector<kggml_llama_image> descs(static_cast<size_t>(n));
+        for (jsize i = 0; i < n; ++i) {
+            arrays[i] = static_cast<jbyteArray>(env->GetObjectArrayElement(images, i));
+            const jint w = m[static_cast<size_t>(i) * kImageMetaStride + 1];
+            const jint h = m[static_cast<size_t>(i) * kImageMetaStride + 2];
+            descs[i].format = m[static_cast<size_t>(i) * kImageMetaStride];
+            descs[i].width = w < 0 ? 0u : static_cast<uint32_t>(w);
+            descs[i].height = h < 0 ? 0u : static_cast<uint32_t>(h);
+            descs[i].size = arrays[i] != nullptr ? static_cast<size_t>(env->GetArrayLength(arrays[i])) : 0;
+            descs[i].data = nullptr;
+        }
+
+        kggml_llama_mtmd_chunks * chunks = nullptr;
+        kggml_status s = KGGML_STATUS_OK;
+        {
+            // Critical section: no JNI calls until every pin is released (end of scope).
+            std::vector<std::unique_ptr<CriticalArray>> pins;
+            pins.reserve(static_cast<size_t>(n));
+            for (jsize i = 0; i < n; ++i) {
+                if (arrays[i] == nullptr || descs[i].size == 0) continue; // reported by kggml_llama_mtmd_tokenize
+                pins.push_back(std::make_unique<CriticalArray>(env, arrays[i], JNI_ABORT));
+                descs[i].data = static_cast<const uint8_t *>(pins.back()->get());
+                if (descs[i].data == nullptr) s = KGGML_STATUS_OUT_OF_MEMORY;
+            }
+            if (s == KGGML_STATUS_OK) {
+                s = kggml_llama_mtmd_tokenize(from_handle<kggml_llama_mtmd>(mtmd), prompt.c_str(), descs.data(),
+                                              static_cast<int32_t>(n), add_special, parse_special, &chunks);
+            }
+        }
+        for (jbyteArray a : arrays) {
+            if (a != nullptr) env->DeleteLocalRef(a);
+        }
+        set_long(env, out_handle, s == KGGML_STATUS_OK ? to_handle(chunks) : 0);
+        return s;
+    });
+}
+
+KGGML_JNI(void, nativeMtmdChunksFree)(JNIEnv *, jclass, jlong handle) {
+    kggml_llama_mtmd_chunks_free(from_handle<kggml_llama_mtmd_chunks>(handle));
+}
+
+/// `out`: n_tokens, n_pos, n_images.
+KGGML_JNI(jint, nativeMtmdChunksInfo)(JNIEnv * env, jclass, jlong handle, jintArray out) {
+    return jni_guard([&]() -> jint {
+        if (!has_length(env, out, kChunksInfoCount)) return KGGML_STATUS_INVALID_ARGUMENT;
+        int32_t v[kChunksInfoCount] = {};
+        const kggml_status s =
+            kggml_llama_mtmd_chunks_info(from_handle<const kggml_llama_mtmd_chunks>(handle), &v[0], &v[1], &v[2]);
+        if (s != KGGML_STATUS_OK) return s;
+        const jint values[kChunksInfoCount] = {v[0], v[1], v[2]};
+        env->SetIntArrayRegion(out, 0, kChunksInfoCount, values);
+        return KGGML_STATUS_OK;
+    });
+}
+
+/// Encodes and evaluates tokenized chunks; `out[0]` receives the next position (also on failure).
+KGGML_JNI(jint, nativeMtmdEvalChunks)(JNIEnv * env, jclass, jlong mtmd, jlong context, jlong chunks, jint n_past,
+                                      jint seq_id, jint logits_last, jintArray out) {
+    return jni_guard([&]() -> jint {
+        if (!has_length(env, out, 1)) return KGGML_STATUS_INVALID_ARGUMENT;
+        int32_t next = n_past;
+        const kggml_status s = kggml_llama_mtmd_eval_chunks(
+            from_handle<kggml_llama_mtmd>(mtmd), from_handle<kggml_llama_context>(context),
+            from_handle<const kggml_llama_mtmd_chunks>(chunks), n_past, seq_id, logits_last, &next);
+        set_int(env, out, next);
+        return s;
+    });
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // Test hooks (KGGML_LLAMA_TEST_HOOKS builds only; release libraries report "unavailable")
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -505,7 +652,7 @@ KGGML_JNI(jboolean, nativeTestHooksAvailable)(JNIEnv *, jclass) {
 #endif
 }
 
-/// Live kggml_llama models / contexts / samplers in this process, or -1 when unavailable.
+/// Live kggml_llama models / contexts / samplers / projectors / chunks in this process, or -1 when unavailable.
 KGGML_JNI(jlong, nativeTestLiveObjects)(JNIEnv *, jclass) {
 #if defined(KGGML_LLAMA_TEST_HOOKS)
     return kggml_llama_test_live_objects();

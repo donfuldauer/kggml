@@ -140,7 +140,83 @@ std::string write_tiny_model() {
     return path;
 }
 
+std::string write_tiny_mmproj() {
+    const std::string path = temp_path("kggml-llama-tiny-mmproj-", ".gguf");
+    constexpr int32_t kVEmbd = 16;
+    constexpr int32_t kVFf = 32;
+    constexpr int32_t kVLayers = 2;
+    constexpr int32_t kVHeads = 2;
+    constexpr int32_t kPatch = 14;
+    constexpr int32_t kPatches = (kTinyMmprojImageSize / kPatch) * (kTinyMmprojImageSize / kPatch);
+    static_assert(kPatches == kTinyMmprojImageTokens, "one embedding per patch");
+
+    gguf_context * gguf = gguf_init_empty();
+    gguf_set_val_str(gguf, "general.architecture", "clip");
+    gguf_set_val_str(gguf, "general.name", "kggml-tiny-mmproj");
+    gguf_set_val_u32(gguf, "general.file_type", 0); // ALL_F32
+    gguf_set_val_bool(gguf, "clip.has_vision_encoder", true);
+    gguf_set_val_str(gguf, "clip.projector_type", "mlp");
+    gguf_set_val_u32(gguf, "clip.vision.image_size", kTinyMmprojImageSize);
+    gguf_set_val_u32(gguf, "clip.vision.patch_size", kPatch);
+    gguf_set_val_u32(gguf, "clip.vision.embedding_length", kVEmbd);
+    gguf_set_val_u32(gguf, "clip.vision.feed_forward_length", kVFf);
+    gguf_set_val_u32(gguf, "clip.vision.block_count", kVLayers);
+    gguf_set_val_u32(gguf, "clip.vision.projection_dim", kTinyEmbd);
+    gguf_set_val_u32(gguf, "clip.vision.attention.head_count", kVHeads);
+    gguf_set_val_f32(gguf, "clip.vision.attention.layer_norm_epsilon", 1e-6f);
+    const float mean_std[3] = {0.5f, 0.5f, 0.5f};
+    gguf_set_arr_data(gguf, "clip.vision.image_mean", GGUF_TYPE_FLOAT32, mean_std, 3);
+    gguf_set_arr_data(gguf, "clip.vision.image_std", GGUF_TYPE_FLOAT32, mean_std, 3);
+
+    ggml_init_params ip{};
+    ip.mem_size = 1024 * 1024;
+    ip.mem_buffer = nullptr;
+    ip.no_alloc = false;
+    ggml_context * ctx = ggml_init(ip);
+    Rng rng{0x2545F491u};
+    auto tensor = [&](const std::string & name, int64_t ne0, int64_t ne1, int64_t ne2, int64_t ne3, float fill) {
+        ggml_tensor * t = ggml_new_tensor_4d(ctx, GGML_TYPE_F32, ne0, ne1, ne2, ne3);
+        ggml_set_name(t, name.c_str());
+        auto * d = static_cast<float *>(t->data);
+        for (int64_t i = 0; i < ggml_nelements(t); ++i) d[i] = fill != 0.0f ? fill : rng.next(0.25f);
+        gguf_add_tensor(gguf, t);
+    };
+    // conv2d kernel [KW, KH, C_in, C_out]
+    tensor("v.patch_embd.weight", kPatch, kPatch, 3, kVEmbd, 0.0f);
+    tensor("v.position_embd.weight", kVEmbd, kPatches, 1, 1, 0.0f);
+    for (int il = 0; il < kVLayers; ++il) {
+        const std::string b = "v.blk." + std::to_string(il) + ".";
+        tensor(b + "ln1.weight", kVEmbd, 1, 1, 1, 1.0f);
+        tensor(b + "ln1.bias", kVEmbd, 1, 1, 1, 0.0f);
+        for (const char * m : {"attn_q", "attn_k", "attn_v", "attn_out"}) {
+            tensor(b + m + ".weight", kVEmbd, kVEmbd, 1, 1, 0.0f);
+            tensor(b + m + ".bias", kVEmbd, 1, 1, 1, 0.0f);
+        }
+        tensor(b + "ln2.weight", kVEmbd, 1, 1, 1, 1.0f);
+        tensor(b + "ln2.bias", kVEmbd, 1, 1, 1, 0.0f);
+        tensor(b + "ffn_up.weight", kVEmbd, kVFf, 1, 1, 0.0f);
+        tensor(b + "ffn_up.bias", kVFf, 1, 1, 1, 0.0f);
+        tensor(b + "ffn_down.weight", kVFf, kVEmbd, 1, 1, 0.0f);
+        tensor(b + "ffn_down.bias", kVEmbd, 1, 1, 1, 0.0f);
+    }
+    tensor("mm.0.weight", kVEmbd, kTinyEmbd, 1, 1, 0.0f);
+    tensor("mm.0.bias", kTinyEmbd, 1, 1, 1, 0.0f);
+    tensor("mm.2.weight", kTinyEmbd, kTinyEmbd, 1, 1, 0.0f);
+    tensor("mm.2.bias", kTinyEmbd, 1, 1, 1, 0.0f);
+
+    const bool ok = gguf_write_to_file(gguf, path.c_str(), false);
+    ggml_free(ctx);
+    gguf_free(gguf);
+    if (!ok) throw std::runtime_error("could not write " + path);
+    return path;
+}
+
 } // namespace
+
+const std::string & tiny_mmproj_path() {
+    static const std::string path = write_tiny_mmproj();
+    return path;
+}
 
 const std::string & tiny_model_path() {
     static const std::string path = write_tiny_model();

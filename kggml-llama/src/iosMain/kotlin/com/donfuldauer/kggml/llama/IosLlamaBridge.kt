@@ -2,6 +2,8 @@ package com.donfuldauer.kggml.llama
 
 import cnames.structs.kggml_llama_context
 import cnames.structs.kggml_llama_model
+import cnames.structs.kggml_llama_mtmd
+import cnames.structs.kggml_llama_mtmd_chunks
 import cnames.structs.kggml_llama_sampler
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_abort_requested
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_clear_abort
@@ -12,6 +14,7 @@ import com.donfuldauer.kggml.llama.cinterop.kggml_llama_context_n_ctx
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_context_params
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_decode
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_get_embeddings
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_image
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_last_error
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_memory_clear
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_memory_seq_pos_max
@@ -23,6 +26,16 @@ import com.donfuldauer.kggml.llama.cinterop.kggml_llama_model_get_info
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_model_info
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_model_load
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_model_params
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_chunks_free
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_chunks_info
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_default_marker
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_default_params
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_eval_chunks
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_free
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_get_caps
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_init
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_params
+import com.donfuldauer.kggml.llama.cinterop.kggml_llama_mtmd_tokenize
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_request_abort
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_sampler_accept
 import com.donfuldauer.kggml.llama.cinterop.kggml_llama_sampler_create
@@ -45,13 +58,17 @@ import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.IntVar
+import kotlinx.cinterop.Pinned
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.UIntVar
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
+import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.cstr
+import kotlinx.cinterop.get
 import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.pin
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toCPointer
@@ -64,7 +81,8 @@ import platform.posix.size_tVar
 /**
  * [NativeLlamaBridge] calling the `kggml_llama.h` C ABI directly through Kotlin/Native cinterop.
  *
- * Token arrays are pinned with `usePinned { it.addressOf(offset) }` and read in place (zero-copy). Every C entry
+ * Token arrays are pinned with `usePinned { it.addressOf(offset) }` and read in place (zero-copy); image bytes are
+ * pinned the same way, only for [mtmdTokenize]. Every C entry
  * point catches C++ exceptions and returns a status code, so nothing can unwind into Kotlin/Native frames. The
  * library is linked dynamically (`KggmlLlama.framework`), so there is nothing to load at runtime.
  */
@@ -275,6 +293,83 @@ internal object IosLlamaBridge : NativeLlamaBridge {
         kggml_llama_sampler_accept(samplerPtr(sampler), token, applyGrammar.toInt()).toInt()
 
     override fun samplerReset(sampler: Long): Int = kggml_llama_sampler_reset(samplerPtr(sampler)).toInt()
+
+    override fun mtmdInit(model: Long, projectorPath: String, params: RawMtmdParams): RawHandleResult = memScoped {
+        val p = alloc<kggml_llama_mtmd_params>()
+        val defaults = kggml_llama_mtmd_default_params(p.ptr).toInt()
+        if (defaults != LlamaStatus.OK) return@memScoped RawHandleResult(defaults, 0L)
+        p.backend = params.backend
+        p.n_threads = params.threads
+        p.flash_attn = params.flashAttention
+        p.image_min_tokens = params.imageMinTokens
+        p.image_max_tokens = params.imageMaxTokens
+        p.warmup = params.warmup.toInt()
+        val out = alloc<CPointerVar<kggml_llama_mtmd>>()
+        val status = kggml_llama_mtmd_init(modelPtr(model), projectorPath, p.ptr, out.ptr).toInt()
+        RawHandleResult(status, if (status == LlamaStatus.OK) out.value.toLong() else 0L)
+    }
+
+    override fun mtmdFree(mtmd: Long) = kggml_llama_mtmd_free(mtmdPtr(mtmd))
+
+    override fun mtmdCaps(mtmd: Long): RawMtmdCaps = memScoped {
+        val vision = alloc<IntVar>()
+        val audio = alloc<IntVar>()
+        val rate = alloc<IntVar>()
+        val status = kggml_llama_mtmd_get_caps(mtmdPtr(mtmd), vision.ptr, audio.ptr, rate.ptr).toInt()
+        if (status != LlamaStatus.OK) RawMtmdCaps(status) else RawMtmdCaps(status, vision.value != 0, audio.value != 0, rate.value)
+    }
+
+    override fun mtmdDefaultMarker(): String = kggml_llama_mtmd_default_marker()?.toKString() ?: "<__media__>"
+
+    override fun mtmdTokenize(mtmd: Long, prompt: String, images: List<RawImage>, addSpecial: Boolean, parseSpecial: Boolean): RawHandleResult {
+        // Every image is pinned (zero-copy) for this call only; libmtmd copies / decodes it into the chunks.
+        val pins = ArrayList<Pinned<ByteArray>?>(images.size)
+        try {
+            for (image in images) pins += if (image.bytes.isEmpty()) null else image.bytes.pin()
+            return memScoped {
+                val descs = if (images.isEmpty()) null else allocArray<kggml_llama_image>(images.size)
+                images.forEachIndexed { i, image ->
+                    val d = descs!![i]
+                    d.data = pins[i]?.addressOf(0)?.reinterpret<UByteVar>()
+                    d.size = image.bytes.size.convert()
+                    d.format = image.format
+                    d.width = image.width.coerceAtLeast(0).toUInt()
+                    d.height = image.height.coerceAtLeast(0).toUInt()
+                }
+                val out = alloc<CPointerVar<kggml_llama_mtmd_chunks>>()
+                val status = kggml_llama_mtmd_tokenize(
+                    mtmdPtr(mtmd), prompt, descs, images.size, addSpecial.toInt(), parseSpecial.toInt(), out.ptr,
+                ).toInt()
+                RawHandleResult(status, if (status == LlamaStatus.OK) out.value.toLong() else 0L)
+            }
+        } finally {
+            pins.forEach { it?.unpin() }
+        }
+    }
+
+    override fun mtmdChunksFree(chunks: Long) = kggml_llama_mtmd_chunks_free(chunksPtr(chunks))
+
+    override fun mtmdChunksInfo(chunks: Long): RawChunksInfo = memScoped {
+        val tokens = alloc<IntVar>()
+        val positions = alloc<IntVar>()
+        val count = alloc<IntVar>()
+        val status = kggml_llama_mtmd_chunks_info(chunksPtr(chunks), tokens.ptr, positions.ptr, count.ptr).toInt()
+        if (status != LlamaStatus.OK) RawChunksInfo(status) else RawChunksInfo(status, tokens.value, positions.value, count.value)
+    }
+
+    override fun mtmdEvalChunks(mtmd: Long, context: Long, chunks: Long, nPast: Int, seqId: Int, logitsLast: Boolean): RawIntResult =
+        memScoped {
+            val next = alloc<IntVar>()
+            next.value = nPast
+            val status = kggml_llama_mtmd_eval_chunks(
+                mtmdPtr(mtmd), contextPtr(context), chunksPtr(chunks), nPast, seqId, logitsLast.toInt(), next.ptr,
+            ).toInt()
+            RawIntResult(status, next.value)
+        }
+
+    private fun mtmdPtr(handle: Long): CPointer<kggml_llama_mtmd>? = handle.toCPointer()
+
+    private fun chunksPtr(handle: Long): CPointer<kggml_llama_mtmd_chunks>? = handle.toCPointer()
 
     private fun modelPtr(handle: Long): CPointer<kggml_llama_model>? = handle.toCPointer()
 

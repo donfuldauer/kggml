@@ -35,7 +35,8 @@ check_no_duplicate_ggml() {
 REQUIRED_EXPORTS=(llama_decode llama_model_load_from_file llama_set_abort_callback llama_sampler_init_grammar
   llama_state_seq_get_data mtmd_init_from_file mtmd_tokenize mtmd_helper_bitmap_init_from_buf
   kggml_llama_model_load kggml_llama_decode kggml_llama_request_abort kggml_llama_state_save
-  kggml_llama_sampler_create kggml_llama_get_embeddings kggml_llama_mtmd_eval)
+  kggml_llama_sampler_create kggml_llama_get_embeddings kggml_llama_mtmd_eval kggml_llama_mtmd_tokenize
+  kggml_llama_mtmd_eval_chunks kggml_llama_mtmd_chunks_free)
 
 elf_audit() {
   local label="$1" llama_so="$2" ggml_dir="$3" expect_versioned="$4"

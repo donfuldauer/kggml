@@ -8,6 +8,7 @@
 #include "mtmd-helper.h"
 #include "mtmd.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -28,6 +29,16 @@ struct kggml_llama_mtmd {
     }
 };
 
+struct kggml_llama_mtmd_chunks {
+    struct Deleter {
+        void operator()(mtmd_input_chunks * c) const noexcept { mtmd_input_chunks_free(c); }
+    };
+    kggml::llama::LiveCounter live;
+    const kggml_llama_mtmd * owner = nullptr; // identity check only
+    std::unique_ptr<mtmd_input_chunks, Deleter> chunks;
+    int32_t n_images = 0;
+};
+
 namespace kggml::llama {
 namespace {
 
@@ -45,11 +56,7 @@ kggml_llama_mtmd_params default_mtmd_params() {
 struct BitmapDeleter {
     void operator()(mtmd_bitmap * b) const noexcept { mtmd_bitmap_free(b); }
 };
-struct ChunksDeleter {
-    void operator()(mtmd_input_chunks * c) const noexcept { mtmd_input_chunks_free(c); }
-};
 using BitmapPtr = std::unique_ptr<mtmd_bitmap, BitmapDeleter>;
-using ChunksPtr = std::unique_ptr<mtmd_input_chunks, ChunksDeleter>;
 
 kggml_status check_mtmd(const kggml_llama_mtmd * mtmd) noexcept {
     if (mtmd == nullptr || mtmd->ctx == nullptr) {
@@ -201,25 +208,20 @@ KGGML_LLAMA_API const char * kggml_llama_mtmd_default_marker(void) {
     }
 }
 
-KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval(kggml_llama_mtmd * mtmd, kggml_llama_context * context,
-                                                  const char * prompt, const kggml_llama_image * images,
-                                                  int32_t n_images, int32_t n_past, int32_t seq_id,
-                                                  int32_t add_special, int32_t logits_last, int32_t * out_n_past) {
+KGGML_LLAMA_API kggml_status kggml_llama_mtmd_tokenize(kggml_llama_mtmd * mtmd, const char * prompt,
+                                                      const kggml_llama_image * images, int32_t n_images,
+                                                      int32_t add_special, int32_t parse_special,
+                                                      kggml_llama_mtmd_chunks ** out_chunks) {
     return guarded(__func__, [&]() -> kggml_status {
+        if (out_chunks == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_chunks is NULL");
+        *out_chunks = nullptr;
         if (const auto s = kggml::llama::check_mtmd(mtmd); s != KGGML_STATUS_OK) return s;
-        if (const auto s = kggml::llama::check_context(context); s != KGGML_STATUS_OK) return s;
-        if (mtmd->owner != context->owner) {
-            return fail(KGGML_STATUS_INVALID_ARGUMENT, "mtmd and context belong to different models");
-        }
         if (prompt == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "prompt is NULL");
         if (n_images < 0 || (n_images > 0 && images == nullptr)) {
             return fail(KGGML_STATUS_INVALID_ARGUMENT, "images is NULL or n_images < 0");
         }
-        if (n_past < 0) return fail(KGGML_STATUS_INVALID_ARGUMENT, "n_past must be >= 0");
-        if (const auto s = kggml::llama::check_seq(context, seq_id); s != KGGML_STATUS_OK) return s;
-        if (out_n_past == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_n_past is NULL");
-        *out_n_past = n_past;
 
+        // The bitmaps only live for this call: mtmd_tokenize() preprocesses them into the chunks.
         std::vector<kggml::llama::BitmapPtr> owned(static_cast<size_t>(n_images));
         std::vector<const mtmd_bitmap *> bitmaps(static_cast<size_t>(n_images));
         for (int32_t i = 0; i < n_images; ++i) {
@@ -230,10 +232,13 @@ KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval(kggml_llama_mtmd * mtmd, kggm
             bitmaps[static_cast<size_t>(i)] = owned[static_cast<size_t>(i)].get();
         }
 
-        kggml::llama::ChunksPtr chunks(mtmd_input_chunks_init());
-        if (!chunks) return fail(KGGML_STATUS_OUT_OF_MEMORY, "mtmd_input_chunks_init failed");
-        mtmd_input_text text{prompt, add_special != 0, true};
-        const int32_t tok = mtmd_tokenize(mtmd->ctx, chunks.get(), &text, bitmaps.data(), bitmaps.size());
+        auto result = std::make_unique<kggml_llama_mtmd_chunks>();
+        result->owner = mtmd;
+        result->n_images = n_images;
+        result->chunks.reset(mtmd_input_chunks_init());
+        if (!result->chunks) return fail(KGGML_STATUS_OUT_OF_MEMORY, "mtmd_input_chunks_init failed");
+        mtmd_input_text text{prompt, add_special != 0, parse_special != 0};
+        const int32_t tok = mtmd_tokenize(mtmd->ctx, result->chunks.get(), &text, bitmaps.data(), bitmaps.size());
         if (tok == 1) {
             return fail(KGGML_STATUS_INVALID_ARGUMENT,
                         ("the number of media markers in the prompt does not match n_images = " + std::to_string(n_images))
@@ -243,22 +248,73 @@ KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval(kggml_llama_mtmd * mtmd, kggm
             return fail(KGGML_STATUS_INVALID_ARGUMENT, ("image preprocessing failed (mtmd_tokenize = " +
                                                         std::to_string(tok) + ")").c_str());
         }
+        *out_chunks = result.release();
+        return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_LLAMA_API void kggml_llama_mtmd_chunks_free(kggml_llama_mtmd_chunks * chunks) {
+    try {
+        delete chunks;
+    } catch (...) {
+    }
+}
+
+KGGML_LLAMA_API kggml_status kggml_llama_mtmd_chunks_info(const kggml_llama_mtmd_chunks * chunks, int32_t * out_n_tokens,
+                                                         int32_t * out_n_pos, int32_t * out_n_images) {
+    return guarded(__func__, [&]() -> kggml_status {
+        if (chunks == nullptr || !chunks->chunks) return fail(KGGML_STATUS_INVALID_ARGUMENT, "chunks is NULL");
+        const size_t n_tokens = mtmd_helper_get_n_tokens(chunks->chunks.get());
+        const llama_pos n_pos = mtmd_helper_get_n_pos(chunks->chunks.get());
+        if (out_n_tokens != nullptr) *out_n_tokens = n_tokens > INT32_MAX ? INT32_MAX : static_cast<int32_t>(n_tokens);
+        if (out_n_pos != nullptr) *out_n_pos = n_pos;
+        if (out_n_images != nullptr) *out_n_images = chunks->n_images;
+        return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval_chunks(kggml_llama_mtmd * mtmd, kggml_llama_context * context,
+                                                         const kggml_llama_mtmd_chunks * chunks, int32_t n_past,
+                                                         int32_t seq_id, int32_t logits_last, int32_t * out_n_past) {
+    return guarded(__func__, [&]() -> kggml_status {
+        if (const auto s = kggml::llama::check_mtmd(mtmd); s != KGGML_STATUS_OK) return s;
+        if (const auto s = kggml::llama::check_context(context); s != KGGML_STATUS_OK) return s;
+        if (chunks == nullptr || !chunks->chunks) return fail(KGGML_STATUS_INVALID_ARGUMENT, "chunks is NULL");
+        if (chunks->owner != mtmd) return fail(KGGML_STATUS_INVALID_ARGUMENT, "chunks were tokenized by another mtmd");
+        if (mtmd->owner != context->owner) {
+            return fail(KGGML_STATUS_INVALID_ARGUMENT, "mtmd and context belong to different models");
+        }
+        if (n_past < 0) return fail(KGGML_STATUS_INVALID_ARGUMENT, "n_past must be >= 0");
+        if (const auto s = kggml::llama::check_seq(context, seq_id); s != KGGML_STATUS_OK) return s;
+        if (out_n_past == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_n_past is NULL");
+        *out_n_past = n_past;
+
+        const int64_t n_ctx = static_cast<int64_t>(llama_n_ctx(context->ctx));
+        const int64_t n_pos = mtmd_helper_get_n_pos(chunks->chunks.get());
+        if (static_cast<int64_t>(n_past) + n_pos > n_ctx) {
+            return fail(KGGML_STATUS_BUFFER_TOO_SMALL, ("prompt needs " + std::to_string(n_pos) + " positions from " +
+                                                        std::to_string(n_past) + "; the context holds " +
+                                                        std::to_string(n_ctx))
+                                                           .c_str());
+        }
 
         context->logits_valid = false;
-        const size_t n_chunks = mtmd_input_chunks_size(chunks.get());
+        const size_t n_chunks = mtmd_input_chunks_size(chunks->chunks.get());
         const int32_t n_batch = static_cast<int32_t>(llama_n_batch(context->ctx));
         llama_pos pos = n_past;
         for (size_t i = 0; i < n_chunks; ++i) {
             // Checked between chunks too: an image encode (clip) is not interruptible by the llama abort callback.
             if (context->abort.load(std::memory_order_acquire)) {
+                *out_n_past = pos;
                 return fail(KGGML_STATUS_CANCELLED, "multimodal evaluation cancelled");
             }
             const bool last = i + 1 == n_chunks;
             llama_pos next = pos;
             const int32_t ret = mtmd_helper_eval_chunk_single(mtmd->ctx, context->ctx,
-                                                              mtmd_input_chunks_get(chunks.get(), i), pos, seq_id,
-                                                              n_batch, last && logits_last != 0, &next);
+                                                              mtmd_input_chunks_get(chunks->chunks.get(), i), pos,
+                                                              seq_id, n_batch, last && logits_last != 0, &next);
             if (ret != 0) {
+                *out_n_past = pos;
                 if (context->abort.load(std::memory_order_acquire)) {
                     return fail(KGGML_STATUS_CANCELLED, "multimodal evaluation cancelled");
                 }
@@ -271,6 +327,28 @@ KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval(kggml_llama_mtmd * mtmd, kggm
         context->logits_valid = logits_last != 0 && n_chunks > 0;
         *out_n_past = pos;
         return KGGML_STATUS_OK;
+    });
+}
+
+KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval(kggml_llama_mtmd * mtmd, kggml_llama_context * context,
+                                                  const char * prompt, const kggml_llama_image * images,
+                                                  int32_t n_images, int32_t n_past, int32_t seq_id,
+                                                  int32_t add_special, int32_t logits_last, int32_t * out_n_past) {
+    return guarded(__func__, [&]() -> kggml_status {
+        if (out_n_past == nullptr) return fail(KGGML_STATUS_INVALID_ARGUMENT, "out_n_past is NULL");
+        *out_n_past = n_past;
+        if (const auto s = kggml::llama::check_mtmd(mtmd); s != KGGML_STATUS_OK) return s;
+        if (const auto s = kggml::llama::check_context(context); s != KGGML_STATUS_OK) return s;
+        if (mtmd->owner != context->owner) {
+            return fail(KGGML_STATUS_INVALID_ARGUMENT, "mtmd and context belong to different models");
+        }
+        kggml_llama_mtmd_chunks * raw = nullptr;
+        if (const auto s = kggml_llama_mtmd_tokenize(mtmd, prompt, images, n_images, add_special, 1, &raw);
+            s != KGGML_STATUS_OK) {
+            return s;
+        }
+        const std::unique_ptr<kggml_llama_mtmd_chunks> chunks(raw);
+        return kggml_llama_mtmd_eval_chunks(mtmd, context, chunks.get(), n_past, seq_id, logits_last, out_n_past);
     });
 }
 

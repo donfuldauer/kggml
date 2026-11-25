@@ -6,14 +6,16 @@ import com.donfuldauer.kggml.core.NativeFailureException
 import kotlin.concurrent.atomics.AtomicReference
 
 /**
- * Raw, 1:1 view of the `kggml_llama.h` C ABI (text part; the libmtmd part is added by #15).
+ * Raw, 1:1 view of the `kggml_llama.h` C ABI (text generation plus the libmtmd multimodal part).
  *
  * Implemented by the JNI bridge (Android, JVM Desktop), the Kotlin/Native cinterop bridge (iOS), and by fakes in
  * tests. Methods return raw native values (status codes, opaque `Long` handles); translation into Kotlin types
  * and typed exceptions happens once, in [LlamaEngine].
  *
  * Token arrays are handed to [decode] **zero-copy**: the JNI bridge pins them with `GetPrimitiveArrayCritical`,
- * the iOS bridge with `usePinned`, and llama.cpp reads them in place. Text crosses as UTF-8 bytes.
+ * the iOS bridge with `usePinned`, and llama.cpp reads them in place. Text crosses as UTF-8 bytes. Image bytes of
+ * [mtmdTokenize] are pinned the same way, only for that call (libmtmd wraps / decodes them in memory into the
+ * preprocessed chunks); nothing is ever written to a temporary file.
  *
  * Contract: [lastError] must be called on the same thread, immediately after the failing call (the native
  * diagnostic message is thread-local). Every method taking a handle except [requestAbort] and [abortRequested]
@@ -92,6 +94,51 @@ internal interface NativeLlamaBridge {
     fun samplerAccept(sampler: Long, token: Int, applyGrammar: Boolean): Int
 
     fun samplerReset(sampler: Long): Int
+
+    // ---- multimodal (libmtmd) ----
+
+    fun mtmdInit(model: Long, projectorPath: String, params: RawMtmdParams): RawHandleResult
+
+    fun mtmdFree(mtmd: Long)
+
+    fun mtmdCaps(mtmd: Long): RawMtmdCaps
+
+    /** The media marker that stands for one image in a multimodal prompt (`"<__media__>"`). */
+    fun mtmdDefaultMarker(): String
+
+    /** Splits [prompt] at its media markers and preprocesses [images] in memory into a chunks handle. */
+    fun mtmdTokenize(mtmd: Long, prompt: String, images: List<RawImage>, addSpecial: Boolean, parseSpecial: Boolean): RawHandleResult
+
+    fun mtmdChunksFree(chunks: Long)
+
+    fun mtmdChunksInfo(chunks: Long): RawChunksInfo
+
+    /** Encodes and evaluates [chunks] from position [nPast]; [RawIntResult.value] is the next position. */
+    fun mtmdEvalChunks(mtmd: Long, context: Long, chunks: Long, nPast: Int, seqId: Int, logitsLast: Boolean): RawIntResult
+}
+
+/** `kggml_llama_mtmd_params`. */
+internal data class RawMtmdParams(
+    val backend: Int,
+    val threads: Int,
+    val flashAttention: Int,
+    val imageMinTokens: Int,
+    val imageMaxTokens: Int,
+    val warmup: Boolean,
+)
+
+/** `kggml_llama_mtmd_get_caps()`. */
+internal data class RawMtmdCaps(val status: Int, val vision: Boolean = false, val audio: Boolean = false, val audioSampleRate: Int = -1)
+
+/** `kggml_llama_mtmd_chunks_info()`. */
+internal data class RawChunksInfo(val status: Int, val tokens: Int = 0, val positions: Int = 0, val images: Int = 0)
+
+/** `kggml_llama_image`: [bytes] is read in place (never copied by the bridges). */
+internal class RawImage(val format: Int, val width: Int, val height: Int, val bytes: ByteArray) {
+    companion object {
+        const val FORMAT_RGB: Int = 0
+        const val FORMAT_ENCODED: Int = 1
+    }
 }
 
 /** `kggml_llama_model_params` (without the progress callback). */

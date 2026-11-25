@@ -17,6 +17,10 @@ internal class ConcurrentLog<T> {
     val items: List<T> get() = ref.load()
 }
 
+internal data class TokenizeCall(val prompt: String, val images: List<RawImage>, val addSpecial: Boolean, val parseSpecial: Boolean)
+
+internal data class EvalCall(val context: Long, val chunks: Long, val nPast: Int, val logitsLast: Boolean)
+
 internal data class DecodeCall(val context: Long, val tokens: List<Int>, val pos0: Int, val seqId: Int, val logitsLast: Boolean)
 
 /**
@@ -26,6 +30,8 @@ internal data class DecodeCall(val context: Long, val tokens: List<Int>, val pos
  * - Each context tracks the KV-cache length of sequence 0 and *validates* that decodes continue it contiguously,
  *   which checks the engine's session bookkeeping.
  * - Samplers emit [script] in order, then [EOS].
+ * - Projectors (`mtmd`) turn every media marker into [IMAGE_TOKENS] positions; encoded images must start with
+ *   [IMAGE_MAGIC] to "decode". Chunks are tracked like every other handle.
  * - Every handle is tracked so tests can assert that everything is freed exactly once, samplers / contexts first.
  */
 internal class FakeLlamaBridge(
@@ -40,12 +46,17 @@ internal class FakeLlamaBridge(
     var samplerStatus: Int = LlamaStatus.OK,
     /** Invoked inside every decode before it completes (may block, e.g. until an abort is requested). */
     var onDecode: (FakeLlamaBridge, Long, Int) -> Int = { _, _, _ -> LlamaStatus.OK },
+    /** Whether a loaded projector reports vision input. */
+    var projectorVision: Boolean = true,
+    /** Invoked inside every multimodal eval after the chunks landed in the KV cache (may fail it). */
+    var onEval: (FakeLlamaBridge, Long) -> Int = { _, _ -> LlamaStatus.OK },
 ) : NativeLlamaBridge {
     private val nextHandle = AtomicInt(1000)
     private val liveRef = AtomicReference<Map<Long, String>>(emptyMap())
     private val abortRef = AtomicReference<Set<Long>>(emptySet())
     private val kv = HashMap<Long, Int>()
     private val samplerPos = HashMap<Long, Int>()
+    private val chunkPositions = HashMap<Long, Pair<Int, Int>>() // positions, images
 
     val loads = ConcurrentLog<Pair<String, RawModelParams>>()
     val contexts = ConcurrentLog<RawContextParams>()
@@ -53,6 +64,9 @@ internal class FakeLlamaBridge(
     val decodes = ConcurrentLog<DecodeCall>()
     val frees = ConcurrentLog<String>()
     val accepted = ConcurrentLog<Pair<Int, Boolean>>()
+    val projectors = ConcurrentLog<Pair<String, RawMtmdParams>>()
+    val tokenizes = ConcurrentLog<TokenizeCall>()
+    val evals = ConcurrentLog<EvalCall>()
     val clears = AtomicInt(0)
     var lastErrorText = ""
 
@@ -73,7 +87,8 @@ internal class FakeLlamaBridge(
         if (h == 0L) return
         val m = liveRef.load()
         check(m[h] == kind) { "freeing $kind $h which is not live (${m[h]})" }
-        if (kind == "model") check(m.values.none { it == "context" || it == "sampler" }) { "model freed before its children" }
+        if (kind == "model") check(m.values.none { it != "model" }) { "model freed before its children" }
+        if (kind == "mtmd") check(m.values.none { it == "chunks" }) { "projector freed before its chunks" }
         liveRef.compareAndSet(m, m - h)
         frees.add(kind)
     }
@@ -236,7 +251,82 @@ internal class FakeLlamaBridge(
 
     override fun samplerReset(sampler: Long): Int = LlamaStatus.OK
 
+    override fun mtmdInit(model: Long, projectorPath: String, params: RawMtmdParams): RawHandleResult {
+        checkLive(model, "model")
+        projectors.add(projectorPath to params)
+        if ("missing" in projectorPath) {
+            lastErrorText = "cannot open mmproj file '$projectorPath'"
+            return RawHandleResult(LlamaStatus.MODEL_LOAD_FAILED, 0L)
+        }
+        return RawHandleResult(LlamaStatus.OK, alloc("mtmd"))
+    }
+
+    override fun mtmdFree(mtmd: Long) = release(mtmd, "mtmd")
+
+    override fun mtmdCaps(mtmd: Long): RawMtmdCaps {
+        checkLive(mtmd, "mtmd")
+        return RawMtmdCaps(LlamaStatus.OK, vision = projectorVision, audio = false, audioSampleRate = -1)
+    }
+
+    override fun mtmdDefaultMarker(): String = MARKER
+
+    override fun mtmdTokenize(mtmd: Long, prompt: String, images: List<RawImage>, addSpecial: Boolean, parseSpecial: Boolean): RawHandleResult {
+        checkLive(mtmd, "mtmd")
+        tokenizes.add(TokenizeCall(prompt, images, addSpecial, parseSpecial))
+        val parts = prompt.split(MARKER)
+        if (parts.size - 1 != images.size) {
+            lastErrorText = "the number of media markers in the prompt does not match n_images = ${images.size}"
+            return RawHandleResult(LlamaStatus.INVALID_ARGUMENT, 0L)
+        }
+        images.forEachIndexed { i, image ->
+            val decodable = when (image.format) {
+                RawImage.FORMAT_RGB -> image.bytes.size == image.width * image.height * 3
+                RawImage.FORMAT_ENCODED -> image.bytes.size >= IMAGE_MAGIC.size &&
+                    IMAGE_MAGIC.indices.all { image.bytes[it] == IMAGE_MAGIC[it] }
+                else -> false
+            }
+            if (!decodable) {
+                lastErrorText = "image $i: could not decode the encoded image / audio bytes"
+                return RawHandleResult(LlamaStatus.INVALID_ARGUMENT, 0L)
+            }
+        }
+        val text = parts.sumOf { it.encodeToByteArray().size }
+        val h = alloc("chunks")
+        chunkPositions[h] = (text + (if (addSpecial) 1 else 0) + IMAGE_TOKENS * images.size) to images.size
+        return RawHandleResult(LlamaStatus.OK, h)
+    }
+
+    override fun mtmdChunksFree(chunks: Long) {
+        release(chunks, "chunks")
+        chunkPositions.remove(chunks)
+    }
+
+    override fun mtmdChunksInfo(chunks: Long): RawChunksInfo {
+        checkLive(chunks, "chunks")
+        val (positions, images) = chunkPositions.getValue(chunks)
+        return RawChunksInfo(LlamaStatus.OK, positions, positions, images)
+    }
+
+    override fun mtmdEvalChunks(mtmd: Long, context: Long, chunks: Long, nPast: Int, seqId: Int, logitsLast: Boolean): RawIntResult {
+        checkLive(mtmd, "mtmd")
+        checkLive(context, "context")
+        checkLive(chunks, "chunks")
+        evals.add(EvalCall(context, chunks, nPast, logitsLast))
+        check(nPast == kvLength(context)) { "eval at $nPast but the KV cache holds ${kvLength(context)}" }
+        if (abortRequested(context)) return RawIntResult(LlamaStatus.CANCELLED, nPast)
+        val positions = chunkPositions.getValue(chunks).first
+        if (nPast + positions > contextSize) return RawIntResult(LlamaStatus.BUFFER_TOO_SMALL, nPast)
+        kv[context] = nPast + positions
+        val hook = onEval(this, context)
+        if (hook != LlamaStatus.OK) return RawIntResult(hook, nPast + positions - 1)
+        if (abortRequested(context)) return RawIntResult(LlamaStatus.CANCELLED, nPast + positions - 1)
+        return RawIntResult(LlamaStatus.OK, nPast + positions)
+    }
+
     companion object {
+        const val MARKER = "<__media__>"
+        const val IMAGE_TOKENS = 3
+        val IMAGE_MAGIC = byteArrayOf(0x49, 0x4D, 0x47) // "IMG"
         const val BOS = 1
         const val EOS = 2
         const val BYTE_BASE = 10

@@ -412,6 +412,43 @@ KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval(kggml_llama_mtmd * mtmd, kggm
                                                   int32_t n_images, int32_t n_past, int32_t seq_id,
                                                   int32_t add_special, int32_t logits_last, int32_t * out_n_past);
 
+/**
+ * Tokenized multimodal prompt: text tokens plus the *preprocessed* images (the caller's image bytes are no longer
+ * referenced once kggml_llama_mtmd_tokenize() returns, so bindings only need to pin them for that call). Owned by
+ * the caller; free with kggml_llama_mtmd_chunks_free() before the projector it was created with.
+ */
+typedef struct kggml_llama_mtmd_chunks kggml_llama_mtmd_chunks;
+
+/**
+ * First half of kggml_llama_mtmd_eval(): splits `prompt` at its media markers and preprocesses `images` (wrapped or
+ * decoded in memory, never written to disk). `parse_special` = 1 parses control tokens written as text. Returns
+ * KGGML_STATUS_INVALID_ARGUMENT for an undecodable / malformed image or a marker / image count mismatch.
+ */
+KGGML_LLAMA_API kggml_status kggml_llama_mtmd_tokenize(kggml_llama_mtmd * mtmd, const char * prompt,
+                                                      const kggml_llama_image * images, int32_t n_images,
+                                                      int32_t add_special, int32_t parse_special,
+                                                      kggml_llama_mtmd_chunks ** out_chunks);
+
+/** Frees tokenized chunks. NULL is a no-op. */
+KGGML_LLAMA_API void kggml_llama_mtmd_chunks_free(kggml_llama_mtmd_chunks * chunks);
+
+/**
+ * Sizes of tokenized chunks: total tokens (text + image embeddings), KV positions they occupy (smaller than the
+ * token count for M-RoPE models) and the number of images. Every out pointer may be NULL.
+ */
+KGGML_LLAMA_API kggml_status kggml_llama_mtmd_chunks_info(const kggml_llama_mtmd_chunks * chunks, int32_t * out_n_tokens,
+                                                         int32_t * out_n_pos, int32_t * out_n_images);
+
+/**
+ * Second half of kggml_llama_mtmd_eval(): encodes the images of `chunks` and evaluates every chunk into `seq_id` of
+ * `context` from position `n_past`. KGGML_STATUS_BUFFER_TOO_SMALL (nothing evaluated) when the chunks do not fit
+ * the context window; KGGML_STATUS_CANCELLED after kggml_llama_request_abort() (checked inside every text decode
+ * and between chunks). `chunks` stays valid and can be evaluated again.
+ */
+KGGML_LLAMA_API kggml_status kggml_llama_mtmd_eval_chunks(kggml_llama_mtmd * mtmd, kggml_llama_context * context,
+                                                         const kggml_llama_mtmd_chunks * chunks, int32_t n_past,
+                                                         int32_t seq_id, int32_t logits_last, int32_t * out_n_past);
+
 #ifdef __cplusplus
 }
 #endif

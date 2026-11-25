@@ -33,6 +33,28 @@ engine.close()
 | KV-cache sessions | `saveSession(): ByteArray`, `restoreSession(bytes)`, `clearSession()` | Token history + `llama_state_seq_*` data in a versioned, CRC-32-checked container with a model fingerprint. Restore on any engine with the same model. Only restore sessions from trusted storage. |
 | Embeddings | `embed(text, normalize = true): FloatArray` | Separate lazily created embedding context (pooling: `LlamaContextConfig.embeddingPooling`), never disturbs the generation session. |
 | Tokenizer | `tokenize()`, `detokenize()` | |
+| Vision-language models | `LlamaEngineOptions(projectorPath)`, `generate(prompt, images, options)` | libmtmd projector (`mmproj-*.gguf`) loaded next to the model on the same backend. `LlamaImage.Encoded` (PNG / JPEG / BMP / GIF / ... bytes) or `LlamaImage.Rgb` (packed RGB888) — in memory only, pinned zero-copy for preprocessing, never written to a temporary file. One `LlamaEngine.MEDIA_MARKER` per image in the prompt (prepended when absent). |
+
+## Images (VLM)
+
+```kotlin
+val vlm = LlamaEngine(
+    modelPath = "/path/to/SmolVLM-500M-Instruct-Q8_0.gguf",
+    options = LlamaEngineOptions(projectorPath = "/path/to/mmproj-SmolVLM-500M-Instruct-Q8_0.gguf"),
+)
+check(vlm.supportsVision)
+val photo: ByteArray = readJpegFromCameraOrGallery() // stays in memory
+val prompt = "<|im_start|>User:${LlamaEngine.MEDIA_MARKER}What is in this picture?<end_of_utterance>\nAssistant:"
+println(vlm.generateText(prompt, listOf(LlamaImage.Encoded(photo)), GenerationOptions(maxTokens = 96)).text)
+```
+
+The projector uses the engine's backend (`CPU_ONLY` creates no GPU backend for the image encoder either) and its
+`cpuThreads` / `useFlashAttention`; `imageMinTokens` / `imageMaxTokens` bound dynamic-resolution projectors. An image
+prompt starts a new session (image embeddings are not token ids, so there is no prefix to reuse); sessions with images
+save and restore like text ones. Cancellation aborts the text decodes and is checked between image encodes. The
+preprocessed images are freed as soon as they are in the KV cache, and the projector is freed by `close()` before
+the model; invalid images, a marker / image count mismatch or a prompt that does not fit the context end the flow
+with `InvalidInputException`.
 
 ## Backends
 
@@ -50,10 +72,14 @@ concurrently. `abortActiveGeneration()` and `close()` are safe from any thread.
 
 ## Tests
 
-- `commonTest`: engine lifecycle, generation, cancellation, sessions and embeddings against a deterministic fake of
-  the C ABI; JSON-schema → GBNF conversion; UTF-8 streaming; session container; option validation.
+- `commonTest`: engine lifecycle, generation, cancellation, sessions, embeddings and image prompts (projector
+  loading, marker handling, chunk release, abort, invalid images) against a deterministic fake of the C ABI;
+  JSON-schema → GBNF conversion; UTF-8 streaming; session container; option validation.
 - `jvmTest` / `iosSimulatorArm64Test`: `NativeLlamaEngineContract` against the real library, driven by
-  `TinyLlamaModel` (a synthetic 100 KB GGUF generated at test time, byte-identical to the native CTest fixture).
+  `TinyLlamaModel` (a synthetic 100 KB GGUF generated at test time, byte-identical to the native CTest fixture) and
+  `TinyMmproj` (a synthetic 64 KB LLaVA-style vision projector for it, likewise byte-identical): real libmtmd
+  in-memory RGB / BMP decoding, encoding, generation, cancellation and error codes. `jvmTest` also checks that no
+  temporary file is written and that projector / chunk objects return to their live-object baseline.
   `jvmTest` needs the host build (`native/scripts/build-host.sh`); `-Pkggml.requireNative=true` turns a missing
   library into a failure instead of a skip.
 - `androidUnitTest`: the Android binding degrades into a typed `NativeFailureException` on the host JVM.
@@ -73,3 +99,7 @@ during the final acceptance pass (`docs/MANUAL_VERIFICATION.md`):
    context without re-evaluating the earlier prompt (visibly faster first token).
 6. `embed()` two paraphrases and one unrelated sentence with an embedding GGUF: the paraphrases' cosine similarity
    must be clearly higher.
+7. VLM (#15): load a small vision model and its projector (e.g. SmolVLM-500M-Instruct Q8_0 + `mmproj`) with
+   `BackendConfig.DEFAULT` and with `BackendConfig.CPU`. Describe a JPEG taken with the camera (`LlamaImage.Encoded`)
+   and an `Rgb` bitmap converted from a platform image: the answers must describe the pictures. Abort a description
+   mid-stream (stops promptly after the image encode) and confirm the app's cache / temp directories gain no files.

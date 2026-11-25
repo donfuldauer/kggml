@@ -32,5 +32,8 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#14] `LlamaEngine` with a real instruct / embedding GGUF on a physical iPhone and Android device and on desktop
   (Metal / Vulkan / CPU offload, coherent streaming, prompt cancellation latency, JSON-schema output, session
   restore, embedding similarity) — procedure in `kggml-llama/README.md` ("Manual verification").
+- [ ] [#15] VLM image prompts with a real vision GGUF + `mmproj` on a physical iPhone and Android device and on desktop
+  (camera JPEG and `Rgb` bitmap described correctly, GPU / CPU projector, abort mid-stream, no files in cache / temp
+  directories) — procedure in `kggml-llama/README.md` ("Manual verification", step 7).
 - [ ] [#14] CI re-run on Windows (billing / spending-limit refusal: MSVC build of the new `kggml_llama_jni` bridge +
   `:kggml-llama:jvmTest`) — https://github.com/donfuldauer/kggml/pull/46
