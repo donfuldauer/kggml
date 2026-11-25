@@ -14,7 +14,7 @@ Execute a Kggml GitHub issue from selection through implementation, verification
 
 ## Standing Authorization (all harnesses)
 
-Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, deleting the branch, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
+Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
 
 Stop and report to the user instead of merging **only** when:
 - a required CI check (or, on a `ci:macos`/`ci:windows`-labelled PR, that check) is failing and cannot be fixed within the issue's scope (checks that never started because the Actions quota is exhausted are not failures: use the local gate in AGENTS.md "When the Actions quota is exhausted");
@@ -146,9 +146,9 @@ Perform this step autonomously (see **Standing Authorization**): once the gates 
    gh pr checks <PR_NUMBER>
    ```
    If checks never started because the Actions quota is exhausted (queued indefinitely, or failed instantly with a billing / spending-limit annotation and no logs), do not wait or re-push: follow AGENTS.md "When the Actions quota is exhausted" (`./scripts/ci-local.sh --full`, summary in the PR body, deferred macOS/Windows re-runs in `docs/MANUAL_VERIFICATION.md`) and merge on that local gate.
-2. **Merge with a merge commit and delete branch** (squash merges are disabled on the repository):
+2. **Merge with a merge commit** (squash merges are disabled on the repository). Do not delete the remote branch or pass `--delete-branch`: the repository deletes head branches automatically on merge.
    ```bash
-   gh pr merge <PR_NUMBER> --merge --delete-branch
+   gh pr merge <PR_NUMBER> --merge
    git checkout main
    git pull --ff-only origin main
    git branch -D feat/issue-<N>-<slug> 2>/dev/null || true
