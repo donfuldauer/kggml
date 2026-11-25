@@ -56,6 +56,59 @@ internal interface NativeWhisperBridge {
 
     fun segment(handle: Long, index: Int): RawSegmentResult
 
+    // ---- streaming states (whisper_init_state / whisper_full_with_state / whisper_free_state) ----
+
+    /** `kggml_whisper_state_create()`: a separately allocated whisper_state on context [handle]. */
+    fun stateCreate(handle: Long): RawHandleResult
+
+    /** `kggml_whisper_state_free()`. Must run before [free] of the owning context. */
+    fun stateFree(state: Long)
+
+    /** `kggml_whisper_max_prompt_tokens()`: how many prompt tokens whisper.cpp conditions a decode on. */
+    fun maxPromptTokens(handle: Long): RawIntResult
+
+    /**
+     * `kggml_whisper_transcribe_with_state()` on the first [count] samples of [samples] with the first [promptCount]
+     * ids of [promptTokens]. [listener] (optional) is invoked synchronously on the calling thread for each batch of
+     * newly finalized segments; returning a non-OK status stops the decode with that status.
+     */
+    fun transcribeWithState(
+        handle: Long,
+        state: Long,
+        samples: FloatArray,
+        count: Int,
+        params: RawTranscribeParams,
+        promptTokens: IntArray,
+        promptCount: Int,
+        listener: WhisperSegmentListener?,
+    ): Int
+
+    fun stateSegmentCount(state: Long): RawIntResult
+
+    fun stateSegment(state: Long, index: Int): RawSegmentResult
+
+    /** `kggml_whisper_state_get_segment_tokens()`: text token ids (no special / timestamp tokens). */
+    fun stateSegmentTokens(state: Long, index: Int): RawTokensResult
+
+    // ---- streaming resampler (kggml_whisper_resampler_*), always to 16 kHz mono float, sinc quality ----
+
+    /** `kggml_whisper_resampler_create(inputRate, 16000, channels, format, SINC)`; [format] is a [PcmFormat]. */
+    fun resamplerCreate(inputRate: Int, channels: Int, format: Int): RawHandleResult
+
+    fun resamplerFree(resampler: Long)
+
+    /** Upper bound of output frames for [frames] input frames (`0` = the flush tail), or `-1` on invalid input. */
+    fun resamplerMaxOutput(resampler: Long, frames: Int): Long
+
+    /** Feeds [frames] interleaved float frames; [RawIntResult.value] = frames written to [output]. */
+    fun resamplerProcessF32(resampler: Long, input: FloatArray, frames: Int, channels: Int, output: FloatArray): RawIntResult
+
+    /** Feeds [frames] interleaved int16 frames; [RawIntResult.value] = frames written to [output]. */
+    fun resamplerProcessS16(resampler: Long, input: ShortArray, frames: Int, channels: Int, output: FloatArray): RawIntResult
+
+    /** Emits the remaining tail into [output]; [RawIntResult.value] = frames written. */
+    fun resamplerFlush(resampler: Long, output: FloatArray): RawIntResult
+
     /** `kggml_whisper_resampled_length(frames, sampleRate, 16000)`, or `-1` for invalid arguments. */
     fun resampledLength(frames: Int, sampleRate: Int): Long
 
@@ -71,6 +124,26 @@ internal interface NativeWhisperBridge {
     fun statusName(status: Int): String
 
     fun lastError(): String
+}
+
+/**
+ * Receives `new_segment_callback` notifications of a streaming decode: segments
+ * `[firstIndex, firstIndex + count)` of the state are final and readable. Called on the thread running
+ * [NativeWhisperBridge.transcribeWithState]; returns a `kggml_status` (OK to continue).
+ *
+ * The JNI bridge invokes [onNewSegments] by name (signature `(II)I`); keep it stable.
+ */
+internal fun interface WhisperSegmentListener {
+    fun onNewSegments(firstIndex: Int, count: Int): Int
+}
+
+/** A status code plus token ids (empty unless [status] is OK). */
+internal class RawTokensResult(val status: Int, val tokens: IntArray = IntArray(0))
+
+/** `kggml_pcm_format`. */
+internal object PcmFormat {
+    const val F32: Int = 0
+    const val S16: Int = 1
 }
 
 /** A status code plus one `int32_t` out-parameter. */

@@ -281,6 +281,13 @@ if (KGGML_WHISPER_BUILD_JNI)
         C_VISIBILITY_PRESET hidden
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON)
+    if (NOT APPLE AND NOT WIN32)
+        # ELF: hidden visibility does not cover std:: template instantiations (e.g. std::vector<int>), so an explicit
+        # version script keeps every non-JNI symbol local.
+        set(_kggml_jni_map "${CMAKE_CURRENT_SOURCE_DIR}/jni/kggml_whisper_jni.map")
+        target_link_options(kggml_whisper_jni PRIVATE "LINKER:--version-script=${_kggml_jni_map}")
+        set_property(TARGET kggml_whisper_jni APPEND PROPERTY LINK_DEPENDS "${_kggml_jni_map}")
+    endif()
     if (MSVC)
         target_compile_options(kggml_whisper_jni PRIVATE /W4 /EHsc)
     else()

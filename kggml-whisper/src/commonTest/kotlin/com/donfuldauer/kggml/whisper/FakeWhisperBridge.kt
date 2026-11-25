@@ -27,6 +27,25 @@ internal data class InitCall(val modelPath: String, val backendKind: Int, val gp
 /** One recorded `kggml_whisper_transcribe()` call; [samples] is the exact array instance that crossed the bridge. */
 internal class TranscribeCall(val handle: Long, val samples: FloatArray, val count: Int, val params: RawTranscribeParams)
 
+/** One recorded `kggml_whisper_transcribe_with_state()` call (inputs copied at call time). */
+internal class StateTranscribeCall(
+    val ordinal: Int,
+    val handle: Long,
+    val state: Long,
+    val samples: FloatArray,
+    val params: RawTranscribeParams,
+    val prompt: List<Int>,
+    val hasListener: Boolean,
+) {
+    val count: Int get() = samples.size
+
+    /** Partial decodes of the stream run single-segment without timestamps. */
+    val isPartial: Boolean get() = params.singleSegment && params.noTimestamps
+}
+
+/** A scripted streaming segment (times relative to the decoded buffer). */
+internal data class FakeSegment(val startMs: Long, val endMs: Long, val text: String, val tokens: List<Int>)
+
 /**
  * Deterministic in-memory stand-in for the native whisper library.
  *
@@ -61,6 +80,44 @@ internal class FakeWhisperBridge(
     val createdHandles: List<Long> get() = live.items
 
     var lastErrorMessage: String = ""
+
+    // ---- streaming states ----
+    private val nextState = AtomicLong(0x5000)
+    private val liveStates = ConcurrentLog<Pair<Long, Long>>() // state -> owning context
+    private val freedStateLog = ConcurrentLog<Long>()
+    private val stateResults = AtomicReference<Map<Long, List<FakeSegment>>>(emptyMap())
+    private val stateCallOrdinal = AtomicInt(0)
+
+    val stateTranscribes = ConcurrentLog<StateTranscribeCall>()
+    var stateCreateStatus: Int = WhisperStatus.OK
+    var maxPrompt: Int = 223
+
+    /** Status returned by every `transcribeWithState` (after the listener ran); OK by default. */
+    var stateTranscribeStatus: (StateTranscribeCall) -> Int = { WhisperStatus.OK }
+
+    /** Blocks streaming decodes selected by this predicate until aborted (like [blockTranscription]). */
+    var blockStateTranscribe: (StateTranscribeCall) -> Boolean = { false }
+
+    /** Segments produced by a streaming decode; by default one segment per call with a unique token. */
+    var streamSegments: (StateTranscribeCall) -> List<FakeSegment> = { call ->
+        val durationMs = call.count * 1000L / 16_000
+        listOf(FakeSegment(0, durationMs, if (call.isPartial) " partial${call.ordinal}" else " seg${call.ordinal}", listOf(1000 + call.ordinal)))
+    }
+
+    val createdStates: List<Long> get() = liveStates.items.map { it.first }
+    val freedStates: List<Long> get() = freedStateLog.items
+    val liveStateCount: Int get() = createdStates.size - freedStates.size
+
+    // ---- streaming resamplers ----
+    private class FakeResampler(val inRate: Int, val channels: Int, val format: Int) {
+        var inTotal = 0L
+        var outTotal = 0L
+    }
+
+    private val nextResampler = AtomicLong(0x9000)
+    private val resamplers = AtomicReference<Map<Long, FakeResampler>>(emptyMap())
+    val createdResamplers = ConcurrentLog<Long>()
+    val freedResamplers = ConcurrentLog<Long>()
 
     override fun hasCoreMl(): Boolean = coreMl
 
@@ -179,6 +236,179 @@ internal class FakeWhisperBridge(
         checkAlive(handle)
         val (t0, t1, text) = segments.getOrNull(index) ?: return RawSegmentResult(WhisperStatus.INVALID_ARGUMENT)
         return RawSegmentResult(WhisperStatus.OK, t0, t1, 0.25f, text.encodeToByteArray())
+    }
+
+    override fun stateCreate(handle: Long): RawHandleResult {
+        checkAlive(handle)
+        if (stateCreateStatus != WhisperStatus.OK) {
+            lastErrorMessage = "fake whisper_init_state failure"
+            return RawHandleResult(stateCreateStatus, 0L)
+        }
+        val state = nextState.fetchAndAdd(1L)
+        liveStates.add(state to handle)
+        return RawHandleResult(WhisperStatus.OK, state)
+    }
+
+    override fun stateFree(state: Long) {
+        check(state in createdStates) { "free of unknown state $state" }
+        check(state !in freedStates) { "double free of state $state" }
+        val owner = liveStates.items.first { it.first == state }.second
+        check(owner !in freed.items) { "state $state freed after its context $owner" }
+        freedStateLog.add(state)
+    }
+
+    private fun checkStateAlive(state: Long) {
+        check(state in createdStates && state !in freedStates) { "use of dead state $state" }
+    }
+
+    override fun maxPromptTokens(handle: Long): RawIntResult {
+        checkAlive(handle)
+        return RawIntResult(WhisperStatus.OK, maxPrompt)
+    }
+
+    override fun transcribeWithState(
+        handle: Long,
+        state: Long,
+        samples: FloatArray,
+        count: Int,
+        params: RawTranscribeParams,
+        promptTokens: IntArray,
+        promptCount: Int,
+        listener: WhisperSegmentListener?,
+    ): Int {
+        checkAlive(handle)
+        checkStateAlive(state)
+        check(liveStates.items.first { it.first == state }.second == handle) { "state $state used with foreign context" }
+        check(promptCount in 0..promptTokens.size) { "promptCount $promptCount out of range" }
+        val call = StateTranscribeCall(
+            ordinal = stateCallOrdinal.fetchAndAdd(1),
+            handle = handle,
+            state = state,
+            samples = samples.copyOf(count),
+            params = params,
+            prompt = promptTokens.copyOf(promptCount).toList(),
+            hasListener = listener != null,
+        )
+        stateTranscribes.add(call)
+        setResults(state, emptyList())
+        if (abortRequested(handle)) {
+            lastErrorMessage = "transcription cancelled before it started"
+            return WhisperStatus.CANCELLED
+        }
+        transcriptionStarted.addAndFetch(1)
+        if (blockStateTranscribe(call)) {
+            val deadline = TimeSource.Monotonic.markNow() + 10.seconds
+            while (!abortRequested(handle)) {
+                check(deadline.hasNotPassedNow()) { "fake streaming decode was never aborted" }
+            }
+        }
+        if (abortRequested(handle)) {
+            lastErrorMessage = "transcription cancelled"
+            return WhisperStatus.CANCELLED
+        }
+        val produced = streamSegments(call)
+        val visible = ArrayList<FakeSegment>()
+        for ((i, segment) in produced.withIndex()) {
+            visible += segment
+            setResults(state, visible.toList())
+            val status = listener?.onNewSegments(i, 1) ?: WhisperStatus.OK
+            if (status != WhisperStatus.OK) {
+                setResults(state, emptyList())
+                lastErrorMessage = "new_segment_callback stopped the transcription with status $status"
+                return status
+            }
+        }
+        val status = stateTranscribeStatus(call)
+        if (status != WhisperStatus.OK) {
+            setResults(state, emptyList())
+            lastErrorMessage = "fake streaming decode failure"
+        }
+        return status
+    }
+
+    private fun setResults(state: Long, segments: List<FakeSegment>) {
+        while (true) {
+            val cur = stateResults.load()
+            if (stateResults.compareAndSet(cur, cur + (state to segments))) return
+        }
+    }
+
+    override fun stateSegmentCount(state: Long): RawIntResult {
+        checkStateAlive(state)
+        return RawIntResult(WhisperStatus.OK, stateResults.load()[state].orEmpty().size)
+    }
+
+    override fun stateSegment(state: Long, index: Int): RawSegmentResult {
+        checkStateAlive(state)
+        val segment = stateResults.load()[state].orEmpty().getOrNull(index) ?: return RawSegmentResult(WhisperStatus.INVALID_ARGUMENT)
+        return RawSegmentResult(WhisperStatus.OK, segment.startMs, segment.endMs, 0.1f, segment.text.encodeToByteArray())
+    }
+
+    override fun stateSegmentTokens(state: Long, index: Int): RawTokensResult {
+        checkStateAlive(state)
+        val segment = stateResults.load()[state].orEmpty().getOrNull(index) ?: return RawTokensResult(WhisperStatus.INVALID_ARGUMENT)
+        return RawTokensResult(WhisperStatus.OK, segment.tokens.toIntArray())
+    }
+
+    override fun resamplerCreate(inputRate: Int, channels: Int, format: Int): RawHandleResult {
+        val h = nextResampler.fetchAndAdd(1L)
+        while (true) {
+            val cur = resamplers.load()
+            if (resamplers.compareAndSet(cur, cur + (h to FakeResampler(inputRate, channels, format)))) break
+        }
+        createdResamplers.add(h)
+        return RawHandleResult(WhisperStatus.OK, h)
+    }
+
+    override fun resamplerFree(resampler: Long) {
+        check(resampler in createdResamplers.items) { "free of unknown resampler $resampler" }
+        check(resampler !in freedResamplers.items) { "double free of resampler $resampler" }
+        freedResamplers.add(resampler)
+    }
+
+    private fun liveResampler(h: Long): FakeResampler {
+        check(h !in freedResamplers.items) { "use of freed resampler $h" }
+        return checkNotNull(resamplers.load()[h]) { "unknown resampler $h" }
+    }
+
+    override fun resamplerMaxOutput(resampler: Long, frames: Int): Long {
+        val r = liveResampler(resampler)
+        return (frames.toLong() * 16_000 + r.inRate - 1) / r.inRate + 1
+    }
+
+    override fun resamplerProcessF32(resampler: Long, input: FloatArray, frames: Int, channels: Int, output: FloatArray): RawIntResult {
+        val r = liveResampler(resampler)
+        check(r.format == PcmFormat.F32 && r.channels == channels)
+        conversions.add("stream-f32:$frames:$channels:${r.inRate}")
+        return streamConvert(r, frames, output) { f -> (0 until channels).sumOf { input[f * channels + it].toDouble() }.toFloat() / channels }
+    }
+
+    override fun resamplerProcessS16(resampler: Long, input: ShortArray, frames: Int, channels: Int, output: FloatArray): RawIntResult {
+        val r = liveResampler(resampler)
+        check(r.format == PcmFormat.S16 && r.channels == channels)
+        conversions.add("stream-s16:$frames:$channels:${r.inRate}")
+        return streamConvert(r, frames, output) { f -> (0 until channels).sumOf { input[f * channels + it] / 32768.0 }.toFloat() / channels }
+    }
+
+    override fun resamplerFlush(resampler: Long, output: FloatArray): RawIntResult {
+        liveResampler(resampler)
+        conversions.add("stream-flush")
+        return RawIntResult(WhisperStatus.OK, 0)
+    }
+
+    /** Stateful nearest-neighbour decimation: output k takes input frame floor(k * inRate / 16000). */
+    private inline fun streamConvert(r: FakeResampler, frames: Int, output: FloatArray, mono: (Int) -> Float): RawIntResult {
+        val base = r.inTotal
+        r.inTotal += frames
+        var n = 0
+        while (true) {
+            val src = r.outTotal * r.inRate / 16_000
+            if (src >= r.inTotal) break
+            if (n >= output.size) return RawIntResult(WhisperStatus.BUFFER_TOO_SMALL, n)
+            output[n++] = mono((src - base).toInt())
+            r.outTotal++
+        }
+        return RawIntResult(WhisperStatus.OK, n)
     }
 
     /** ceil(frames * 16000 / rate), like the native resampler. */

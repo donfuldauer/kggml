@@ -7,13 +7,17 @@ import com.donfuldauer.kggml.core.InferenceEngine
 import com.donfuldauer.kggml.core.InvalidInputException
 import com.donfuldauer.kggml.core.SerialDispatcherFactory
 import com.donfuldauer.kggml.core.SerialExecutor
+import com.donfuldauer.kggml.core.TranscriptionEvent
 import com.donfuldauer.kggml.runtime.KggmlRuntime
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.AtomicLong
 import kotlin.concurrent.atomics.AtomicReference
+import kotlin.jvm.JvmName
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.job
 
 /**
@@ -74,6 +78,11 @@ internal fun platformAvailableBackends(bridge: NativeWhisperBridge): Set<Compute
  * Cancellation is cooperative and prompt: cancelling the coroutine that called [transcribe] sets the native
  * abort flag, which whisper.cpp polls inside every ggml graph computation, so decoding stops within one graph
  * step and the call throws `CancellationException`. The engine stays usable afterwards.
+ *
+ * Live audio is transcribed with [transcribeStream], which turns a `Flow` of PCM chunks into a
+ * `Flow<TranscriptionEvent>` without writing any audio to disk. Each collection owns its own native
+ * `whisper_state`, so streams, one-shot [transcribe] calls and other streams on the same engine never disturb each
+ * other's decoder state; their decodes are serialized on the engine's thread like every other native call.
  */
 public class WhisperEngine internal constructor(
     /** Path of the loaded whisper ggml model (`.bin`). */
@@ -97,6 +106,9 @@ public class WhisperEngine internal constructor(
     /** Native context handle. Only read or written on [executor]'s thread; `0` when no model is loaded. */
     private var handle: Long = 0L
 
+    /** Native streaming states of the [transcribeStream] collections currently running on this engine. */
+    private val streamSlots = AtomicReference<Set<StreamSlot>>(emptySet())
+
     /** The configuration of the currently loaded model (see [reinitialize]). */
     override val backendConfig: BackendConfig
         get() = state.load().config
@@ -112,7 +124,7 @@ public class WhisperEngine internal constructor(
     override val isClosed: Boolean
         get() = closed.load()
 
-    /** `true` while a [transcribe] call is executing native code. */
+    /** `true` while a [transcribe] call or a [transcribeStream] decode is executing native code. */
     public val isTranscribing: Boolean
         get() = abortGate.isArmed
 
@@ -169,6 +181,66 @@ public class WhisperEngine internal constructor(
     }
 
     /**
+     * Transcribes a live stream of interleaved float PCM chunks in `[-1, 1]` into a cold `Flow` of
+     * [TranscriptionEvent]s. Nothing is written to disk: audio flows from [audioFlow] through the native streaming
+     * resampler (skipped for 16 kHz mono) into an in-memory ring buffer, a voice-activity turn detector, and
+     * `whisper_full_with_state()` on a `whisper_state` owned by this collection.
+     *
+     * Events, in order:
+     * - [TranscriptionEvent.PartialHypothesis] — unstable text of the speech turn in progress, re-decoded every
+     *   [StreamingOptions.partialStepMs] of new audio (conflated when the engine is behind).
+     * - [TranscriptionEvent.CommittedSegment] — locked, timestamped segments of a finished turn (a pause of
+     *   [com.donfuldauer.kggml.whisper.streaming.VadConfig.trailingSilenceMs], a 30 s window split, or the end of
+     *   the input). Indices increase monotonically from 0 and timestamps are milliseconds from the start of the
+     *   stream. The text tokens of committed segments are carried forward as `prompt_tokens` of later decodes
+     *   ([StreamingOptions.carryPromptTokens]) across pauses and 30 s windows.
+     * - [TranscriptionEvent.Completed] — after [audioFlow] completed and the last turn was committed; the last event.
+     * - [TranscriptionEvent.Error] — a typed [com.donfuldauer.kggml.core.InferenceException] (native failure,
+     *   malformed chunk, [abortActiveTranscription], or [close] of the engine, reported as
+     *   [InferenceCancelledException]). It is terminal: no event follows it and the flow then **completes
+     *   normally** rather than throwing.
+     *
+     * Exceptions thrown by [audioFlow] itself propagate to the collector unchanged. Cancelling the collector aborts
+     * a running native decode through whisper.cpp's abort callback and frees the stream's `whisper_state` and
+     * resampler on the engine thread before the collection finishes.
+     *
+     * The audio flow is collected on [kotlinx.coroutines.Dispatchers.Default]. If the decoder falls behind by
+     * [StreamingOptions.bufferMs], collection of [audioFlow] is suspended (back-pressure) — audio is never dropped.
+     *
+     * @param sampleRate input sample rate in Hz, `1000..384000`.
+     * @param channels interleaved channel count, `1..8`; every chunk's size must be a multiple of it.
+     * @throws InvalidInputException immediately for an unsupported [sampleRate] / [channels].
+     * @throws IllegalStateException immediately if the engine is closed.
+     */
+    public fun transcribeStream(
+        audioFlow: Flow<FloatArray>,
+        sampleRate: Int = SAMPLE_RATE,
+        channels: Int = 1,
+        options: StreamingOptions = StreamingOptions.DEFAULT,
+    ): Flow<TranscriptionEvent> {
+        validateFormat(sampleRate, channels)
+        check(!isClosed) { "WhisperEngine is closed" }
+        return WhisperStream(this, bridges, sampleRate, channels, options, StreamSource.F32(audioFlow)).flow()
+    }
+
+    /**
+     * [transcribeStream] for interleaved signed 16-bit PCM chunks (normalized natively as `sample / 32768`). See the
+     * `FloatArray` overload for the event contract. (On the JVM this overload is named `transcribeStreamPcm16`,
+     * since both overloads erase to `Flow`.)
+     */
+    @JvmName("transcribeStreamPcm16")
+    public fun transcribeStream(
+        audioFlow: Flow<ShortArray>,
+        sampleRate: Int = SAMPLE_RATE,
+        channels: Int = 1,
+        options: StreamingOptions = StreamingOptions.DEFAULT,
+    ): Flow<TranscriptionEvent> {
+        validateFormat(sampleRate, channels)
+        check(!isClosed) { "WhisperEngine is closed" }
+        return WhisperStream(this, bridges, sampleRate, channels, options, StreamSource.S16(audioFlow)).flow()
+    }
+
+    /**
      * Reloads the model with [backendConfig] on this engine's thread, after any transcription already queued. The
      * old native context is freed *before* the new one is created, so GPU resources are released promptly (e.g.
      * when switching to [ComputeBackend.CPU_ONLY] as an iOS app enters the background).
@@ -197,7 +269,8 @@ public class WhisperEngine internal constructor(
 
     /**
      * Requests the native abort of the transcription currently executing, if any; it then fails with
-     * [InferenceCancelledException]. Safe from any thread. Queued calls are not affected.
+     * [InferenceCancelledException] (a [transcribeStream] decode ends its stream with a terminal
+     * [TranscriptionEvent.Error]). Safe from any thread. Queued calls are not affected.
      *
      * @return `true` if a running transcription was signalled.
      */
@@ -205,12 +278,14 @@ public class WhisperEngine internal constructor(
 
     /**
      * Closes the engine: aborts a running transcription, rejects queued and future calls with
-     * [IllegalStateException], frees the native context on the engine's thread and stops that thread. Idempotent
-     * and safe from any thread.
+     * [IllegalStateException], ends running [transcribeStream] collections with a terminal
+     * [TranscriptionEvent.Error] ([InferenceCancelledException]), frees their native states and then the native
+     * context on the engine's thread, and stops that thread. Idempotent and safe from any thread.
      */
     override fun close() {
         if (!closed.compareAndSet(expectedValue = false, newValue = true)) return
         abortActiveTranscription()
+        streamSlots.load().forEach { it.onEngineClosed() } // wake idle streams so they end promptly
         executor.close(release = ::freeModel)
     }
 
@@ -269,7 +344,11 @@ public class WhisperEngine internal constructor(
         val current = handle
         if (current == 0L) return
         handle = 0L
-        bridges.get().free(current)
+        val bridge = bridges.get()
+        // States first (they belong to the context). A stream whose state is released here re-creates it lazily on
+        // the next model (reinitialize) or ends with an error (close).
+        streamSlots.load().forEach { it.release(bridge) }
+        bridge.free(current)
     }
 
     private inline fun convert(
@@ -295,35 +374,12 @@ public class WhisperEngine internal constructor(
         inputRate: Int,
         options: TranscriptionOptions,
     ): TranscriptionResult {
-        val current = handle
-        check(current != 0L) { "WhisperEngine has no model loaded (a previous reinitialize failed)" }
+        val current = loadedHandle()
         val bridge = bridges.get()
-        val job = currentCoroutineContext().job
         val config = state.load().config
 
-        bridge.clearAbort(current)
-        abortGate.arm(current)
-        // onCancelling = true: the handler must run while this thread is still blocked in native code (a plain
-        // completion handler would only run after the job completes, i.e. after whisper finished).
-        @OptIn(InternalCoroutinesApi::class)
-        val registration = job.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
-            if (cause != null) abortActiveTranscription()
-        }
-        val status = try {
-            bridge.transcribe(current, pcm, count, options.toRaw(config))
-        } finally {
-            registration.dispose()
-            abortGate.disarm()
-        }
-
-        if (status != WhisperStatus.OK) {
-            val error = bridge.nativeError(status, "kggml_whisper_transcribe", activeBackend)
-            if (status == WhisperStatus.CANCELLED) {
-                currentCoroutineContext().ensureActive() // caller cancelled -> CancellationException
-                if (isClosed) throw InferenceCancelledException("WhisperEngine was closed during transcription", error)
-            }
-            throw error
-        }
+        val status = abortable(bridge, current) { bridge.transcribe(current, pcm, count, options.toRaw(config)) }
+        throwOnFailure(bridge, status, "kggml_whisper_transcribe")
 
         val countResult = bridge.segmentCount(current)
         bridge.check(countResult.status, "kggml_whisper_segment_count")
@@ -344,6 +400,149 @@ public class WhisperEngine internal constructor(
             audioDurationMs = inputFrames.toLong() * 1000L / inputRate,
             backend = activeBackend,
         )
+    }
+
+    private fun loadedHandle(): Long {
+        val current = handle
+        check(current != 0L) { "WhisperEngine has no model loaded (a previous reinitialize failed)" }
+        return current
+    }
+
+    /**
+     * Runs the blocking native [call] on context [current] with the native abort wired to the calling coroutine's
+     * job: cancelling it (or [abortActiveTranscription] / [close]) makes whisper.cpp stop at its next abort poll.
+     */
+    private suspend inline fun <T> abortable(bridge: NativeWhisperBridge, current: Long, call: () -> T): T {
+        val job = currentCoroutineContext().job
+        bridge.clearAbort(current)
+        abortGate.arm(current)
+        // onCancelling = true: the handler must run while this thread is still blocked in native code (a plain
+        // completion handler would only run after the job completes, i.e. after whisper finished).
+        @OptIn(InternalCoroutinesApi::class)
+        val registration = job.invokeOnCompletion(onCancelling = true, invokeImmediately = true) { cause ->
+            if (cause != null) abortActiveTranscription()
+        }
+        try {
+            return call()
+        } finally {
+            registration.dispose()
+            abortGate.disarm()
+        }
+    }
+
+    /** Maps a non-OK transcription [status] to the right exception. Must run right after the native call. */
+    private suspend fun throwOnFailure(bridge: NativeWhisperBridge, status: Int, operation: String) {
+        if (status == WhisperStatus.OK) return
+        val error = bridge.nativeError(status, operation, activeBackend)
+        if (status == WhisperStatus.CANCELLED) {
+            currentCoroutineContext().ensureActive() // caller cancelled -> CancellationException
+            if (isClosed) throw InferenceCancelledException("WhisperEngine was closed during transcription", error)
+        }
+        throw error
+    }
+
+    // ------------------------------------------------------------------------------------------------------
+    // Streaming support (used by WhisperStream; every native call runs on the executor)
+    // ------------------------------------------------------------------------------------------------------
+
+    /**
+     * Registers a new stream and allocates its native `whisper_state`.
+     *
+     * @throws IllegalStateException if the engine is closed.
+     */
+    internal suspend fun openStream(onEngineClosed: () -> Unit): StreamSlot = executor.execute {
+        val current = loadedHandle()
+        val bridge = bridges.get()
+        val max = bridge.maxPromptTokens(current)
+        bridge.check(max.status, "kggml_whisper_max_prompt_tokens")
+        val slot = StreamSlot(max.value.coerceAtLeast(0), onEngineClosed)
+        register(slot)
+        try {
+            slot.ensureState(bridge, current)
+        } catch (failure: Throwable) {
+            unregister(slot)
+            slot.release(bridge)
+            throw failure
+        }
+        slot
+    }
+
+    /**
+     * Decodes `pcm[0 until count]` on the stream's own `whisper_state`, conditioned on `prompt[0 until promptCount]`.
+     * Segments are read through `new_segment_callback` as whisper.cpp finalizes them. Timestamps are relative to
+     * `pcm[0]`.
+     */
+    internal suspend fun decodeStream(
+        slot: StreamSlot,
+        pcm: FloatArray,
+        count: Int,
+        options: TranscriptionOptions,
+        prompt: IntArray,
+        promptCount: Int,
+    ): List<StreamedSegment> = executor.execute {
+        val current = loadedHandle()
+        val bridge = bridges.get()
+        val stateHandle = slot.ensureState(bridge, current)
+        val params = options.toRaw(state.load().config).copy(noContext = true)
+        val segments = ArrayList<StreamedSegment>()
+        var listenerFailure: Throwable? = null
+        val listener = WhisperSegmentListener { first, n ->
+            try {
+                for (i in maxOf(first, segments.size) until first + n) segments += readStreamSegment(bridge, stateHandle, i)
+                WhisperStatus.OK
+            } catch (t: Throwable) {
+                listenerFailure = t // rethrown below; never unwinds through native frames
+                WhisperStatus.NATIVE_FAILURE
+            }
+        }
+        val status = abortable(bridge, current) {
+            bridge.transcribeWithState(current, stateHandle, pcm, count, params, prompt, promptCount, listener)
+        }
+        if (status != WhisperStatus.CANCELLED) listenerFailure?.let { throw it }
+        throwOnFailure(bridge, status, "kggml_whisper_transcribe_with_state")
+        // Defensive: pick up any finalized segment whisper.cpp did not announce through the callback.
+        val total = bridge.stateSegmentCount(stateHandle)
+        bridge.check(total.status, "kggml_whisper_state_segment_count")
+        for (i in segments.size until total.value) segments += readStreamSegment(bridge, stateHandle, i)
+        segments
+    }
+
+    /**
+     * Unregisters [slot] and frees its native state on the engine thread. If the engine is already closed, its
+     * pending release step frees every still-registered state instead (so this never races a running decode).
+     */
+    internal suspend fun closeStream(slot: StreamSlot) {
+        try {
+            executor.execute {
+                unregister(slot)
+                slot.release(bridges.get())
+            }
+        } catch (_: IllegalStateException) {
+            // Executor closed: freeModel() (scheduled by close()) releases the state.
+        }
+    }
+
+    private fun readStreamSegment(bridge: NativeWhisperBridge, stateHandle: Long, index: Int): StreamedSegment {
+        val raw = bridge.stateSegment(stateHandle, index)
+        bridge.check(raw.status, "kggml_whisper_state_get_segment")
+        val tokens = bridge.stateSegmentTokens(stateHandle, index)
+        bridge.check(tokens.status, "kggml_whisper_state_get_segment_tokens")
+        val start = raw.startMs.coerceAtLeast(0)
+        return StreamedSegment(raw.text.decodeToString(), start, raw.endMs.coerceAtLeast(start), tokens.tokens)
+    }
+
+    private fun register(slot: StreamSlot) {
+        while (true) {
+            val current = streamSlots.load()
+            if (streamSlots.compareAndSet(current, current + slot)) return
+        }
+    }
+
+    private fun unregister(slot: StreamSlot) {
+        while (true) {
+            val current = streamSlots.load()
+            if (streamSlots.compareAndSet(current, current - slot)) return
+        }
     }
 
     public companion object {
@@ -386,13 +585,17 @@ public class WhisperEngine internal constructor(
             return engine
         }
 
-        private fun validateShape(size: Int, sampleRate: Int, channels: Int): Int {
+        internal fun validateFormat(sampleRate: Int, channels: Int) {
             if (channels !in 1..MAX_CHANNELS) {
                 throw InvalidInputException("channels must be in 1..$MAX_CHANNELS, was $channels")
             }
             if (sampleRate !in MIN_SAMPLE_RATE..MAX_SAMPLE_RATE) {
                 throw InvalidInputException("sampleRate must be in $MIN_SAMPLE_RATE..$MAX_SAMPLE_RATE, was $sampleRate")
             }
+        }
+
+        private fun validateShape(size: Int, sampleRate: Int, channels: Int): Int {
+            validateFormat(sampleRate, channels)
             if (size % channels != 0) {
                 throw InvalidInputException("sample count $size is not a multiple of channels ($channels)")
             }
@@ -430,3 +633,39 @@ public data class WhisperNativeInfo(
     val systemInfo: String,
     val hasCoreMl: Boolean,
 )
+
+/**
+ * The native `whisper_state` of one [WhisperEngine.transcribeStream] collection.
+ *
+ * [ensureState] and [release] run on the engine thread only; the handle is swapped atomically so that a state is
+ * freed exactly once whichever of the stream's own cleanup or the engine's [WhisperEngine.close] /
+ * [WhisperEngine.reinitialize] gets to it first.
+ *
+ * @property maxPromptTokens the model's prompt-token budget (`kggml_whisper_max_prompt_tokens`).
+ */
+internal class StreamSlot(val maxPromptTokens: Int, private val engineClosed: () -> Unit) {
+    private val stateHandle = AtomicLong(0L)
+
+    /** `true` while a native state is allocated. */
+    val hasState: Boolean get() = stateHandle.load() != 0L
+
+    /** Returns the state, creating it on context [context] if there is none (first use or after reinitialize). */
+    fun ensureState(bridge: NativeWhisperBridge, context: Long): Long {
+        stateHandle.load().let { if (it != 0L) return it }
+        val created = bridge.stateCreate(context)
+        bridge.check(created.status, "kggml_whisper_state_create")
+        stateHandle.store(created.handle)
+        return created.handle
+    }
+
+    /** Frees the native state, if any. Idempotent. */
+    fun release(bridge: NativeWhisperBridge) {
+        val h = stateHandle.exchange(0L)
+        if (h != 0L) bridge.stateFree(h)
+    }
+
+    fun onEngineClosed() = engineClosed()
+}
+
+/** One segment of a streaming decode; times in ms relative to the decoded buffer. */
+internal class StreamedSegment(val text: String, val startMs: Long, val endMs: Long, val tokens: IntArray)

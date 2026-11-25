@@ -46,6 +46,17 @@ KGGML_WHISPER_API kggml_status kggml_whisper_test_abort_poll_count(const kggml_w
 KGGML_WHISPER_API kggml_status kggml_whisper_test_resolve_use_gpu(const kggml_whisper_context_params * params,
                                                                  int32_t * out_use_gpu, int32_t * out_coreml_allowed);
 
+/** Number of kggml_whisper_state objects currently alive in this process (leak / deterministic-free checks). */
+KGGML_WHISPER_API int64_t kggml_whisper_test_live_state_count(void);
+
+/**
+ * The prompt_tokens the last kggml_whisper_transcribe_with_state() on `state` handed to whisper.cpp (after
+ * validation). Same BUFFER_TOO_SMALL protocol as kggml_whisper_state_get_segment_tokens().
+ */
+KGGML_WHISPER_API kggml_status kggml_whisper_test_state_last_prompt(const kggml_whisper_state * state,
+                                                                   int32_t * out_tokens, int32_t capacity,
+                                                                   int32_t * out_count);
+
 #ifdef __cplusplus
 }
 #endif

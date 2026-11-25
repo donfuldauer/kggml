@@ -156,6 +156,30 @@ public class VadTurnDetector(
     public var turnsEmitted: Long = 0L
         private set
 
+    /**
+     * Audio samples (pre-roll included) accumulated so far in the turn in progress, or `0` when no turn is in
+     * progress ([VadState.SILENCE] / [VadState.TURN_COMMITTED]). Used for partial (unstable) transcriptions.
+     */
+    public val activeTurnSamples: Int
+        get() = if (state == VadState.SPEECH || state == VadState.TRAILING_PAUSE) turnFill else 0
+
+    /** Stream position (see [SpeechTurn.startSample]) of the first sample of the turn in progress; `-1` if none. */
+    public val activeTurnStartSample: Long
+        get() = if (activeTurnSamples > 0) turnStart else -1L
+
+    /**
+     * Copies the [activeTurnSamples] samples of the turn in progress into `dst[offset ...]` without changing any
+     * state, and returns how many were copied (`0` when no turn is in progress).
+     */
+    public fun copyActiveTurn(dst: FloatArray, offset: Int = 0): Int {
+        val n = activeTurnSamples
+        if (offset < 0 || offset > dst.size - n) {
+            throw IndexOutOfBoundsException("offset=$offset, length=$n out of bounds for array of size ${dst.size}")
+        }
+        turn.copyInto(dst, offset, 0, n)
+        return n
+    }
+
     /** Feeds `src[offset until offset + length]`; may invoke [onTurn] zero or more times before returning. */
     public fun accept(src: FloatArray, offset: Int = 0, length: Int = src.size - offset) {
         if (offset < 0 || length < 0 || offset > src.size - length) {

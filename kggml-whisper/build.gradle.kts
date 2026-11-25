@@ -82,6 +82,8 @@ kotlin {
 
 android {
     namespace = "com.donfuldauer.kggml.whisper"
+    // Keeps the JNI entry points and the streaming segment-listener callback (called by name from C++).
+    defaultConfig { consumerProguardFiles("consumer-rules.pro") }
 }
 
 // ---------------------------------------------------------------------------------------------------------

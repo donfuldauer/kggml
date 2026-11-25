@@ -27,6 +27,7 @@ add_executable(kggml_whisper_tests
     test_errors.cpp
     test_context.cpp
     test_abort.cpp
+    test_stream.cpp
     tiny_model.cpp
     # Internal (hidden-visibility) helpers under test are compiled straight into the test binary.
     ${PROJECT_SOURCE_DIR}/src/resampler.cpp)

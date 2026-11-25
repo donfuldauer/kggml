@@ -1,0 +1,14 @@
+/*
+ * ELF export list of libkggml_whisper_jni (Linux, Android). Only the JNI entry points are global; everything else,
+ * including C++ standard-library template instantiations that hidden visibility does not cover (libstdc++ declares
+ * namespace std with default visibility), stays local. Audited by scripts/ci/audit-whisper-linkage.sh.
+ * Only patterns here: exact names of symbols that do not exist (e.g. JNI_OnLoad) are an error under LLD >= 16
+ * (--no-undefined-version is its default), which the Android NDK uses.
+ */
+{
+  global:
+    Java_*;
+    JNI_On*;
+  local:
+    *;
+};
