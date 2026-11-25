@@ -141,7 +141,12 @@ macho() {
   printf '%s\n' "${src}" >"${WORK}/m.c"
   clang -target arm64-apple-ios14 -c "${WORK}/m.c" -o "${out}"
 }
-if command -v clang >/dev/null 2>&1 && macho "${WORK}/probe.o" 'int f(void){return 0;}' 2>/dev/null; then
+# The Mach-O cases need clang targeting iOS and an nm that reads Mach-O (llvm-nm, or Apple's nm on macOS).
+macho_nm=""
+if command -v llvm-nm >/dev/null 2>&1; then macho_nm=llvm-nm; elif [[ "$(uname -s)" == Darwin ]]; then macho_nm=nm; fi
+if [[ -n "${NM:-}" ]]; then macho_nm="${NM}"; fi
+if command -v clang >/dev/null 2>&1 && macho "${WORK}/probe.o" 'int f(void){return 0;}' 2>/dev/null \
+   && [[ -n "${macho_nm}" ]] && "${macho_nm}" --defined-only "${WORK}/probe.o" >/dev/null 2>&1; then
   for slice in ios-arm64 ios-arm64-simulator; do
     macho "${WORK}/ios/GgmlRuntime.xcframework/${slice}/GgmlRuntime.framework/GgmlRuntime" "${GGML_SRC}"
     macho "${WORK}/ios/Whisper.xcframework/${slice}/Whisper.framework/Whisper" "${WHISPER_SRC}"
@@ -158,7 +163,14 @@ if command -v clang >/dev/null 2>&1 && macho "${WORK}/probe.o" 'int f(void){retu
   expect fail "iOS framework embedding ggml fails" 'defined in more than one binary' ios \
     "${WORK}/ios/DupApp.framework" "${WORK}/ios/GgmlRuntime.xcframework" "${WORK}/ios/Whisper.xcframework"
 else
-  echo "  skip clang cannot target arm64-apple-ios"
+  echo "  skip no clang targeting arm64-apple-ios or no Mach-O capable nm"
+  if command -v clang >/dev/null 2>&1 && macho "${WORK}/probe.o" 'int f(void){return 0;}' 2>/dev/null; then
+    # With an ELF-only nm the audit must refuse Mach-O input instead of passing it with no symbols.
+    mkdir -p "${WORK}/ios-elfnm/App.framework" && cp "${WORK}/probe.o" "${WORK}/ios-elfnm/App.framework/App"
+    if nm --defined-only "${WORK}/probe.o" >/dev/null 2>&1; then :; else
+      NM=nm expect fail "ELF-only nm refuses Mach-O input" 'cannot read App' ios "${WORK}/ios-elfnm/App.framework"
+    fi
+  fi
 fi
 
 echo "== usage"

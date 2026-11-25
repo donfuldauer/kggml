@@ -45,17 +45,21 @@ pick_tool() {
   return 1
 }
 
-NM="$(pick_tool llvm-nm nm)" || die "nm not found"
+# llvm-nm reads ELF and Mach-O; GNU nm (Linux) reads only ELF, Apple's nm (macOS) both. $NM overrides.
+NM="${NM:-$(pick_tool llvm-nm nm)}" || die "nm not found"
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
 
 # Defined symbol names of a binary (static + dynamic tables, any binding, so a hidden static copy is caught).
+# Dies when nm cannot read the file at all (e.g. GNU nm on Mach-O), so an unreadable binary never passes.
 defined_symbols() {
-  local f="$1"
-  {
-    "${NM}" --defined-only "${f}" 2>/dev/null || true
-    "${NM}" -D --defined-only "${f}" 2>/dev/null || true
-  } | awk 'NF >= 3 {print $NF}' | sort -u
+  local f="$1" static dynamic static_rc=0 dynamic_rc=0
+  static="$("${NM}" --defined-only "${f}" 2>/dev/null)" || static_rc=$?
+  dynamic="$("${NM}" -D --defined-only "${f}" 2>/dev/null)" || dynamic_rc=$?
+  if [[ ${static_rc} -ne 0 && ${dynamic_rc} -ne 0 ]]; then
+    die "${NM} cannot read $(basename "${f}") (${f}); a Mach-O audit needs llvm-nm or the macOS nm"
+  fi
+  printf '%s\n%s\n' "${static}" "${dynamic}" | awk 'NF >= 3 {print $NF}' | sort -u
 }
 
 # Prints forbidden (llama / mtmd / stable-diffusion) symbol names found in the symbol list on stdin.
