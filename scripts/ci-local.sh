@@ -2,7 +2,7 @@
 # Runs the same checks as the Linux PR CI jobs locally, so they pass before anything is pushed.
 #
 # Mirrors:
-#   .github/workflows/repo-hygiene.yml    -> agent parity, CI-waiter test, gitleaks
+#   .github/workflows/repo-hygiene.yml    -> agent parity, CI-waiter test, license/NOTICE/fixture audit, gitleaks
 #   .github/workflows/ci.yml (Ubuntu)     -> ggml + whisper.cpp + llama.cpp + stable-diffusion.cpp pins, host build +
 #                                            CTest (runtime, whisper, llama and diffusion), host linkage audits,
 #                                            :kggml-runtime + :kggml-whisper + :kggml-llama + :kggml-diffusion
@@ -168,7 +168,9 @@ for step in "${all_steps[@]}"; do
   case "${step}" in
     parity)
       run_step parity ./scripts/verify-agent-parity.sh
-      run_step waiter ./scripts/tests/test-wait-pr-checks.sh ;;
+      run_step waiter ./scripts/tests/test-wait-pr-checks.sh
+      run_step license ./scripts/ci/verify-licenses.sh
+      run_step l-test ./scripts/tests/test-verify-licenses.sh ;;
     gitleaks)
       if command -v gitleaks >/dev/null 2>&1; then
         run_step gitleaks gitleaks git --redact --no-banner --config .gitleaks.toml

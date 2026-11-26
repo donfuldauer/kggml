@@ -32,6 +32,22 @@ jobs:
       - name: Test the agent CI waiter (scripts/ci/wait-pr-checks.sh)
         run: ./scripts/tests/test-wait-pr-checks.sh
 
+  license-audit:
+    name: License, NOTICE & Fixture Audit
+    runs-on: >-
+      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify LICENSE, upstream pins and test fixtures against NOTICE
+        run: ./scripts/ci/verify-licenses.sh
+
+      - name: Test the license audit (scripts/ci/verify-licenses.sh)
+        run: ./scripts/tests/test-verify-licenses.sh
+
   secret-scan:
     name: Gitleaks Secret Scan
     runs-on: >-

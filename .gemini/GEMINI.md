@@ -47,13 +47,13 @@ Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.
 5. **Strict On-Device Focus:** No server/LAN inference modules.
 6. **Secret & Attribution Hygiene:**
    - Never commit secrets, signing keys, local machine paths, or large/unlicensed model binaries.
-   - Record every pinned upstream C/C++ commit hash and every bundled CC0/MIT test fixture in `NOTICE`.
+   - Record every pinned upstream C/C++ commit hash and every bundled CC0/MIT test fixture in `NOTICE`. `scripts/ci/verify-licenses.sh` (every PR, `repo-hygiene.yml`) fails on an unrecorded or stale pin, a tracked binary/model/audio/image file missing from `NOTICE`, or a fixture that is not MIT/CC0.
 
 ---
 
 ## 3. Build, Test & Verification Commands
 
-**Before every push, run `./scripts/ci-local.sh`.** It runs the same checks as the Linux PR CI jobs (agent parity, gitleaks, ggml pin, host native build + CTest, dynamic-linkage audit, `:kggml-runtime:jvmTest`, Android cross-compile + audit). Native steps run only when native paths changed versus `origin/main`; tools it cannot find (gitleaks, Android NDK) are reported as `SKIPPED`. Paste its summary block into the PR's Verification section. Fix every `FAIL` locally before pushing rather than using CI to find failures.
+**Before every push, run `./scripts/ci-local.sh`.** It runs the same checks as the Linux PR CI jobs (agent parity, license/NOTICE/fixture audit, gitleaks, ggml pin, host native build + CTest, dynamic-linkage audit, `:kggml-runtime:jvmTest`, Android cross-compile + audit). Native steps run only when native paths changed versus `origin/main`; tools it cannot find (gitleaks, Android NDK) are reported as `SKIPPED`. Paste its summary block into the PR's Verification section. Fix every `FAIL` locally before pushing rather than using CI to find failures.
 
 Also run whichever of these apply to the modules your change touches:
 
