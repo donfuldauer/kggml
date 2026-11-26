@@ -97,8 +97,8 @@ If the audit ever reports a real finding, only the owner rewrites history, and o
 | 2 | `NOTICE` records every upstream pin, the Gradle wrapper and every fixture (MIT/CC0) | `scripts/ci/verify-licenses.sh` (every PR) | Verified (#21) |
 | 3 | Production `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, issue and PR templates | `scripts/ci/verify-docs.sh` and `:docs-snippets` compile (every PR) | Verified (#22) |
 | 4 | Maven Central staging: 7 coordinates signed, POM, `.module` and BOM metadata audited | `scripts/ci/stage-release.sh --dry-run` (every PR), [`RELEASING.md`](RELEASING.md) | Verified (#23); first real upload is an owner step |
-| 5 | Every workflow job runs on a GitHub-hosted runner | `scripts/ci/verify-hosted-runners.sh` (every PR) | Verified (#23) |
-| 6 | No runner registered to the repository and no runner variable | Settings → Actions → Runners | Owner step (below) |
+| 5 | Every workflow job runs on a GitHub-hosted runner: the self-hosted routes (Mac, Windows, Linux) added back in #62 are removed | one PR (#63); `scripts/ci/verify-hosted-runners.sh` fails on every PR while public with any route left | **Open** (#63) |
+| 6 | No runner registered to the repository and no runner variable (`MAC_RUNNER`, `WIN_RUNNER`, `LINUX_RUNNER`) | Settings → Actions → Runners | Owner step (below, #63) |
 | 7 | Full-history gitleaks, blob, binary, credential and path audit clean | `scripts/ci/audit-history.sh` (every PR), result above | Verified (#24) |
 | 8 | Agent and harness instruction mirrors in sync | `scripts/verify-agent-parity.sh` (every PR) | Verified |
 | 9 | GitHub secret scanning and push protection on | Settings → Code security | Owner step (below) |
@@ -107,10 +107,13 @@ If the audit ever reports a real finding, only the owner rewrites history, and o
 
 ## Owner steps before the visibility flip
 
-1. **Runners.** Settings → Actions → Runners lists no runner, and the Mac runner's on/off variable is gone from
-   Settings → Secrets and variables → Actions → Variables (from #23). With the GitHub CLI:
-   `gh api repos/donfuldauer/kggml/actions/runners --jq .total_count` prints `0`, and `gh variable list` shows no
-   runner variable.
+1. **Runners (#63).** Unregister all three self-hosted runners: the Mac (`local-mac`, on the Mac
+   `gh-runner remove donfuldauer/kggml`), the Windows PC (`local-win`: delete its logon task, then `config.cmd remove`
+   in the runner folder) and the Linux VM (`local-linux`: stop its service, then `./config.sh remove`); removal tokens
+   come from Settings → Actions → Runners. Delete the variables `MAC_RUNNER`, `WIN_RUNNER` and `LINUX_RUNNER` under
+   Settings → Secrets and variables → Actions → Variables, and merge the #63 PR that drops the self-hosted routes from
+   the workflows. With the GitHub CLI: `gh api repos/donfuldauer/kggml/actions/runners --jq .total_count` prints `0`,
+   and `gh variable list` shows no runner variable.
 2. **Secret scanning.** Settings → Code security: turn on "Secret Protection" (secret scanning) and "Push
    protection". Both are free on public repositories and take effect when the repository becomes public, if not
    before. After the flip, Security → Secret scanning should list no alerts.
