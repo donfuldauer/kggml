@@ -10,6 +10,7 @@
       "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "ANDROID_PLATFORM": "android-28",
         "ANDROID_STL": "c++_shared"
       }
