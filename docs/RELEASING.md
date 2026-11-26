@@ -43,11 +43,11 @@ The same staging and audit run on pull requests as a dry run with a throwaway ke
 
 ## Before the first release
 
-1. **Remove the private Mac runner** (issue #23; before the repository is made public, a fork PR could otherwise edit
-   a workflow to run on it). On the Mac run `gh-runner remove donfuldauer/kggml`, then check that
-   Settings → Actions → Runners lists no runner, and delete the runner's on/off variable under
-   Settings → Secrets and variables → Actions → Variables. `scripts/ci/verify-hosted-runners.sh` (every PR) keeps
-   the workflows on GitHub-hosted runners.
+1. **Remove the private runners** (issue #63; before the repository is made public, a fork PR could otherwise edit
+   a workflow to run on one). Unregister the Mac, Windows and Linux self-hosted runners, delete `MAC_RUNNER`,
+   `WIN_RUNNER` and `LINUX_RUNNER`, and remove the self-hosted routes from the workflows — procedure in
+   [`OSS_LAUNCH.md`](OSS_LAUNCH.md) ("Owner steps before the visibility flip", step 1).
+   `scripts/ci/verify-hosted-runners.sh` (every PR) fails while the repository is public until that is done.
 2. **Central Portal account and namespace.** Sign in at <https://central.sonatype.com>, verify the `com.donfuldauer`
    namespace (DNS TXT record on `donfuldauer.com`), and generate a user token (Account → Generate User Token).
 3. **Signing key.** Create a key used only for releases, publish its public half, and export the secret half:
