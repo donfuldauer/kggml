@@ -7,7 +7,13 @@ import kotlin.test.assertTrue
 
 /** Which downloaded files each feature screen's model picker offers ([choicesFor] / [ModelSlot.accepts]). */
 class ModelChoicesTest {
-    private fun model(id: String, kind: ModelKind, fileName: String, projectorId: String? = null) = CatalogModel(
+    private fun model(
+        id: String,
+        kind: ModelKind,
+        fileName: String,
+        projectorId: String? = null,
+        preset: DiffusionPreset? = null,
+    ) = CatalogModel(
         id = id,
         displayName = "Model $id",
         kind = kind,
@@ -16,6 +22,7 @@ class ModelChoicesTest {
         approxSizeBytes = 1,
         license = "MIT",
         projectorId = projectorId,
+        diffusionPreset = preset,
     )
 
     private val whisper = model("whisper", ModelKind.WHISPER, "ggml-tiny.bin")
@@ -70,6 +77,41 @@ class ModelChoicesTest {
 
         // A text-only LLM has no projector note.
         assertEquals("llm.gguf", state(listOf(installed(llm))).choicesFor(ModelSlot.LLM).single().detail)
+    }
+
+    @Test
+    fun diffusionChoiceCarriesTheModelsPreset() {
+        val turbo = model("turbo", ModelKind.DIFFUSION, "turbo.gguf", preset = DiffusionPreset(4, 1f, 512))
+        val choices = state(listOf(installed(turbo), installed(sd)), others = listOf("x.ckpt")).choicesFor(ModelSlot.DIFFUSION)
+        assertEquals(DiffusionPreset(4, 1f, 512), choices[0].diffusionPreset)
+        assertEquals("turbo.gguf · uses 4 steps, CFG 1, 512x512", choices[0].detail)
+        assertEquals(null, choices[1].diffusionPreset, "no preset: the screen keeps its settings")
+        assertEquals(null, choices[2].diffusionPreset, "other files have none")
+    }
+
+    @Test
+    fun theCatalogsFastDiffusionModelIsPinnedVerifiedAndPreset() {
+        val turbo = DEFAULT_MODEL_CATALOG.single { it.id == "sd-turbo-q8" }
+        assertEquals(ModelKind.DIFFUSION, turbo.kind)
+        assertTrue(Regex("/resolve/[0-9a-f]{40}/").containsMatchIn(turbo.url), "pinned to a revision: ${turbo.url}")
+        assertTrue(turbo.url.endsWith("/${turbo.fileName}"))
+        assertEquals(64, turbo.sha256?.length, "the upstream SHA-256 is verified on download")
+        val preset = turbo.diffusionPreset!!
+        assertEquals(1f, preset.cfgScale, "turbo models run without classifier-free guidance")
+        assertTrue(preset.steps in 1..8)
+        assertEquals(512, preset.size, "SD-Turbo only produces usable images at 512x512")
+        assertTrue("Powered by Stability AI" in turbo.license, "attribution required by the Stability AI Community License")
+        // Offered before the slow SD 1.5 model.
+        val diffusion = DEFAULT_MODEL_CATALOG.filter { it.kind == ModelKind.DIFFUSION }.map { it.id }
+        assertEquals("sd-turbo-q8", diffusion.first())
+    }
+
+    @Test
+    fun presetLabelAndValidation() {
+        assertEquals("4 steps, CFG 1, 512x512", DiffusionPreset(4, 1f, 512).label)
+        assertEquals("20 steps, CFG 7.5, 384x384", DiffusionPreset(20, 7.5f, 384).label)
+        kotlin.test.assertFailsWith<IllegalArgumentException> { DiffusionPreset(0, 1f, 512) }
+        kotlin.test.assertFailsWith<IllegalArgumentException> { DiffusionPreset(4, 0.5f, 512) }
     }
 
     @Test

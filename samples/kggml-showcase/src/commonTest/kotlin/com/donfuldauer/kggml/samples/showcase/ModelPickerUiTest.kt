@@ -18,6 +18,7 @@ import com.donfuldauer.kggml.models.DownloadEvent
 import com.donfuldauer.kggml.samples.showcase.diffusion.DiffusionStudioTags
 import com.donfuldauer.kggml.samples.showcase.llm.LlmChatTags
 import com.donfuldauer.kggml.samples.showcase.models.CatalogModel
+import com.donfuldauer.kggml.samples.showcase.models.DiffusionPreset
 import com.donfuldauer.kggml.samples.showcase.models.FakeModelStore
 import com.donfuldauer.kggml.samples.showcase.models.ModelKind
 import com.donfuldauer.kggml.samples.showcase.models.ModelPickerTags
@@ -37,9 +38,10 @@ class ModelPickerUiTest : UiTestBase() {
         model("vlm", ModelKind.VISION_LLM, "vlm.gguf", projectorId = "mmproj"),
         model("mmproj", ModelKind.VISION_PROJECTOR, "mmproj-vlm.gguf"),
         model("sd", ModelKind.DIFFUSION, "sd.safetensors"),
+        model("turbo", ModelKind.DIFFUSION, "turbo.gguf", preset = DiffusionPreset(steps = 4, cfgScale = 1f, size = 512)),
     )
 
-    private fun model(id: String, kind: ModelKind, fileName: String, projectorId: String? = null) = CatalogModel(
+    private fun model(id: String, kind: ModelKind, fileName: String, projectorId: String? = null, preset: DiffusionPreset? = null) = CatalogModel(
         id = id,
         displayName = "Test $id",
         kind = kind,
@@ -48,6 +50,7 @@ class ModelPickerUiTest : UiTestBase() {
         approxSizeBytes = 1000,
         license = "MIT",
         projectorId = projectorId,
+        diffusionPreset = preset,
     )
 
     private fun installed(vararg fileNames: String) = FakeModelStore().apply { fileNames.forEach { files[it] = 1000 } }
@@ -155,6 +158,26 @@ class ModelPickerUiTest : UiTestBase() {
         click(ModelPickerTags.choice(field, "sd"))
         assertPath(field, "/data/models/sd.safetensors")
         assertChosen(field, "sd", "turbo.ckpt")
+    }
+
+    @Test
+    fun choosingAFastDiffusionModelAppliesItsSettings() = runComposeUiTest {
+        showFakeShowcase(fakes("sd.safetensors", "turbo.gguf"), ShowcaseDestination.DIFFUSION_STUDIO)
+        val field = DiffusionStudioTags.MODEL_PATH
+        waitForTag(ModelPickerTags.choice(field, "turbo"))
+        onNodeWithTag(ModelPickerTags.choice(field, "turbo")).assertTextContains("uses 4 steps, CFG 1, 512x512", substring = true)
+        // Defaults before: 20 steps, CFG 7.
+        onNodeWithTag(DiffusionStudioTags.STEPS_LABEL).performScrollTo().assertTextContains("Sampling steps: 20")
+
+        click(ModelPickerTags.choice(field, "turbo"))
+        assertPath(field, "/data/models/turbo.gguf")
+        onNodeWithTag(DiffusionStudioTags.STEPS_LABEL).performScrollTo().assertTextContains("Sampling steps: 4")
+        onNodeWithTag(DiffusionStudioTags.CFG_LABEL).performScrollTo().assertTextContains("CFG scale: 1.0")
+        onNodeWithTag(DiffusionStudioTags.size(512)).performScrollTo().assertIsSelected()
+
+        // A model without a preset keeps what is set.
+        click(ModelPickerTags.choice(field, "sd"))
+        onNodeWithTag(DiffusionStudioTags.STEPS_LABEL).performScrollTo().assertTextContains("Sampling steps: 4")
     }
 
     @Test

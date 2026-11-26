@@ -207,7 +207,7 @@ fun ShowcaseApp(
                     }
 
                     ModelKind.DIFFUSION -> {
-                        diffusionStudio.setModelPath(path)
+                        diffusionStudio.useModel(path, model.diffusionPreset)
                         selectedName = ShowcaseDestination.DIFFUSION_STUDIO.name
                     }
                 }

@@ -45,29 +45,24 @@ adb shell am start -n com.donfuldauer.kggml.samples.whisper/.MainActivity --es b
 
 ## iOS
 
-`WhisperOnlyMinimal.framework` is a static Kotlin framework; the host app embeds the two dynamic
-xcframeworks next to it.
+`iosApp/iosApp.xcodeproj` is the Xcode host app (UIKit app delegate, product `WhisperMinimalApp`). Its first build
+phase compiles the static `WhisperOnlyMinimal.framework` with Gradle (`scripts/ios/xcode-kotlin-framework.sh`, which
+finds JDK 17 on its own); it embeds `GgmlRuntime.xcframework` and `KggmlWhisper.xcframework` from
+`build/native-ios`, which have to be built once first:
 
 ```bash
-./kggml-runtime/native/scripts/build-ios-xcframework.sh   # build/native-ios/GgmlRuntime.xcframework
-./kggml-whisper/native/scripts/build-ios-xcframework.sh   # build/native-ios/KggmlWhisper.xcframework
-./gradlew :samples:whisper-only-minimal:linkDebugFrameworkIosArm64
+./scripts/ios/build-xcframeworks.sh whisper   # build/native-ios/{GgmlRuntime,KggmlWhisper}.xcframework
+open samples/whisper-only-minimal/iosApp/iosApp.xcodeproj
 ```
 
-Host app (Xcode → new iOS App, Swift, UIKit lifecycle or SwiftUI):
+In Xcode pick a simulator, or your iPhone after choosing your team under *Signing & Capabilities* (the project
+leaves `DEVELOPMENT_TEAM` empty), and run. From the command line: `./scripts/ios/build-sample-apps.sh all
+whisper-only-minimal` (unsigned simulator and device builds, as CI does).
 
-1. Add `samples/whisper-only-minimal/build/bin/iosArm64/debugFramework/WhisperOnlyMinimal.framework` under
-   *Frameworks, Libraries, and Embedded Content* as **Do Not Embed** (static), and both
-   `GgmlRuntime.xcframework` and `KggmlWhisper.xcframework` as **Embed & Sign**.
-2. Link `Accelerate`, `Metal`, `MetalKit`, `CoreML` and `Foundation`, and add `-lc++` to *Other Linker Flags*.
-3. Use the Kotlin view controller as the root:
-   ```swift
-   import WhisperOnlyMinimal
-   // SceneDelegate.scene(_:willConnectTo:options:)
-   window.rootViewController = IosEntryPointKt.MainViewController()
-   ```
-4. Enable *UIFileSharingEnabled* and *LSSupportsOpeningDocumentsInPlace* in `Info.plist`, then copy
-   `ggml-tiny.en.bin` and `jfk.wav` into the app's Documents folder with Finder (or `xcrun devicectl`).
+`Info.plist` enables *UIFileSharingEnabled* and *LSSupportsOpeningDocumentsInPlace*: copy `ggml-tiny.en.bin` and
+`jfk.wav` into the app's Documents folder with Finder or the Files app (or `xcrun devicectl` / `xcrun simctl
+get_app_container booted com.donfuldauer.kggml.samples.whisper data` on the simulator); the **Model** menu lists the
+models found there.
 
 ## Physical iOS background `CPU_ONLY` verification (Phase 2 exit criterion)
 

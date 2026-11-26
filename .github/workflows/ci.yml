@@ -14,7 +14,8 @@ name: CI (Phase 1 cross-platform matrix)
 #   - macOS (10x billed):  only on PRs labelled `ci:macos` or a manual dispatch. macOS arm64 native runtime
 #              (Metal + Accelerate) + whisper + llama + diffusion + CTest, JVM tests, GgmlRuntime/KggmlWhisper.xcframework
 #              (CoreML) + KggmlLlama.xcframework + KggmlDiffusion.xcframework, iosSimulatorArm64Test, sample iOS
-#              frameworks + whisper-only-minimal iOS symbol audit, release dry-run with the iOS components, and (on the
+#              frameworks + whisper-only-minimal iOS symbol audit, both samples' Xcode apps (simulator + device,
+#              unsigned), release dry-run with the iOS components, and (on the
 #              owner's Mac only) every Android instrumented suite on an emulator (scripts/ci/run-android-instrumented.sh).
 #   - Windows (2x billed): only on PRs labelled `ci:windows` or a manual dispatch. Windows x64 native
 #              runtime + whisper + llama + diffusion (MSVC) + CTest, JVM tests against it.
@@ -354,6 +355,12 @@ jobs:
       - name: whisper-only-minimal binary symbol audit (iOS framework + xcframework slices)
         timeout-minutes: 10
         run: ./scripts/ci/audit-minimal-sample.sh ios
+
+      # The Xcode host apps of both samples (samples/*/iosApp), unsigned: they compile the Kotlin frameworks through
+      # their own build phase and embed the xcframeworks built above, as a developer's Xcode build does.
+      - name: Build the samples' iOS apps (simulator + device, unsigned)
+        timeout-minutes: 20
+        run: ./scripts/ios/build-sample-apps.sh all
 
       # Every library's and both samples' instrumented suites on an Android emulator with the real native libraries
       # bundled and required. Only on the owner's Mac (local-mac): it has the Android SDK and an arm64 AVD, while hosted

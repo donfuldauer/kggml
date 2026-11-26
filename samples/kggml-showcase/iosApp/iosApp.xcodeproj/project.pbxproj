@@ -1,0 +1,325 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		76EEA2300C6D5C8283921FCD /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D4FA0A7E01F5798292FD83E /* AppDelegate.swift */; };
+		64D3ACF56EE28CD9EB7DBCE2 /* GgmlRuntime.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = B9B5AD6223243343B74F53E0 /* GgmlRuntime.xcframework */; };
+		26AEEBAB37A8C9302FE54950 /* KggmlWhisper.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1EF224AEC1F2617487C14574 /* KggmlWhisper.xcframework */; };
+		2BCFD2B2B0F5E88FB3BFE7C7 /* KggmlLlama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = F35DE6A0A82CEE827AE991E4 /* KggmlLlama.xcframework */; };
+		5FB6C03A5B8BCB29E1D9DD62 /* KggmlDiffusion.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 13996590ACD545CB2FD849B0 /* KggmlDiffusion.xcframework */; };
+		BE5A2E27F52938BAB2468344 /* GgmlRuntime.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B9B5AD6223243343B74F53E0 /* GgmlRuntime.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		0E71B14406110241B8F1644F /* KggmlWhisper.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 1EF224AEC1F2617487C14574 /* KggmlWhisper.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		94DADA29EA68705CD48F1E61 /* KggmlLlama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = F35DE6A0A82CEE827AE991E4 /* KggmlLlama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		38C5A72720F82996A0064921 /* KggmlDiffusion.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 13996590ACD545CB2FD849B0 /* KggmlDiffusion.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D7F2132EED10C14A18704474 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				BE5A2E27F52938BAB2468344 /* GgmlRuntime.xcframework in Embed Frameworks */,
+				0E71B14406110241B8F1644F /* KggmlWhisper.xcframework in Embed Frameworks */,
+				94DADA29EA68705CD48F1E61 /* KggmlLlama.xcframework in Embed Frameworks */,
+				38C5A72720F82996A0064921 /* KggmlDiffusion.xcframework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		E359D07B5F1FF59369E9ED1C /* KggmlShowcaseApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KggmlShowcaseApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7D4FA0A7E01F5798292FD83E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		7E2E16EA46B9346C8F6F7E69 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B9B5AD6223243343B74F53E0 /* GgmlRuntime.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = GgmlRuntime.xcframework; path = "../../../build/native-ios/GgmlRuntime.xcframework"; sourceTree = SOURCE_ROOT; };
+		1EF224AEC1F2617487C14574 /* KggmlWhisper.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = KggmlWhisper.xcframework; path = "../../../build/native-ios/KggmlWhisper.xcframework"; sourceTree = SOURCE_ROOT; };
+		F35DE6A0A82CEE827AE991E4 /* KggmlLlama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = KggmlLlama.xcframework; path = "../../../build/native-ios/KggmlLlama.xcframework"; sourceTree = SOURCE_ROOT; };
+		13996590ACD545CB2FD849B0 /* KggmlDiffusion.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = KggmlDiffusion.xcframework; path = "../../../build/native-ios/KggmlDiffusion.xcframework"; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		28DCF5778873C82A7B835D90 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				64D3ACF56EE28CD9EB7DBCE2 /* GgmlRuntime.xcframework in Frameworks */,
+				26AEEBAB37A8C9302FE54950 /* KggmlWhisper.xcframework in Frameworks */,
+				2BCFD2B2B0F5E88FB3BFE7C7 /* KggmlLlama.xcframework in Frameworks */,
+				5FB6C03A5B8BCB29E1D9DD62 /* KggmlDiffusion.xcframework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		D4CCEBA1FADEAC9CD81092C4 = {
+			isa = PBXGroup;
+			children = (
+				D81B19CD0F3DDE1A369EC395 /* iosApp */,
+				D23CD4A8D30694B0A94C68AA /* Frameworks */,
+				4D39206C0A2BA6045A51C041 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D81B19CD0F3DDE1A369EC395 /* iosApp */ = {
+			isa = PBXGroup;
+			children = (
+				7D4FA0A7E01F5798292FD83E /* AppDelegate.swift */,
+				7E2E16EA46B9346C8F6F7E69 /* Info.plist */,
+			);
+			path = iosApp;
+			sourceTree = "<group>";
+		};
+		D23CD4A8D30694B0A94C68AA /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				B9B5AD6223243343B74F53E0 /* GgmlRuntime.xcframework */,
+				1EF224AEC1F2617487C14574 /* KggmlWhisper.xcframework */,
+				F35DE6A0A82CEE827AE991E4 /* KggmlLlama.xcframework */,
+				13996590ACD545CB2FD849B0 /* KggmlDiffusion.xcframework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		4D39206C0A2BA6045A51C041 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E359D07B5F1FF59369E9ED1C /* KggmlShowcaseApp.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4109C78C73F02785E3D0991B /* iosApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 63EC01FB8A51B51A6D7A953A /* Build configuration list for PBXNativeTarget "iosApp" */;
+			buildPhases = (
+				29EB1C35BF582AAB5E607D4E /* Compile Kotlin framework */,
+				9AAB843D3E5F304E7FE40881 /* Sources */,
+				28DCF5778873C82A7B835D90 /* Frameworks */,
+				6CCA2E0019CAD55F24AF5088 /* Resources */,
+				D7F2132EED10C14A18704474 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = iosApp;
+			productName = KggmlShowcaseApp;
+			productReference = E359D07B5F1FF59369E9ED1C /* KggmlShowcaseApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FF1C358EA4272B9988A139E1 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+			};
+			buildConfigurationList = 9A5A3750D39E3EE206854C6A /* Build configuration list for PBXProject "iosApp" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = D4CCEBA1FADEAC9CD81092C4;
+			productRefGroup = 4D39206C0A2BA6045A51C041 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4109C78C73F02785E3D0991B /* iosApp */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6CCA2E0019CAD55F24AF5088 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		29EB1C35BF582AAB5E607D4E /* Compile Kotlin framework */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Compile Kotlin framework";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/../../../scripts/ios/xcode-kotlin-framework.sh\" :samples:kggml-showcase GgmlRuntime KggmlWhisper KggmlLlama KggmlDiffusion\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		9AAB843D3E5F304E7FE40881 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				76EEA2300C6D5C8283921FCD /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		D17F613D528BF2E5B774EE06 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				SDKROOT = iphoneos;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		8AE7301432DAF6267577B869 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				SDKROOT = iphoneos;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		89008F714EC0DFAA6F515B9D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = iosApp/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					KggmlShowcase,
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.donfuldauer.kggml.samples.showcase;
+				PRODUCT_NAME = KggmlShowcaseApp;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8A03FBA5D033A7478EABDDD2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/../build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)",
+				);
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = iosApp/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.4;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-framework",
+					KggmlShowcase,
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.donfuldauer.kggml.samples.showcase;
+				PRODUCT_NAME = KggmlShowcaseApp;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		9A5A3750D39E3EE206854C6A /* Build configuration list for PBXProject "iosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D17F613D528BF2E5B774EE06 /* Debug */,
+				8AE7301432DAF6267577B869 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		63EC01FB8A51B51A6D7A953A /* Build configuration list for PBXNativeTarget "iosApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				89008F714EC0DFAA6F515B9D /* Debug */,
+				8A03FBA5D033A7478EABDDD2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = FF1C358EA4272B9988A139E1 /* Project object */;
+}
