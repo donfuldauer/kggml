@@ -71,6 +71,14 @@ Options: `KGGML_ENABLE_VULKAN` (OFF; it is forced OFF when the Vulkan SDK or `gl
 would raise SIGILL on cores such as Cortex-A76 and Apple M1), `KGGML_X86_LEVEL`, and `KGGML_RUNTIME_PORTABLE_CPU`
 (OFF means `-march=native`).
 
+### Windows: MSVC C++ runtime compatibility
+
+Every MSVC build here (and in the whisper, llama and diffusion engines) defines
+`_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR`. MSVC 19.40 (Visual Studio 2022 17.10) and later otherwise emit a `constexpr`
+`std::mutex` constructor that needs `msvcp140.dll` 14.40 or newer. A host process that loads an older copy first,
+such as a JVM that bundles its own `msvcp140.dll` (OpenJDK 22.0.1 ships 14.36), would then crash with an access
+violation in `msvcp140.dll` on the first mutex use, during `KggmlRuntime.acquire()` (#65).
+
 ## Build and test
 
 ```bash
