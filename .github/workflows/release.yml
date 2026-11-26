@@ -118,6 +118,24 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      # Issue #92: the desktop Vulkan add-on module for the kggml-runtime-vulkan jar (Linux x86_64 for now; Windows
+      # needs the Vulkan SDK on the build machine).
+      - name: Desktop Vulkan add-on module (linux-x86_64)
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          sudo apt-get install -y libvulkan-dev glslc
+          ./kggml-runtime-vulkan/native/scripts/build-host.sh
+          ./scripts/ci/audit-gpu-addon.sh vulkan --desktop linux-x86_64
+
+      - name: Upload the desktop Vulkan add-on module
+        if: matrix.platform == 'linux-x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-addons-${{ matrix.platform }}
+          path: build/native-vulkan-jvm/
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     name: Stage, sign, audit and ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'keep (dry run)' || 'upload' }}
     needs: desktop-natives
@@ -156,6 +174,13 @@ jobs:
           merge-multiple: true
           path: build/release-natives
 
+      - name: Download the desktop GPU add-on modules
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jvm-addons-*
+          merge-multiple: true
+          path: build/release-addons
+
       - name: Build the iOS xcframeworks (GgmlRuntime, KggmlWhisper, KggmlLlama, KggmlDiffusion)
         timeout-minutes: 60
         run: |
@@ -176,7 +201,8 @@ jobs:
           [[ "${DRY_RUN}" == true ]] && args+=(--dry-run)
           [[ "${GITHUB_REF}" == refs/tags/v* ]] && args+=(--expect-version "${GITHUB_REF_NAME#v}")
           ./scripts/ci/stage-release.sh "${args[@]}" -- \
-            -Pkggml.bundleNative=true -Pkggml.extraJvmNativeResources="${GITHUB_WORKSPACE}/build/release-natives"
+            -Pkggml.bundleNative=true -Pkggml.extraJvmNativeResources="${GITHUB_WORKSPACE}/build/release-natives" \
+            -Pkggml.extraJvmAddonResources="${GITHUB_WORKSPACE}/build/release-addons"
 
       - name: Check the kggml-runtime jar ships every desktop runtime
         run: |
@@ -187,6 +213,9 @@ jobs:
               || { echo "kggml-runtime-jvm jar is missing kggml/native/${platform}/" >&2; exit 1; }
           done
           unzip -l "${jar}" 'kggml/native/*'
+          vk="build/kggml-staging-repo/com/donfuldauer/kggml-runtime-vulkan-jvm/${version}/kggml-runtime-vulkan-jvm-${version}.jar"
+          unzip -l "${vk}" 'kggml/native-addons/linux-x86_64/ggml-vulkan/libggml-vulkan.so' >/dev/null \
+            || { echo "kggml-runtime-vulkan-jvm jar is missing the linux-x86_64 Vulkan module" >&2; exit 1; }
 
       - name: Zip the iOS xcframeworks
         run: |

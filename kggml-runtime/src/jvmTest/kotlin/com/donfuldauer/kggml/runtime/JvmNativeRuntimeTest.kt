@@ -121,6 +121,20 @@ class JvmNativeRuntimeTest {
         assertEquals(ComputeBackend.CPU_ONLY, KggmlRuntime.resolveBackend(ComputeBackend.CPU_ONLY))
     }
 
+    /**
+     * Issue #92: with the desktop Vulkan add-on configured (`-Pkggml.test.vulkanAddonDir=<dir>`, CI uses Mesa's
+     * software Vulkan device lavapipe), the module registers, Vulkan is available and AUTO picks it over the CPU.
+     */
+    @Test
+    fun theDesktopVulkanAddonRegistersWhenConfigured() {
+        assumeTrue(System.getProperty("kggml.test.expectVulkanAddon").toBoolean(), "Vulkan add-on not configured")
+        val vulkan = KggmlRuntime.backends().single { it.backend == ComputeBackend.GPU_VULKAN }
+        assertTrue(vulkan.compiled, "the Vulkan backend module was not registered: $vulkan")
+        assertTrue(vulkan.deviceCount >= 1, "no Vulkan device (driver missing?): $vulkan")
+        assertTrue(ComputeBackend.GPU_VULKAN in KggmlRuntime.availableBackends())
+        assertEquals(ComputeBackend.GPU_VULKAN, KggmlRuntime.resolveBackend(ComputeBackend.AUTO))
+    }
+
     @Test
     fun threadCountsAreSane() {
         val hardware = KggmlRuntime.hardwareThreadCount()

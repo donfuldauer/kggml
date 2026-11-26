@@ -213,6 +213,14 @@ tasks.named<Test>("jvmTest") {
     systemProperty("kggml.test.expectedGgmlVersion", ggmlPinnedVersion)
     systemProperty("kggml.test.expectedGgmlCommit", ggmlPinnedCommit)
     inputs.property("kggml.requireNative", requireNative)
+    // Issue #92: -Pkggml.test.vulkanAddonDir=<dir holding the desktop ggml-vulkan module> registers it and expects
+    // a usable Vulkan device (CI: Mesa lavapipe, which ggml only uses when GGML_VK_VISIBLE_DEVICES selects it).
+    providers.gradleProperty("kggml.test.vulkanAddonDir").orNull?.let { dir ->
+        systemProperty("kggml.native.addons.path", file(dir).absolutePath)
+        systemProperty("kggml.test.expectVulkanAddon", "true")
+        environment("GGML_VK_VISIBLE_DEVICES", providers.gradleProperty("kggml.test.vulkanDevices").getOrElse("0"))
+        inputs.files(fileTree(dir)).withPropertyName("vulkanAddonDir").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
     // The native-backed tests' results depend on the host libraries they load: track them, so a native-only
     // rebuild reruns the tests and a cached result is never reused for different (or missing) native builds.
     inputs.files(fileTree(libDir)).withPropertyName("nativeLibs.libDir").withPathSensitivity(PathSensitivity.RELATIVE)

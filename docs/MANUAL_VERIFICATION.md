@@ -116,3 +116,7 @@ when it has been run; a failed check becomes a new issue.
   available and `AUTO` resolves to it; whisper, llama and diffusion (SD-Turbo) produce correct output on `GPU_OPENCL`
   (diffusion op coverage of ggml-opencl is the open question). On a phone without OpenCL (Pixel) the logcat
   warning appears and Vulkan / the CPU are used.
+- [ ] [#92] JVM desktop Vulkan add-on on a Linux x86_64 machine with a real GPU driver (Mesa radv/anv or NVIDIA): with
+  `kggml-runtime-vulkan` on the classpath, the showcase desktop Backends screen lists Vulkan as available and `AUTO`
+  resolves to it; whisper and llama produce the same output as on `CPU_ONLY`, faster. CI only checks registration on
+  Mesa's software lavapipe device.
