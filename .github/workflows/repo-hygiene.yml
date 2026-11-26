@@ -48,6 +48,24 @@ jobs:
       - name: Test the license audit (scripts/ci/verify-licenses.sh)
         run: ./scripts/tests/test-verify-licenses.sh
 
+  docs-audit:
+    name: Docs, Links, README Snippets & KDoc Audit
+    runs-on: >-
+      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # The README snippets themselves are compiled by `./gradlew check` (:docs-snippets) in ci.yml; this job checks
+      # that README.md still matches them, so a Markdown-only change cannot drift from the compiled code.
+      - name: Verify Markdown links, README snippets, Maven coordinates and public-API KDoc
+        run: ./scripts/ci/verify-docs.sh
+
+      - name: Test the docs audit (scripts/ci/verify-docs.sh)
+        run: ./scripts/tests/test-verify-docs.sh
+
   secret-scan:
     name: Gitleaks Secret Scan
     runs-on: >-

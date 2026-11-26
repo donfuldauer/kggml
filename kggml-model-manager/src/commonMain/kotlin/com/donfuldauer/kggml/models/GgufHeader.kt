@@ -47,6 +47,7 @@ public sealed interface GgufValue {
 /**
  * One tensor descriptor from the GGUF header.
  *
+ * @property name tensor name (for example `blk.0.attn_q.weight`).
  * @property dimensions `ne[0..n_dims)`.
  * @property typeId the raw `ggml_type`; [type] is `null` if it is unknown to this parser.
  * @property offset offset of the tensor data relative to [GgufModelHeader.dataOffset].
@@ -71,6 +72,8 @@ public data class GgufTensorInfo(
  * Parsed GGUF header: metadata key/values and tensor descriptors. Tensor data is never read.
  *
  * @property version GGUF version (1, 2 or 3).
+ * @property metadata every metadata key/value pair, in file order.
+ * @property tensors every tensor descriptor, in file order.
  * @property alignment tensor data alignment (`general.alignment`, default 32).
  * @property dataOffset absolute file offset at which tensor data starts.
  */

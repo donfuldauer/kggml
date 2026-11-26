@@ -71,3 +71,11 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#20] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC runtime / whisper /
   llama / diffusion build + CTest and root `jvmTest` incl. `:integration-tests` dual-engine coexistence) —
   https://github.com/donfuldauer/kggml/pull/54
+- [ ] [#22] External links in the Markdown docs once the repository is public (GitHub issue-template, advisory and
+  upstream links answer 404/403 to unauthenticated requests while it is private, and CI has no network rule for
+  them): `./scripts/ci/verify-docs.sh --online --only links` reports no failures — procedure in `CONTRIBUTING.md`
+  ("Documentation").
+- [ ] [#22] README quickstart on real hardware: the `README.md` Whisper, Llama, Diffusion and model-manager snippets
+  (compiled by `:docs-snippets`) produce sensible output with real models on desktop, a physical Android phone and an
+  iPhone, and the iOS background guidance (`BackendConfig.CPU` / `observeAppLifecycle`) keeps transcription running
+  in the background — the same procedures as the module READMEs' "Manual verification" sections.

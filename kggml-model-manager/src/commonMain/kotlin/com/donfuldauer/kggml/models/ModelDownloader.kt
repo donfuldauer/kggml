@@ -67,6 +67,10 @@ public sealed interface DownloadEvent {
     /**
      * The verified file is at [path].
      *
+     * @property path the final destination ([DownloadRequest.destination]).
+     * @property sizeBytes the file size in bytes.
+     * @property sha256 the lowercase hex SHA-256 of the file.
+     * @property resumedFromBytes bytes that were already in the partial file when this download started.
      * @property alreadyPresent the destination already existed (and matched [DownloadRequest.expectedSha256]), so
      *   nothing was downloaded.
      */

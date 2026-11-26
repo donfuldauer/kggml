@@ -22,6 +22,7 @@ Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.
 | `:samples:kggml-showcase` | `com.donfuldauer.kggml.samples.showcase` | Compose Multiplatform | Full multi-engine showcase (Android, iOS, JVM Desktop) consuming SDK via `kggml-bom`. |
 | `:samples:whisper-only-minimal` | `com.donfuldauer.kggml.samples.whisper` | Android + iOS | Minimal sample depending **only** on `kggml-bom` + `kggml-whisper` for CI binary symbol leakage audits. |
 | `:integration-tests` | `com.donfuldauer.kggml.integration` | JVM tests (unpublished) | Cross-engine integration tests: whisper + llama (+ diffusion) loaded into one process on the single shared `:kggml-runtime`, inferring concurrently. |
+| `:docs-snippets` | `com.donfuldauer.kggml.docs` | JVM (unpublished) | Every Kotlin/Gradle block of the root `README.md`, as `// snippet:start/end <name>` regions compiled against the published `com.donfuldauer` coordinates (build-local verification repo, BOM, no `project()` deps). |
 
 ---
 
@@ -48,6 +49,9 @@ Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.
 6. **Secret & Attribution Hygiene:**
    - Never commit secrets, signing keys, local machine paths, or large/unlicensed model binaries.
    - Record every pinned upstream C/C++ commit hash and every bundled CC0/MIT test fixture in `NOTICE`. `scripts/ci/verify-licenses.sh` (every PR, `repo-hygiene.yml`) fails on an unrecorded or stale pin, a tracked binary/model/audio/image file missing from `NOTICE`, or a fixture that is not MIT/CC0.
+7. **Verified Public Documentation:**
+   - Every public declaration in a library module's main source sets has KDoc (its own `/** */` or an `@property`/`@param` line in its class KDoc).
+   - Every Kotlin/Gradle block in the root `README.md` is preceded by `<!-- snippet: <name> -->` and is identical to that region in `docs-snippets/`; change both together. `scripts/ci/verify-docs.sh` (every PR, `repo-hygiene.yml`) enforces this plus Markdown links/anchors, published Maven coordinates/BOM version, and no local paths, session links or TODOs in user-facing docs.
 
 ---
 
@@ -60,6 +64,10 @@ Also run whichever of these apply to the modules your change touches:
 ```bash
 # Agent & harness parity check (always run if .agents/ or AGENTS.md changed)
 ./scripts/verify-agent-parity.sh
+
+# Docs audit + README snippet compile (always run if README.md, docs-snippets/ or public API changed)
+./scripts/ci/verify-docs.sh
+./gradlew :docs-snippets:build
 
 # Pure Kotlin & JVM/Android tests (once Gradle is initialized in Issue #1)
 ./gradlew check

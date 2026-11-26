@@ -122,6 +122,8 @@ public class SpeechTurn internal constructor(
  * Every emitted [SpeechTurn] is zero-padded to the 1,000 ms [WindowFloor]; no shorter slice is ever passed to
  * [onTurn]. Not thread-safe: drive it from the single consumer of the [PcmRingBuffer].
  * Internal buffers are allocated once; the only per-turn allocation is the emitted [SpeechTurn.samples].
+ *
+ * @property config frame size, thresholds and turn-length limits.
  */
 public class VadTurnDetector(
     public val config: VadConfig = VadConfig(),

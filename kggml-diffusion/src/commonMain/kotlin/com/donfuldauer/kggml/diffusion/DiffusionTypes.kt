@@ -8,6 +8,8 @@ import com.donfuldauer.kggml.core.InferenceException
  * Exactly one of [modelPath] (a full checkpoint, e.g. Stable Diffusion 1.x / 2.x / XL) and [diffusionModelPath] (a
  * standalone diffusion model such as Flux, SD 3.5 or Z-Image, which needs its component files below) is required.
  *
+ * @property modelPath full checkpoint containing the diffusion model, VAE and text encoders.
+ * @property diffusionModelPath standalone diffusion model; pair it with the component files below.
  * @property vaePath optional VAE override.
  * @property taesdPath optional tiny autoencoder (faster, lower-quality decode).
  * @property clipLPath optional CLIP-L text encoder (SD 3 / Flux).
@@ -162,9 +164,16 @@ public data class DiffusionGenerationParams(
     }
 
     public companion object {
+        /** Default [width] and [height] in pixels. */
         public const val DEFAULT_SIZE: Int = 512
+
+        /** Default [sampleSteps]. */
         public const val DEFAULT_SAMPLE_STEPS: Int = 20
+
+        /** Default [cfgScale]. */
         public const val DEFAULT_CFG_SCALE: Float = 7.0f
+
+        /** Default [distilledGuidance] (used by guidance-distilled models such as Flux). */
         public const val DEFAULT_DISTILLED_GUIDANCE: Float = 3.5f
 
         /** [seed] sentinel: random seed. */
@@ -193,6 +202,11 @@ public data class DiffusionGenerationParams(
 /**
  * A generated image: packed 8-bit RGB ([channels] = 3), row-major, no row padding, `width * height * channels` bytes.
  * The pixels were copied out of the native buffer, which is already freed; this object owns plain heap memory.
+ *
+ * @property width image width in pixels.
+ * @property height image height in pixels.
+ * @property channels bytes per pixel (3 for the RGB images [DiffusionEngine] produces).
+ * @property pixels `width * height * channels` bytes, row-major, top row first.
  */
 public class DiffusionImage(
     public val width: Int,
@@ -237,6 +251,9 @@ public sealed interface DiffusionEvent {
      * Progress of the running generation. [step] is `0` when a phase starts, then `1..`[totalSteps] after each
      * completed step. Cancellation takes effect at these step boundaries.
      *
+     * @property phase the part of the generation being reported.
+     * @property step completed steps of [phase], `0..`[totalSteps].
+     * @property totalSteps number of steps of [phase].
      * @property secondsPerStep stable-diffusion.cpp's timing estimate (`0` when unknown).
      */
     public data class Progress(
@@ -268,7 +285,14 @@ public data class DiffusionModelInfo(
     val threads: Int,
 )
 
-/** Version information of the native diffusion library. */
+/**
+ * Version information of the native diffusion library.
+ *
+ * @property moduleVersion version of the Kggml diffusion wrapper (`kggml_diffusion`).
+ * @property stableDiffusionCppVersion version string reported by stable-diffusion.cpp.
+ * @property stableDiffusionCppCommit upstream stable-diffusion.cpp commit the library is pinned to (see `NOTICE`).
+ * @property systemInfo stable-diffusion.cpp / ggml CPU feature summary (`sd_get_system_info()`).
+ */
 public data class DiffusionNativeInfo(
     val moduleVersion: String,
     val stableDiffusionCppVersion: String,

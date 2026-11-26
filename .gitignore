@@ -109,3 +109,7 @@ compile_commands.json
 hs_err_pid*
 replay_pid*
 coverage/
+
+# Python bytecode (scripts/ci/*.py)
+__pycache__/
+*.pyc

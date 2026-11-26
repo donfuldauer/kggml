@@ -3,6 +3,17 @@ package com.donfuldauer.kggml.models
 /**
  * Hyper-parameters of a `whisper.cpp` `ggml` model file (`whisper_hparams`, in file order).
  *
+ * @property vocabularySize `n_vocab`: tokens in the vocabulary.
+ * @property audioContext `n_audio_ctx`: encoder positions (1500 = 30 s of audio).
+ * @property audioState `n_audio_state`: encoder width.
+ * @property audioHeads `n_audio_head`: encoder attention heads.
+ * @property audioLayers `n_audio_layer`: encoder layers (identifies the model size, see
+ *   [WhisperModelHeader.modelType]).
+ * @property textContext `n_text_ctx`: decoder positions.
+ * @property textState `n_text_state`: decoder width.
+ * @property textHeads `n_text_head`: decoder attention heads.
+ * @property textLayers `n_text_layer`: decoder layers.
+ * @property melBands `n_mels`: mel frequency bands of the input spectrogram (80, or 128 for large-v3).
  * @property fileTypeId `ggml_ftype` with the quantization version factor removed.
  * @property quantizationVersion `GGML_QNT_VERSION` the file was quantized with (0 for unquantized files).
  */
@@ -21,7 +32,14 @@ public data class WhisperHyperParameters(
     val quantizationVersion: Int,
 )
 
-/** One tensor descriptor of a Whisper `ggml` file. */
+/**
+ * One tensor descriptor of a Whisper `ggml` file.
+ *
+ * @property name tensor name (for example `encoder.conv1.weight`).
+ * @property dimensions `ne[0..n_dims)`.
+ * @property typeId the raw `ggml_type`; [type] is `null` if it is unknown to this parser.
+ * @property dataOffset absolute file offset of the tensor data.
+ */
 public data class WhisperTensorInfo(val name: String, val dimensions: List<Long>, val typeId: Int, val dataOffset: Long) {
     /** The element type, or `null` if [typeId] is unknown. */
     val type: GgmlType? get() = GgmlType.fromId(typeId)
@@ -36,6 +54,11 @@ public data class WhisperTensorInfo(val name: String, val dimensions: List<Long>
 /**
  * Parsed `whisper.cpp` `ggml` model header (legacy, non-GGUF format): hyper-parameters, mel filter shape, vocabulary
  * size and tensor descriptors. Tensor data is skipped, never read.
+ *
+ * @property hyperParameters the model hyper-parameters.
+ * @property melFilterShape `(n_mel, n_fft)` of the embedded mel filter bank.
+ * @property vocabularyEntries number of vocabulary entries stored in the file.
+ * @property tensors every tensor descriptor, in file order.
  */
 public class WhisperModelHeader internal constructor(
     public val hyperParameters: WhisperHyperParameters,

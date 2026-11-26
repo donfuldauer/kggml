@@ -16,6 +16,7 @@ Closes #<ISSUE_NUMBER>
 - [ ] Native C++ tests (`ctest`) pass (if native code touched)
 - [ ] Platform integration / UI / binary symbol audit checks pass (as applicable)
 - [ ] `NOTICE` updated if upstream C/C++ dependencies or test fixtures changed
+- [ ] Docs updated: KDoc on new public API, README examples changed in `docs-snippets/` too (`./scripts/ci/verify-docs.sh`)
 - [ ] Manual / physical-device checks (if any) documented and listed in `docs/MANUAL_VERIFICATION.md` — deferred to final acceptance, not a merge gate
 - [ ] `ci:macos` label added (phase-final PRs, or changes to macOS/iOS-specific native code)
 - [ ] `ci:windows` label added (phase-final PRs, or changes to Windows-specific code)

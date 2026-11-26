@@ -56,6 +56,7 @@ public data class TranscriptionOptions(
     }
 
     public companion object {
+        /** Model-default language, no translation, greedy decoding with temperature fallback. */
         public val DEFAULT: TranscriptionOptions = TranscriptionOptions()
     }
 }
