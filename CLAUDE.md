@@ -88,6 +88,12 @@ ctest --test-dir build/native --output-on-failure
 
 # Merged Kover coverage of every JVM / Robolectric test -> build/reports/kover/html (ci-local step: --only coverage)
 ./scripts/ci/coverage.sh -Pkggml.requireNative=true
+
+# iOS apps of both samples (samples/*/iosApp/iosApp.xcodeproj, macOS): build the xcframeworks once, then open the
+# project in Xcode, or build both apps unsigned for the simulator and devices (ci-local step: --only ios-apps; CI:
+# macOS job)
+./scripts/ios/build-xcframeworks.sh
+./scripts/ios/build-sample-apps.sh all
 ```
 
 ### Mandatory Testing & Coverage Policy (Section 9.4)
