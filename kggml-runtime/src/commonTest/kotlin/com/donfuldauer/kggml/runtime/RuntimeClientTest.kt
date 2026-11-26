@@ -132,6 +132,43 @@ class RuntimeClientTest {
     }
 
     @Test
+    fun bridgeLoadFailureWithoutMessageIsDescribedByItsType() {
+        val cause = IllegalStateException()
+        val broken = RuntimeClient { throw cause }
+        val e = assertFailsWith<NativeFailureException> { broken.info() }
+        assertEquals("Failed to load the Kggml native runtime: IllegalStateException", e.message)
+        assertSame(cause, e.cause)
+    }
+
+    @Test
+    fun nativeErrorFallsBackToTheRawStatusWhenTheBridgeCannotDescribeIt() {
+        val silent = object : NativeRuntimeBridge by fake {
+            override fun lastError(): String = throw IllegalStateException("lastError unavailable")
+            override fun statusName(status: Int): String = throw IllegalStateException("statusName unavailable")
+        }
+        val e = RuntimeClient.nativeError(silent, RuntimeStatus.UNKNOWN, "kggml_runtime_probe")
+        assertIs<NativeFailureException>(e)
+        assertEquals("kggml_runtime_probe failed: KGGML_STATUS_${RuntimeStatus.UNKNOWN} (${RuntimeStatus.UNKNOWN})", e.message)
+        assertEquals(RuntimeStatus.UNKNOWN, e.nativeCode)
+    }
+
+    @Test
+    fun nativeErrorReportsTheBackendOnlyWhenGiven() {
+        fake.failureMessage = "no device"
+        fake.failInitWith = RuntimeStatus.UNKNOWN // sets the fake's last error to `failureMessage`
+        assertFailsWith<NativeFailureException> { client.acquire() }
+
+        val withoutBackend = RuntimeClient.nativeError(fake, NativeErrorCode.BACKEND_UNAVAILABLE.code, "op")
+        assertIs<BackendUnavailableException>(withoutBackend)
+        assertEquals(null, withoutBackend.backend)
+        assertEquals("op failed: KGGML_STATUS_<3> (3): no device", withoutBackend.message)
+
+        val withBackend = RuntimeClient.nativeError(fake, NativeErrorCode.BACKEND_UNAVAILABLE.code, "op", ComputeBackend.GPU_VULKAN)
+        assertIs<BackendUnavailableException>(withBackend)
+        assertEquals(ComputeBackend.GPU_VULKAN, withBackend.backend)
+    }
+
+    @Test
     fun bridgeLoadInferenceExceptionPassesThroughUnchanged() {
         val original = InvalidInputException("bad configuration")
         val broken = RuntimeClient { throw original }
@@ -200,6 +237,18 @@ class RuntimeClientTest {
         fake.backends = fake.backends + RawBackendInfo(kind = 7, compiled = false, available = false, deviceCount = 0, name = "Future")
         client.backends()
         assertEquals(listOf(BackendKind.COUNT, BackendKind.COUNT + 1), fake.getBackendsCapacities)
+    }
+
+    @Test
+    fun bufferTooSmallWithoutALargerRequiredCountIsAnErrorNotARetry() {
+        // A runtime that reports BUFFER_TOO_SMALL while needing no more than was offered is inconsistent;
+        // retrying at the same size could not help, so the status surfaces as-is.
+        fake.failBackendsWith = RuntimeStatus.BUFFER_TOO_SMALL
+        val e = assertFailsWith<NativeFailureException> { client.backends() }
+        assertEquals(RuntimeStatus.BUFFER_TOO_SMALL, e.nativeCode)
+        assertTrue(e.message!!.startsWith("kggml_runtime_get_backends failed: "), e.message)
+        assertEquals(listOf(BackendKind.COUNT), fake.getBackendsCapacities)
+        assertEquals(0, client.refCount())
     }
 
     @Test
