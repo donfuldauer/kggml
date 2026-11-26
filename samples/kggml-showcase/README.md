@@ -132,13 +132,20 @@ iOS: embed `KggmlShowcase.framework` together with `GgmlRuntime.xcframework`, `K
 ## Automated tests
 
 ```bash
-./gradlew :samples:kggml-showcase:desktopTest        # controller state tests + Compose UI tests
-./gradlew :samples:kggml-showcase:testDebugUnitTest  # controller state tests on Android
+./gradlew :samples:kggml-showcase:desktopTest -Pkggml.requireNative=true   # everything below on the desktop JVM
+./gradlew :samples:kggml-showcase:testDebugUnitTest                        # the same commonTest on Android (Robolectric)
+./gradlew :samples:kggml-showcase:iosSimulatorArm64Test                    # macOS, needs the four xcframeworks
+./scripts/ci/run-android-instrumented.sh                                   # on a device / emulator, real native libraries
 ```
 
-All tests use deterministic fakes: no native libraries, no network, no model files.
+The controller and Compose UI tests use deterministic fakes (no native libraries, network or model files) and live
+in `commonTest`, so they run on desktop, the iOS simulator, Android local unit tests (Robolectric) and Android devices
+(every UI test extends `UiTestBase`, which carries `@RunWith(AndroidJUnit4)` on Android).
+`RealEngineEndToEndUiTest` drives the same UI through the production engine factories, runtime inspector and disk
+store with the engines' synthetic model fixtures (`TinyWhisperModel`, `TinyLlamaModel`): it skips where the native
+libraries do not load (Robolectric, desktop without host builds) and fails with `-Pkggml.requireNative=true`.
 
-- **commonTest** (desktop and Android unit tests):
+- **commonTest** (desktop, iOS simulator, Android local and instrumented):
   - `WhisperStudioControllerTest` (`WhisperFakes.kt`): start / stop / cancel, backend switching and reload, partial
     vs. committed rendering, file transcription, model-load / microphone / in-band stream errors, background stress.
   - `ModelManagerControllerTest` (`ModelFakes.kt`, an in-memory `ModelStore` with scripted `DownloadEvent`s): scan of
@@ -153,10 +160,14 @@ All tests use deterministic fakes: no native libraries, no network, no model fil
     cancel mid-generation, in-band / load / parameter errors, backend reload, eviction, PNG export and its failure.
   - `JsonValidationTest`, `PromptTemplateTest`, `PngEncoderTest` (decodes the PNG and checks every CRC / Adler-32),
     `FormatTest`.
-- **desktopTest** (Compose UI, `runComposeUiTest` with `UiTestSupport.kt`'s `FakeShowcase`):
-  `ModelManagerUiTest`, `LlmChatUiTest`, `DiffusionStudioUiTest`, `WhisperStudioUiTest`, `ShowcaseAppUiTest` (every
-  screen reachable, work continues across navigation); plus `DiskModelStoreDesktopTest` (real file system, synthetic
-  GGUF header) and the exported PNG decoded by `javax.imageio`.
+  - Compose UI (`runComposeUiTest` with `UiTestSupport.kt`'s `FakeShowcase`): `ModelManagerUiTest`, `LlmChatUiTest`,
+    `DiffusionStudioUiTest`, `WhisperStudioUiTest`, `ShowcaseAppUiTest` (every screen reachable, work continues
+    across navigation).
+  - `RealEngineEndToEndUiTest` (real SDK): runtime inspector, WAV file and live (48 kHz stereo) transcription, LLM
+    load / streamed reply / KV snapshot, embeddings and grammar-constrained extraction, GGUF header inspection, and a
+    typed diffusion load error, all on `CPU_ONLY`.
+- **desktopTest**: `DiskModelStoreDesktopTest` (real file system, synthetic GGUF header), `PngExportImageIoDesktopTest`
+  (the PNG encoder read back by `javax.imageio`) and `KggmlRuntimeInspectorDesktopTest`.
 
 ## Manual verification (deferred to the final acceptance pass)
 
