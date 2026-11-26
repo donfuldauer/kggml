@@ -11,6 +11,7 @@ internal class FakeRuntimeBridge(
         RawBackendInfo(BackendKind.METAL, compiled = false, available = false, deviceCount = 0, name = "Metal"),
         RawBackendInfo(BackendKind.VULKAN, compiled = true, available = true, deviceCount = 2, name = "Vulkan"),
         RawBackendInfo(BackendKind.COREML, compiled = false, available = false, deviceCount = 0, name = "CoreML"),
+        RawBackendInfo(BackendKind.OPENCL, compiled = false, available = false, deviceCount = 0, name = "OpenCL"),
     ),
     var performanceThreads: Int = 4,
     var hardwareThreads: Int = 8,

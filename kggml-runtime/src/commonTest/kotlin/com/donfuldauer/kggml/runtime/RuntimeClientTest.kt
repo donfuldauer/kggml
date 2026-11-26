@@ -204,7 +204,13 @@ class RuntimeClientTest {
     fun backendsMapNativeKindsOntoComputeBackends() {
         val backends = client.backends()
         assertEquals(
-            listOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.NPU_COREML),
+            listOf(
+                ComputeBackend.CPU_ONLY,
+                ComputeBackend.GPU_METAL,
+                ComputeBackend.GPU_VULKAN,
+                ComputeBackend.NPU_COREML,
+                ComputeBackend.GPU_OPENCL,
+            ),
             backends.map { it.backend },
         )
         assertEquals(BackendInfo(ComputeBackend.GPU_VULKAN, "Vulkan", compiled = true, available = true, deviceCount = 2), backends[2])
@@ -228,7 +234,7 @@ class RuntimeClientTest {
     fun unknownFutureBackendKindsAreIgnored() {
         fake.backends = fake.backends + RawBackendInfo(kind = 42, compiled = true, available = true, deviceCount = 1, name = "NPU-X")
         val backends = client.backends()
-        assertEquals(4, backends.size)
+        assertEquals(BackendKind.COUNT, backends.size, "the known kinds only")
         assertEquals(setOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_VULKAN), client.availableBackends())
     }
 
@@ -323,7 +329,9 @@ class RuntimeClientTest {
         assertEquals(ComputeBackend.GPU_METAL, BackendKind.toComputeBackend(1))
         assertEquals(ComputeBackend.GPU_VULKAN, BackendKind.toComputeBackend(2))
         assertEquals(ComputeBackend.NPU_COREML, BackendKind.toComputeBackend(3))
-        assertEquals(null, BackendKind.toComputeBackend(4))
+        assertEquals(ComputeBackend.GPU_OPENCL, BackendKind.toComputeBackend(4))
+        assertEquals(5, BackendKind.COUNT)
+        assertEquals(null, BackendKind.toComputeBackend(5))
         assertEquals(null, BackendKind.toComputeBackend(-1))
     }
 

@@ -96,10 +96,10 @@ class JvmNativeRuntimeTest {
     fun reportsAllBackendKindsWithCpuAvailable() {
         val backends = KggmlRuntime.backends()
         assertEquals(
-            listOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.NPU_COREML),
+            listOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.NPU_COREML, ComputeBackend.GPU_OPENCL),
             backends.map { it.backend },
         )
-        assertEquals(listOf("CPU", "Metal", "Vulkan", "CoreML"), backends.map { it.name })
+        assertEquals(listOf("CPU", "Metal", "Vulkan", "CoreML", "OpenCL"), backends.map { it.name })
         val cpu = backends.first()
         assertTrue(cpu.compiled && cpu.available && cpu.deviceCount >= 1, "CPU must always be available: $cpu")
         // CoreML is never available on desktop builds, and nothing is available without being compiled in.

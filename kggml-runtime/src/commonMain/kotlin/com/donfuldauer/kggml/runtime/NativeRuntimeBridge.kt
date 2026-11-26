@@ -84,9 +84,10 @@ internal object BackendKind {
     const val METAL: Int = 1
     const val VULKAN: Int = 2
     const val COREML: Int = 3
+    const val OPENCL: Int = 4
 
     /** `KGGML_BACKEND_KIND_COUNT`. */
-    const val COUNT: Int = 4
+    const val COUNT: Int = 5
 
     /** Maps a native `kggml_backend_kind` onto [ComputeBackend]; unknown (future) kinds map to `null`. */
     fun toComputeBackend(kind: Int): ComputeBackend? = when (kind) {
@@ -94,6 +95,7 @@ internal object BackendKind {
         METAL -> ComputeBackend.GPU_METAL
         VULKAN -> ComputeBackend.GPU_VULKAN
         COREML -> ComputeBackend.NPU_COREML
+        OPENCL -> ComputeBackend.GPU_OPENCL
         else -> null
     }
 }

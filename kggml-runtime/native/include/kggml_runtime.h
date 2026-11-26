@@ -83,10 +83,11 @@ typedef enum kggml_backend_kind {
     KGGML_BACKEND_CPU    = 0, /* ComputeBackend.CPU_ONLY   - always compiled and available */
     KGGML_BACKEND_METAL  = 1, /* ComputeBackend.GPU_METAL  */
     KGGML_BACKEND_VULKAN = 2, /* ComputeBackend.GPU_VULKAN */
-    KGGML_BACKEND_COREML = 3  /* ComputeBackend.NPU_COREML - compile-time capability flag only */
+    KGGML_BACKEND_COREML = 3, /* ComputeBackend.NPU_COREML - compile-time capability flag only */
+    KGGML_BACKEND_OPENCL = 4  /* ComputeBackend.GPU_OPENCL - registered from the Android OpenCL add-on module */
 } kggml_backend_kind;
 
-#define KGGML_BACKEND_KIND_COUNT 4
+#define KGGML_BACKEND_KIND_COUNT 5
 #define KGGML_BACKEND_NAME_MAX   32
 
 typedef struct kggml_backend_info {
@@ -94,7 +95,7 @@ typedef struct kggml_backend_info {
     int32_t compiled;                      /* 1 if support was compiled into this runtime build         */
     int32_t available;                     /* 1 if usable on this device right now (compiled && device) */
     int32_t device_count;                  /* ggml devices backing this kind (0 for COREML)             */
-    char    name[KGGML_BACKEND_NAME_MAX];  /* NUL-terminated, e.g. "CPU", "Metal", "Vulkan", "CoreML"  */
+    char    name[KGGML_BACKEND_NAME_MAX];  /* NUL-terminated: "CPU", "Metal", "Vulkan", "CoreML", "OpenCL"   */
 } kggml_backend_info;
 
 /**

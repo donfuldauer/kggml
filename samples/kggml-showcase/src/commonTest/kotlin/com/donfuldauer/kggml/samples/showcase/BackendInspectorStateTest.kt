@@ -11,10 +11,10 @@ import kotlin.test.assertIs
 
 class BackendInspectorStateTest {
     @Test
-    fun readyStateListsCpuMetalVulkanAndCoreMlInOrder() {
+    fun readyStateListsEveryBackendInDisplayOrder() {
         val state = loadInspectorState { fakeSnapshot() }
         assertIs<BackendInspectorState.Ready>(state)
-        assertEquals(listOf("CPU", "Metal", "Vulkan", "Core ML"), state.rows.map { it.label })
+        assertEquals(listOf("CPU", "Metal", "Vulkan", "OpenCL", "Core ML"), state.rows.map { it.label })
         assertEquals(INSPECTED_BACKENDS, state.rows.map { it.backend })
     }
 
@@ -77,7 +77,13 @@ class BackendInspectorStateTest {
     fun rowTestTagsAreStable() {
         val tags = fakeSnapshot().toInspectorState().rows.map { it.testTag }
         assertEquals(
-            listOf("backend-row-cpu_only", "backend-row-gpu_metal", "backend-row-gpu_vulkan", "backend-row-npu_coreml"),
+            listOf(
+                "backend-row-cpu_only",
+                "backend-row-gpu_metal",
+                "backend-row-gpu_vulkan",
+                "backend-row-gpu_opencl",
+                "backend-row-npu_coreml",
+            ),
             tags,
         )
     }

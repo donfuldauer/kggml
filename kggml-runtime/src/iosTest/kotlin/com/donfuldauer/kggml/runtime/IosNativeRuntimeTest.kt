@@ -39,7 +39,7 @@ class IosNativeRuntimeTest {
     fun reportsCpuAndAppleBackends() {
         val backends = KggmlRuntime.backends()
         assertEquals(
-            listOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.NPU_COREML),
+            listOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.NPU_COREML, ComputeBackend.GPU_OPENCL),
             backends.map { it.backend },
         )
         assertTrue(backends.first().available)

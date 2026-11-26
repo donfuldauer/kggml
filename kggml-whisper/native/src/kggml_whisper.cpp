@@ -11,9 +11,11 @@
 #endif
 
 #include "whisper.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <climits>
 #include <cstdio>
 #include <memory>
@@ -120,7 +122,7 @@ bool encoder_begin_callback(whisper_context *, whisper_state *, void * user_data
 }
 
 bool valid_backend(int32_t backend) {
-    return backend >= KGGML_BACKEND_CPU && backend <= KGGML_BACKEND_COREML;
+    return backend >= KGGML_BACKEND_CPU && backend < KGGML_BACKEND_KIND_COUNT;
 }
 
 struct ResolvedBackend {
@@ -133,7 +135,8 @@ struct ResolvedBackend {
 ResolvedBackend resolve_backend(int32_t backend) {
     switch (backend) {
         case KGGML_BACKEND_METAL:
-        case KGGML_BACKEND_VULKAN: return {true, false};
+        case KGGML_BACKEND_VULKAN:
+        case KGGML_BACKEND_OPENCL: return {true, false};
         case KGGML_BACKEND_COREML: return {true, true};
         case KGGML_BACKEND_CPU:
         default: return {false, false};
@@ -146,8 +149,56 @@ const char * backend_name(int32_t backend) {
         case KGGML_BACKEND_METAL: return "Metal";
         case KGGML_BACKEND_VULKAN: return "Vulkan";
         case KGGML_BACKEND_COREML: return "CoreML";
+        case KGGML_BACKEND_OPENCL: return "OpenCL";
         default: return "unknown";
     }
+}
+
+bool iequals_prefix(const char * s, const char * prefix) {
+    if (s == nullptr) return false;
+    for (; *prefix != '\0'; ++s, ++prefix) {
+        if (*s == '\0' || std::tolower(static_cast<unsigned char>(*s)) != std::tolower(static_cast<unsigned char>(*prefix))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// True if ggml GPU device `dev` belongs to backend `kind` (Metal registers as "MTL", Vulkan as "Vulkan", OpenCL as
+/// "OpenCL").
+bool gpu_device_matches(ggml_backend_dev_t dev, int32_t kind) {
+    ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
+    const char * reg_name = reg != nullptr ? ggml_backend_reg_name(reg) : ggml_backend_dev_name(dev);
+    switch (kind) {
+        case KGGML_BACKEND_METAL:
+        case KGGML_BACKEND_COREML: return iequals_prefix(reg_name, "MTL") || iequals_prefix(reg_name, "Metal");
+        case KGGML_BACKEND_VULKAN: return iequals_prefix(reg_name, "Vulkan");
+        case KGGML_BACKEND_OPENCL: return iequals_prefix(reg_name, "OpenCL");
+        default: return false;
+    }
+}
+
+/// whisper.cpp picks its GPU as the `gpu_device`-th GPU / iGPU device over ALL registered backends. With several GPU
+/// backends registered (e.g. both Android add-ons) that index would not say which backend; this maps "device
+/// `index_in_backend` of backend `kind`" to whisper's global GPU index. -1 when the backend has no such device.
+int whisper_gpu_index(int32_t kind, int32_t index_in_backend) {
+    int gpu = 0;
+    int in_backend = 0;
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        const auto type = ggml_backend_dev_type(dev);
+        if (type != GGML_BACKEND_DEVICE_TYPE_GPU && type != GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            continue;
+        }
+        if (gpu_device_matches(dev, kind)) {
+            if (in_backend == index_in_backend) {
+                return gpu;
+            }
+            ++in_backend;
+        }
+        ++gpu;
+    }
+    return -1;
 }
 
 bool runtime_backend_available(int32_t kind) {
@@ -427,6 +478,17 @@ KGGML_WHISPER_API kggml_status kggml_whisper_init_from_file(const char * model_p
         cparams.use_gpu = resolved.use_gpu; // must be decided before the context (and any backend) exists
         cparams.flash_attn = p.flash_attn != 0;
         cparams.gpu_device = p.gpu_device;
+        if (resolved.use_gpu) {
+            // gpu_device counts the devices of the requested backend; whisper.cpp counts every GPU device.
+            const int index = kggml::whisper::whisper_gpu_index(p.backend, p.gpu_device);
+            if (index < 0) {
+                return fail(KGGML_STATUS_BACKEND_UNAVAILABLE,
+                            (std::string(kggml::whisper::backend_name(p.backend)) + " has no GPU device " +
+                             std::to_string(p.gpu_device))
+                                .c_str());
+            }
+            cparams.gpu_device = index;
+        }
 
         context->ctx = whisper_init_from_file_with_params_no_state(model_path, cparams);
         if (context->ctx == nullptr) {
