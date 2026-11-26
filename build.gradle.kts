@@ -41,6 +41,17 @@ val iosSimulatorDevice: Provider<String> = providers.gradleProperty("kggml.iosSi
 // Override per run with -Pkggml.iosTestTimeoutMinutes=<n>.
 val iosTestTimeoutMinutes: Provider<Long> =
     providers.gradleProperty("kggml.iosTestTimeoutMinutes").map { it.toLong() }.orElse(20L)
+// Every JVM test process gets its own java.io.tmpdir (build/tmp/<task>): Gradle runs test tasks of different modules in
+// parallel, and tests that assert "no temporary files left behind" (e.g. JvmNativeWhisperStreamTest) must not see the
+// files another module's tests are creating at the same moment in the shared system temp directory.
+subprojects {
+    tasks.withType<Test>().configureEach {
+        doFirst {
+            val dir = temporaryDir.resolve("java-tmp").apply { mkdirs() }
+            systemProperty("java.io.tmpdir", dir.absolutePath)
+        }
+    }
+}
 subprojects {
     tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeSimulatorTest>().configureEach {
         if (iosSimulatorDevice.isPresent) device.set(iosSimulatorDevice)

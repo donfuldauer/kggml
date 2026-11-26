@@ -173,6 +173,14 @@ jobs:
           :samples:kggml-showcase:desktopJar
           :samples:whisper-only-minimal:assembleDebug
 
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
+
       - name: Upload reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -184,6 +192,7 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore
 
   linux-mac:
@@ -357,6 +366,14 @@ jobs:
         timeout-minutes: 3
         run: xcrun simctl shutdown all || true
 
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
+
       - name: Upload reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -368,6 +385,7 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore
 
   windows:
@@ -444,6 +462,14 @@ jobs:
       - name: JVM tests (incl. dual-engine coexistence) against the Windows native runtime
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
 
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
+
       - name: Upload reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -455,4 +481,5 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore
