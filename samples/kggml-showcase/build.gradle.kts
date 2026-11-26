@@ -217,6 +217,12 @@ tasks.named<Test>("desktopTest") {
     )
     systemProperty("kggml.test.requireNative", requireNative.toString())
     inputs.property("kggml.requireNative", requireNative)
+    // The real-engine tests' results depend on the native libraries they load, so those are inputs: a cached result
+    // must never be reused for different (or missing) native builds.
+    hostLibs.forEach { (property, lib) ->
+        inputs.files(fileTree(lib.first) { include("*.so*", "*.dylib", "*.dll") })
+            .withPropertyName("nativeLibs.$property").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
     doFirst {
         hostLibs.forEach { (property, lib) ->
             val (dir, jni) = lib
