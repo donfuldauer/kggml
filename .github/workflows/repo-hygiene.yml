@@ -1,7 +1,8 @@
 name: Repo Hygiene & Agent Parity
 
 # Cheap Linux checks on every PR. Not re-run on pushes to main: PRs merge with a merge commit after
-# these passed on the PR head. Every job runs on a GitHub-hosted runner.
+# these passed on the PR head. Every job runs on the owner's self-hosted Linux runner while LINUX_RUNNER is 'on'
+# (same-repository PRs only), else on a GitHub-hosted runner (AGENTS.md "Runner order").
 on:
   pull_request:
   workflow_dispatch:
@@ -18,7 +19,10 @@ permissions:
 jobs:
   agent-parity:
     name: Verify Multi-Harness Agent & Skill Parity
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ vars.LINUX_RUNNER == 'on' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","Linux","X64","local-linux"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -30,7 +34,10 @@ jobs:
       - name: Test the agent CI waiter (scripts/ci/wait-pr-checks.sh)
         run: ./scripts/tests/test-wait-pr-checks.sh
 
-      - name: Verify every workflow job runs on a GitHub-hosted runner
+      # Fails if a job can reach an unapproved or fork-reachable runner, or any self-hosted runner while public (#63).
+      - name: Verify where every workflow job runs (hosted, or approved fork-guarded self-hosted while private)
+        env:
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
         run: ./scripts/ci/verify-hosted-runners.sh
 
       - name: Test the hosted-runner audit (scripts/ci/verify-hosted-runners.sh)
@@ -41,7 +48,10 @@ jobs:
 
   license-audit:
     name: License, NOTICE & Fixture Audit
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ vars.LINUX_RUNNER == 'on' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","Linux","X64","local-linux"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -55,7 +65,10 @@ jobs:
 
   docs-audit:
     name: Docs, Links, README Snippets & KDoc Audit
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ vars.LINUX_RUNNER == 'on' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","Linux","X64","local-linux"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -74,7 +87,10 @@ jobs:
 
   secret-scan:
     name: Gitleaks Secret Scan
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ vars.LINUX_RUNNER == 'on' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+      && fromJSON('["self-hosted","Linux","X64","local-linux"]') || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Checkout full history
