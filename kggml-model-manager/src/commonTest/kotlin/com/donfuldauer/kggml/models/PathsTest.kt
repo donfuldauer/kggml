@@ -13,6 +13,7 @@ class PathsTest {
         assertEquals("models", parentOf("models/model.bin"))
         assertNull(parentOf("model.bin"))
         assertNull(parentOf("/"))
+        assertEquals("ab", parentOf("ab/model.bin"), "a two-letter directory is not a drive root")
     }
 
     @Test
