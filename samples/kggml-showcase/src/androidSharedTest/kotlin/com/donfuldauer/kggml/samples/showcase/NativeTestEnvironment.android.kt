@@ -18,4 +18,6 @@ actual object NativeTestEnvironment {
         val context = ApplicationProvider.getApplicationContext<Context>()
         return File(context.cacheDir, "kggml-showcase-e2e-${UUID.randomUUID()}").apply { mkdirs() }.absolutePath
     }
+
+    actual fun skip(reason: String): Nothing = throw org.junit.AssumptionViolatedException(reason)
 }

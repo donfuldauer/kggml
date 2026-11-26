@@ -27,4 +27,7 @@ actual object NativeTestEnvironment {
         check(written) { "cannot write $path" }
         return path
     }
+
+    /** Unreachable: [requireNative] is always true here, so a missing library fails instead. */
+    actual fun skip(reason: String): Nothing = throw AssertionError("iOS native tests cannot be skipped: $reason")
 }

@@ -7,4 +7,6 @@ actual object NativeTestEnvironment {
 
     actual fun newTempDirectory(): String =
         Files.createTempDirectory("kggml-showcase-e2e").toFile().apply { deleteOnExit() }.absolutePath
+
+    actual fun skip(reason: String): Nothing = throw org.junit.AssumptionViolatedException(reason)
 }

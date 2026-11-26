@@ -14,6 +14,9 @@ expect object NativeTestEnvironment {
      */
     val requireNative: Boolean
 
+    /** Ends the calling test as SKIPPED (a JUnit assumption failure on the JVM and Android), never as passed. */
+    fun skip(reason: String): Nothing
+
     /** A fresh writable scratch directory for this test. */
     fun newTempDirectory(): String
 }
@@ -21,7 +24,7 @@ expect object NativeTestEnvironment {
 /**
  * Whether the shared runtime and all three engines' native libraries load on this platform. When they do not and
  * [NativeTestEnvironment.requireNative] is false (no host build on desktop, Robolectric on Android), the calling
- * test is skipped with a message; when it is true, the missing library fails the test.
+ * test is reported as skipped; when it is true, the missing library fails the test. Never returns `false`.
  */
 fun nativeEnginesAvailable(testName: String): Boolean {
     val failure = try {
@@ -38,6 +41,5 @@ fun nativeEnginesAvailable(testName: String): Boolean {
     if (NativeTestEnvironment.requireNative) {
         throw AssertionError("$testName: native engines are required but did not load: $failure", failure)
     }
-    println("SKIPPED $testName: native engines unavailable on this platform/build ($failure)")
-    return false
+    NativeTestEnvironment.skip("$testName: native engines unavailable on this platform/build ($failure)")
 }

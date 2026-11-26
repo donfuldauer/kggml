@@ -139,6 +139,8 @@ class LlmChatController(
     private val imageSource: ImageSource = NoImageSource,
     private val readFile: (String) -> ByteArray = { error("file access unavailable") },
     initialModelPath: String = "",
+    /** Sampler seed of chat replies; `null` (the app) draws a random one per reply, tests pin it. */
+    private val chatSeed: Long? = null,
 ) : AutoCloseable {
     private val mutableState = MutableStateFlow(LlmChatState(modelPath = initialModelPath))
     val state: StateFlow<LlmChatState> = mutableState.asStateFlow()
@@ -394,6 +396,7 @@ class LlmChatController(
     private fun chatOptions(state: LlmChatState) = GenerationOptions(
         maxTokens = state.maxTokens,
         temperature = 0.7f,
+        seed = chatSeed,
         stopSequences = state.template.stopSequences,
     )
 

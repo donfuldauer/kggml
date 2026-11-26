@@ -1,5 +1,6 @@
 package com.donfuldauer.kggml.runtime
 
+import androidx.test.platform.app.InstrumentationRegistry
 import com.donfuldauer.kggml.core.ComputeBackend
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -54,13 +55,21 @@ class AndroidNativeRuntimeTest {
     }
 
     @Test
-    fun threadCountsAndVersionsAreReported() {
+    fun threadCountsAreSane() {
         val hardware = KggmlRuntime.hardwareThreadCount()
-        assertEquals(Runtime.getRuntime().availableProcessors(), hardware)
+        // std::thread::hardware_concurrency() and the JVM can disagree about parked cores, so only bound it.
+        assertTrue(hardware >= 1, "hardware=$hardware")
         assertTrue(KggmlRuntime.recommendedThreadCount() in 1..hardware)
+    }
+
+    @Test
+    fun infoMatchesThePinnedVersions() {
+        // Passed by kggml-runtime/build.gradle.kts from the same values the JVM test (JvmNativeRuntimeTest) uses.
+        val args = InstrumentationRegistry.getArguments()
         val info = KggmlRuntime.info()
-        assertEquals("1.0.0", info.runtimeVersion)
-        assertEquals(40, info.ggmlCommit.length)
-        assertTrue(info.ggmlVersion.isNotEmpty())
+        assertEquals(args.getString("kggml.expectedRuntimeVersion"), info.runtimeVersion)
+        assertEquals(args.getString("kggml.expectedGgmlVersion"), info.ggmlVersion)
+        assertEquals(args.getString("kggml.expectedGgmlCommit"), info.ggmlCommit)
+        assertTrue(info.ggmlBuildCommit.isNotEmpty())
     }
 }

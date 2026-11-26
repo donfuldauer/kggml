@@ -107,16 +107,18 @@ class WhisperEdgeCaseTest {
 
     // ---- input conversion ----------------------------------------------------------------------------
 
+    /**
+     * 16 kHz stereo is not passed through as if it were mono: the engine routes it to the native converter (2 frames,
+     * 2 channels, 16 kHz) and transcribes the converter's mono output. The downmix arithmetic itself is native (CTest,
+     * and the native contracts' 44.1 kHz stereo cases); here it is the fake's.
+     */
     @Test
-    fun sixteenKhzStereoIsDownmixedNatively() = runTest {
+    fun sixteenKhzStereoIsRoutedThroughTheNativeConverter() = runTest {
         val bridge = FakeWhisperBridge()
         val engine = open(bridge)
         engine.transcribe(floatArrayOf(0.2f, 0.4f, -0.2f, 0f), channels = 2)
         assertEquals(listOf("f32:2:2:16000"), bridge.conversions.items)
-        val call = bridge.transcribes.items.single()
-        assertEquals(2, call.count)
-        assertEquals(0.3f, call.samples[0], 1e-6f)
-        assertEquals(-0.1f, call.samples[1], 1e-6f)
+        assertEquals(2, bridge.transcribes.items.single().count, "the 2 mono frames the converter returned")
         engine.close()
     }
 

@@ -12,6 +12,9 @@ expect object NativeTestEnvironment {
      */
     val requireNative: Boolean
 
+    /** Ends the calling test as SKIPPED (a JUnit assumption failure on the JVM and Android), never as passed. */
+    fun skip(reason: String): Nothing
+
     /**
      * Whether a GPU (or `AUTO`) backend may be requested. `false` on the iOS simulator, which cannot allocate Metal
      * buffers (whisper.cpp aborts in model load; see `IosNativeWhisperTest`). Android builds have no GPU backend
@@ -26,21 +29,23 @@ expect object NativeTestEnvironment {
 /**
  * Whether the shared runtime and whisper native libraries load here. When they do not and
  * [NativeTestEnvironment.requireNative] is false (Android local unit tests on the host JVM), the calling test is
- * skipped with a message; otherwise a missing library fails it.
+ * reported as skipped; otherwise a missing library fails it. Never returns `false`.
  */
 fun nativeWhisperAvailable(testName: String): Boolean {
-    val failure = try {
-        KggmlRuntime.info()
-        WhisperEngine.nativeInfo()
-        null
-    } catch (e: CancellationException) {
-        throw e
-    } catch (t: Throwable) {
-        t
-    } ?: return true
+    val failure = nativeWhisperLoadFailure() ?: return true
     if (NativeTestEnvironment.requireNative) {
         throw AssertionError("$testName: native runtime / whisper are required but did not load: $failure", failure)
     }
-    println("SKIPPED $testName: native runtime / whisper unavailable on this platform ($failure)")
-    return false
+    NativeTestEnvironment.skip("$testName: native runtime / whisper unavailable on this platform ($failure)")
+}
+
+/** Why the native runtime / whisper do not load here, or `null` when they do. */
+fun nativeWhisperLoadFailure(): Throwable? = try {
+    KggmlRuntime.info()
+    WhisperEngine.nativeInfo()
+    null
+} catch (e: CancellationException) {
+    throw e
+} catch (t: Throwable) {
+    t
 }

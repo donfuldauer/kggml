@@ -93,6 +93,8 @@ data class LlmChatEnvironment(
     val imageSource: ImageSource = platformImageSource(),
     val readFile: (String) -> ByteArray = ::readLocalFile,
     val initialModelPath: String = "",
+    /** Sampler seed of chat replies (`null`: random per reply); fixed by tests for deterministic output. */
+    val chatSeed: Long? = null,
 )
 
 /** Engine factory and export target of the Diffusion Image Studio. */
@@ -159,6 +161,7 @@ fun ShowcaseApp(
             imageSource = llmEnvironment.imageSource,
             readFile = llmEnvironment.readFile,
             initialModelPath = llmEnvironment.initialModelPath,
+            chatSeed = llmEnvironment.chatSeed,
         )
     }
     DisposableEffect(llmChat) { onDispose { llmChat.close() } }

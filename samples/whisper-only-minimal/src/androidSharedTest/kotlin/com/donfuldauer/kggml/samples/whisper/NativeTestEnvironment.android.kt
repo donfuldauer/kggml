@@ -22,4 +22,6 @@ actual object NativeTestEnvironment {
         val dir = File(base, "kggml-minimal-${UUID.randomUUID()}").apply { mkdirs() }
         return File(dir, name).apply { writeBytes(bytes) }.absolutePath
     }
+
+    actual fun skip(reason: String): Nothing = throw org.junit.AssumptionViolatedException(reason)
 }

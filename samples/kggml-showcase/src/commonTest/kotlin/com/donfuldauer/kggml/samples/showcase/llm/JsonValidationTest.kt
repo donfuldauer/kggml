@@ -21,10 +21,14 @@ class JsonValidationTest {
 
     @Test
     fun rejectsMalformedJson() {
-        listOf("{,}", "[1,]", "01", "1.", "\"\\x\"", "tru e", "{\"a\" 1}", "[1] 2", "\"a\u0001\"").forEach { text ->
+        listOf("{,}", "[1,]", "01", "\"\\x\"", "tru e", "{\"a\" 1}", "[1] 2", "\"a\u0001\"", "\u0663", "[\u0663]").forEach { text ->
             val e = assertFailsWith<MiniJson.ParseException>(text) { MiniJson.parse(text) }
-            assertTrue(e.position >= 0)
+            // An error inside the text (not at its end) is invalid JSON, never "incomplete".
+            assertTrue(e.position in 0 until text.length, "position ${e.position} of '$text'")
+            assertFalse(e.atEnd, "'$text' must not be reported as incomplete")
         }
+        // A number cut off at the end is incomplete (more digits may still stream in).
+        assertTrue(assertFailsWith<MiniJson.ParseException> { MiniJson.parse("1.") }.atEnd)
     }
 
     @Test
@@ -83,6 +87,8 @@ class JsonValidationTest {
     fun signedUnicodeEscapeIsInvalid() {
         assertIs<JsonValidation.Invalid>(validateJson("{\"a\": \"\\u+041\"}", null))
         assertIs<JsonValidation.Invalid>(validateJson("{\"a\": \"\\u-041\"}", null))
+        // A non-hex digit is invalid even when the text ends before four characters.
+        assertIs<JsonValidation.Invalid>(validateJson("{\"a\": \"\\uZ", null))
         assertEquals(mapOf("a" to "A"), MiniJson.parse("{\"a\": \"\\u0041\"}"))
     }
 

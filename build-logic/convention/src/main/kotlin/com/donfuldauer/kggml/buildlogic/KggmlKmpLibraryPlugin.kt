@@ -20,9 +20,9 @@ import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetTree
  * - Explicit API mode (strict), JVM 17 bytecode, `expect`/`actual` classes enabled.
  * - `kotlin-test` wired into `commonTest`; JVM tests run on the JUnit Platform.
  * - Android instrumented tests (`connectedDebugAndroidTest`) join the test source-set tree: `commonTest` (incl. the
- *   shared native-engine contracts) also runs on a device / emulator next to `androidInstrumentedTest`. With
- *   `-Pkggml.bundleNative=true` the real native libraries are packaged; `-Pkggml.requireNative=true` is passed to the
- *   tests as the `kggml.requireNative` instrumentation argument.
+ *   shared native-engine contracts) also runs on a device / emulator next to `androidInstrumentedTest`. Run it with
+ *   `-Pkggml.bundleNative=true` (the real native libraries are packaged): the native tests there never skip, so a
+ *   missing library fails them.
  * - Android library defaults (compile/min SDK from the version catalog, release variant published).
  * - Applies `kggml.publishing` for `com.donfuldauer` coordinates and POM metadata.
  *
@@ -72,8 +72,6 @@ public class KggmlKmpLibraryPlugin : Plugin<Project> {
             defaultConfig {
                 minSdk = catalog.versionOf("android-minSdk").toInt()
                 testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-                testInstrumentationRunnerArguments["kggml.requireNative"] =
-                    providers.gradleProperty("kggml.requireNative").getOrElse("false")
             }
             compileOptions {
                 sourceCompatibility = javaVersion

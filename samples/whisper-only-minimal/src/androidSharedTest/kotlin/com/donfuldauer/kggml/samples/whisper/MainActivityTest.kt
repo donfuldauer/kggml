@@ -41,7 +41,14 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MainActivityTest {
     private var scenario: ActivityScenario<MainActivity>? = null
-    private val nativeLoads: Boolean by lazy { nativeWhisperAvailable("MainActivityTest") }
+    /** Probed, not skipped: these tests assert the right outcome for both cases (a required library must load). */
+    private val nativeLoads: Boolean by lazy {
+        val failure = nativeWhisperLoadFailure()
+        if (failure != null && NativeTestEnvironment.requireNative) {
+            throw AssertionError("native runtime / whisper are required but did not load: $failure", failure)
+        }
+        failure == null
+    }
 
     @After
     fun tearDown() {

@@ -44,8 +44,11 @@ import kotlin.test.fail
  * through the Compose UI exactly as a user would.
  *
  * Models are the engines' synthetic fixtures (`TinyWhisperModel`, `TinyLlamaModel`, compiled in from the engine
- * modules' tests; random weights, so their text output is meaningless): the tests verify that each screen loads the
- * model through the native library, runs inference to completion and renders the result, not what the model says.
+ * modules' tests; random weights, so their text output is meaningless): the tests verify that the Whisper Studio and
+ * the LLM screen load the model through the native library, run inference to completion and render the result, not
+ * what the model says. No diffusion model is small enough to generate with (see `NativeDiffusionEngineContract`), so
+ * the Diffusion Studio is covered up to the native load: an invalid file must surface as a typed error. GGUF header
+ * inspection in the Model Manager is pure Kotlin and runs everywhere.
  *
  * Runs wherever the native libraries load: desktop with the host builds (`-Pkggml.requireNative=true` in CI), the iOS
  * simulator, and Android devices / emulators with `-Pkggml.bundleNative=true`. Skipped (with a message) under
@@ -95,6 +98,8 @@ class RealEngineEndToEndUiTest : UiTestBase() {
                     imageSource = NoImageSource,
                     readFile = ::readLocalFile,
                     initialModelPath = files.llamaModel,
+                    // Pinned sampler seed: the reply of the random-weight model is deterministic (non-empty).
+                    chatSeed = 42,
                 ),
                 diffusionEnvironment = DiffusionStudioEnvironment(
                     generatorFactory = DiffusionImageGeneratorFactory,
@@ -231,15 +236,21 @@ class RealEngineEndToEndUiTest : UiTestBase() {
                 onAllNodes(hasTestTag(LlmChatTags.ERROR)).fetchSemanticsNodes().isNotEmpty()
         }
         failOnError(LlmChatTags.ERROR)
-        // The JSON-schema grammar constrains every sampled token, so even random weights must emit a JSON object.
+        // The JSON-schema grammar constrains every sampled token, so even random weights must emit JSON that matches the
+        // schema, or a valid prefix of it when the token budget runs out first; never invalid JSON or schema violations.
         val output = onNodeWithTag(LlmChatTags.EXTRACT_OUTPUT).fetchSemanticsNode().config
             .getOrNull(SemanticsProperties.EditableText)?.text.orEmpty().trim()
         assertTrue(output.startsWith("{"), "grammar-constrained output must start a JSON object: '$output'")
+        val validation = onNodeWithTag(LlmChatTags.VALIDATION).text()
+        assertTrue(
+            validation.startsWith("Valid JSON matching the schema") || validation.startsWith("Incomplete JSON"),
+            "grammar-constrained output failed validation: '$validation' for '$output'",
+        )
     }
 
     @Test
     fun modelManagerInspectsARealGgufHeader() = runComposeUiTest {
-        if (!nativeEnginesAvailable("modelManagerInspectsARealGgufHeader")) return@runComposeUiTest
+        // Pure-Kotlin header parsing (no native library): runs on every platform, Robolectric included.
         val files = Files(NativeTestEnvironment.newTempDirectory())
         showRealShowcase(files, ShowcaseDestination.MODEL_MANAGER)
         typeInto(ModelManagerTags.INSPECT_PATH, files.llamaModel)

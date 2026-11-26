@@ -148,6 +148,10 @@ tasks.named("check") { dependsOn(verifyMinimalDependencies) }
 // iOS test executables link against the xcframeworks; skip them (like :kggml-whisper) until they are built.
 tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
     onlyIf("GgmlRuntime + KggmlWhisper xcframeworks are built (native/scripts/build-ios-xcframework.sh)") {
-        iosXcframeworkDir.isDirectory && iosWhisperXcframeworkDir.isDirectory
+        val present = iosXcframeworkDir.isDirectory && iosWhisperXcframeworkDir.isDirectory
+        if (!present && requireNative) {
+            throw GradleException("-Pkggml.requireNative=true but $iosXcframeworkDir or $iosWhisperXcframeworkDir is missing")
+        }
+        present
     }
 }

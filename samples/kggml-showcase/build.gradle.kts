@@ -151,7 +151,6 @@ android {
     }
     testOptions {
         unitTests.isIncludeAndroidResources = true
-        unitTests.all { it.systemProperty("kggml.test.requireNative", "false") }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(jvmTargetVersion)
@@ -230,6 +229,10 @@ tasks.named<Test>("desktopTest") {
 // xcframeworks; skip them (like the engine modules) until all of them are built.
 tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
     onlyIf("GgmlRuntime, KggmlWhisper, KggmlLlama and KggmlDiffusion xcframeworks are built (native/scripts/build-ios-xcframework.sh)") {
-        iosEngineXcframeworkDirs.all { it.isDirectory }
+        val present = iosEngineXcframeworkDirs.all { it.isDirectory }
+        if (!present && requireNative) {
+            throw GradleException("-Pkggml.requireNative=true but an engine xcframework is missing: $iosEngineXcframeworkDirs")
+        }
+        present
     }
 }
