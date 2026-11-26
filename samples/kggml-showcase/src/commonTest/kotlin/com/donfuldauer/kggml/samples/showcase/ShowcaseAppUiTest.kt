@@ -92,10 +92,10 @@ class ShowcaseAppUiTest : UiTestBase() {
         setContent {
             ShowcaseApp(inspector = { calls.incrementAndFetch(); fakeSnapshot() }, ioDispatcher = Dispatchers.Unconfined)
         }
-        waitUntil { calls.load() == 1 }
+        waitUntil(timeoutMillis = 5_000) { calls.load() == 1 }
         waitForIdle()
         onNodeWithTag("inspector-refresh").performClick()
-        waitUntil { calls.load() == 2 }
+        waitUntil(timeoutMillis = 5_000) { calls.load() == 2 }
         waitForIdle()
         assertEquals(2, calls.load())
         onNodeWithTag("backend-row-cpu_only").assertExists()

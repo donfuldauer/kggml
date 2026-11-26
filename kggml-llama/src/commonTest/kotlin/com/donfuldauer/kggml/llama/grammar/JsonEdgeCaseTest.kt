@@ -1,6 +1,5 @@
 package com.donfuldauer.kggml.llama.grammar
 
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -109,14 +108,13 @@ class JsonEdgeCaseTest {
     }
 
     /**
-     * BUG (not fixed here): RFC 8259 requires exactly four hex digits after `\u`, but the parser decodes them with
-     * `String.toIntOrNull(16)`, which also accepts a leading sign, so `"\u+041"` decodes to `A` and `"\u-041"` to
-     * U+FFBF instead of being rejected. Enable once [Json] validates the four characters as hex digits.
+     * Regression: the parser decoded `\u` escapes with `String.toIntOrNull(16)`, which also accepts a leading sign, so
+     * `"\u+041"` decoded to `A` and `"\u-041"` to U+FFBF instead of being rejected.
      */
-    @Ignore
     @Test
     fun signedUnicodeEscapesAreRejected() {
-        assertFailsWith<JsonException> { Json.parse("\"\\u+041\"") }
-        assertFailsWith<JsonException> { Json.parse("\"\\u-041\"") }
+        // RFC 8259: exactly four hex digits; a sign is not a hex digit.
+        assertEquals("bad \\u escape at offset 3", failure("\"\\u+041\""))
+        assertEquals("bad \\u escape at offset 3", failure("\"\\u-041\""))
     }
 }

@@ -183,7 +183,10 @@ private class Parser(private val s: String) {
                         't' -> sb.append('\t')
                         'u' -> {
                             if (i + 4 > s.length) fail("short \\u escape")
-                            val code = s.substring(i, i + 4).toIntOrNull(16) ?: fail("bad \\u escape")
+                            val hex = s.substring(i, i + 4)
+                            // Exactly four hex digits (RFC 8259); toIntOrNull alone would also accept a sign.
+                            if (!hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) fail("bad \\u escape")
+                            val code = hex.toInt(16)
                             sb.append(code.toChar())
                             i += 4
                         }

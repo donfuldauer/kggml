@@ -53,12 +53,15 @@ class MainActivityTest {
         return ActivityScenario.launch<MainActivity>(intent).also { scenario = it }
     }
 
-    /** Polls until a view matching [matcher] is displayed (the sample updates views from background coroutines). */
+    /**
+     * Polls until a view matching [matcher] exists, scrolls it into view and checks it is displayed (the sample
+     * updates views from background coroutines; the result text sits below the fold on small screens).
+     */
     private fun awaitView(matcher: Matcher<View>, timeoutMs: Long = 120_000) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (true) {
             try {
-                onView(matcher).check(matches(isDisplayed()))
+                onView(matcher).perform(scrollTo()).check(matches(isDisplayed()))
                 return
             } catch (e: Throwable) {
                 if (e !is NoMatchingViewException && e !is AssertionError) throw e
