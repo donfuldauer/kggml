@@ -17,6 +17,10 @@
 #   scripts/audit-binary-symbols.sh elf <dir> [dir ...]
 #       Every ELF *.so / *.so.<version> file (not symlinks) in the given directories is audited as one set
 #       (host builds, tests).
+#   scripts/audit-binary-symbols.sh jars <dir>
+#       JVM desktop: every *.jar in <dir> (the app jar plus its runtime classpath) must carry no llama / diffusion /
+#       GPU add-on classes and no such native library; at least one jar must carry com.donfuldauer.kggml.whisper
+#       classes. Uses unzip -Z1 (or jar tf).
 #
 # Exit status: 0 when the audit passes, 1 on any violation (the offending symbols are printed), 2 on usage
 # errors. Shared by .github/workflows/ci.yml and ./scripts/ci-local.sh; tested by
@@ -37,7 +41,7 @@ ALLOWED_SYMBOL_RE='llamafile'
 failures=0
 fail() { echo "FAIL: $*" >&2; failures=$((failures + 1)); }
 die() { echo "FAIL: $*" >&2; exit 1; }
-usage() { sed -n '2,25p' "$0" >&2; exit 2; }
+usage() { sed -n '2,29p' "$0" >&2; exit 2; }
 
 pick_tool() {
   local t
@@ -235,6 +239,30 @@ audit_ios() {
   done
 }
 
+audit_jars() {
+  [[ $# -eq 1 && -d "$1" ]] || usage
+  local jar entries bad have_whisper_classes=0 count=0
+  for jar in "$1"/*.jar; do
+    [[ -f "${jar}" ]] || continue
+    count=$((count + 1))
+    entries="$(unzip -Z1 "${jar}" 2>/dev/null || jar tf "${jar}")"
+    grep -q '^com/donfuldauer/kggml/whisper/' <<<"${entries}" && have_whisper_classes=1
+    bad="$(grep -E "^(${FORBIDDEN_CLASS_RE})" <<<"${entries}" || true)"
+    if [[ -n "${bad}" ]]; then
+      head -n 20 <<<"${bad}" >&2
+      fail "jars: $(basename "${jar}") contains Kggml llama / diffusion / GPU add-on classes"
+    fi
+    while IFS= read -r lib; do
+      [[ -n "${lib}" ]] || continue
+      if grep -Eqi "${FORBIDDEN_LIB_RE}" <<<"$(basename "${lib}")"; then
+        fail "jars: $(basename "${jar}") carries forbidden native library ${lib}"
+      fi
+    done < <(grep -E '\.(so|dylib|dll)$' <<<"${entries}" || true)
+  done
+  [[ ${count} -gt 0 ]] || die "jars: no *.jar in $1"
+  [[ ${have_whisper_classes} -eq 1 ]] || fail "jars: no jar contains com.donfuldauer.kggml.whisper classes"
+}
+
 audit_elf_dirs() {
   [[ $# -gt 0 ]] || usage
   local list="${WORK}/elf.list"
@@ -256,6 +284,7 @@ case "${mode}" in
   apk) [[ $# -ge 1 ]] || usage; audit_apk "$@" ;;
   ios) audit_ios "$@" ;;
   elf) audit_elf_dirs "$@" ;;
+  jars) audit_jars "$@" ;;
   -h|--help) usage ;;
   *) echo "unknown mode '${mode}'" >&2; usage ;;
 esac

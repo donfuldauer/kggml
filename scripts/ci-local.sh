@@ -263,6 +263,7 @@ for step in "${all_steps[@]}"; do
       fi ;;
     sample)
       run_step s-check ./gradlew :samples:whisper-only-minimal:check --console=plain
+      run_step sd-audit ./scripts/ci/audit-minimal-sample.sh desktop
       if ndk="$(find_ndk)"; then
         export ANDROID_NDK_HOME="${ndk}"
         run_step s-audit ./scripts/ci/audit-minimal-sample.sh android
