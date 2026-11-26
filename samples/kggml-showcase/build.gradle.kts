@@ -96,6 +96,8 @@ kotlin {
             implementation(compose.uiTest)
         }
         androidMain.dependencies {
+            // Android GPU add-on: ggml's Vulkan backend, registered by the runtime when packaged (CPU fallback otherwise).
+            implementation(project(":kggml-runtime-vulkan"))
             implementation(libs.androidx.activity.compose)
         }
         // Robolectric runs the Android variant of commonTest (and the Android-only tests) on the host JVM.

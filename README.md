@@ -37,7 +37,7 @@ Kotlin API on top of the [ggml](https://github.com/ggml-org/ggml) ecosystem:
 
 | Platform | Kotlin targets | Native ABIs | Compute backends |
 | --- | --- | --- | --- |
-| Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). Vulkan when the runtime is built with `KGGML_ENABLE_VULKAN=ON`. |
+| Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). GPU (Vulkan) with the optional `kggml-runtime-vulkan` add-on on Android 9+ devices with a Vulkan 1.1 driver; CPU otherwise. |
 | iOS | `iosArm64`, `iosSimulatorArm64` | device and Apple-silicon simulator | CPU (Accelerate / NEON), Metal, Core ML (Whisper encoder) |
 | JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64, Windows x86_64 | CPU on all three; Metal on macOS; Vulkan when built with `KGGML_ENABLE_VULKAN=ON` |
 
@@ -66,6 +66,7 @@ sourceSets {
         implementation("com.donfuldauer:kggml-llama")          // text generation, embeddings, vision
         implementation("com.donfuldauer:kggml-diffusion")      // text-to-image
         implementation("com.donfuldauer:kggml-model-manager")  // optional: downloads, RAM estimates
+        implementation("com.donfuldauer:kggml-runtime-vulkan") // optional: Android GPU (Vulkan); no-op elsewhere
     }
 }
 ```
@@ -79,16 +80,30 @@ Gradle picks the right platform variant. Every engine depends on `kggml-core-api
 | `com.donfuldauer:kggml-bom` | Version alignment for every artifact below |
 | `com.donfuldauer:kggml-core-api` | `InferenceEngine`, `BackendConfig`, `ComputeBackend`, events, `InferenceException`s, memory-pressure observers. Pure Kotlin. |
 | `com.donfuldauer:kggml-runtime` | The shared ggml native runtime (CPU, Metal, Vulkan backends) |
+| `com.donfuldauer:kggml-runtime-vulkan` | Optional Android GPU add-on: ggml's Vulkan backend, found and registered by the runtime at load (no code needed); no-op on JVM and iOS. |
 | `com.donfuldauer:kggml-whisper` | `WhisperEngine`: whisper.cpp transcription and live streaming |
 | `com.donfuldauer:kggml-llama` | `LlamaEngine`: llama.cpp generation, grammars, sessions, embeddings, vision |
 | `com.donfuldauer:kggml-diffusion` | `DiffusionEngine`: stable-diffusion.cpp image generation |
 | `com.donfuldauer:kggml-model-manager` | Optional. Resumable downloads, SHA-256, model header inspection, RAM estimates, cache eviction. Pure Kotlin. |
 
+### GPU backends: built in or add-on
+
+A backend ships inside `kggml-runtime` when nearly every app wants it and it costs little; it is a separate add-on
+when it is heavy, depends on the device's drivers, or many apps would rather skip it.
+
+- **Metal (iOS, macOS)** is built in: every supported Apple device has it, the driver is Apple's, and its shaders add
+  about 0.6 MB (compiled on the device). `ComputeBackend.CPU_ONLY` never creates it.
+- **Vulkan on Android** is the add-on `kggml-runtime-vulkan`: ggml's Vulkan backend carries tens of MB of precompiled
+  shaders per ABI, and phone GPU drivers vary. Add the dependency and the runtime registers it when it loads; on
+  devices without a usable Vulkan 1.1 driver (or Android 8.x) the engines keep running on the CPU. Emulators expose only
+  software Vulkan, which ggml ignores, so there `AUTO` stays on the CPU.
+- **Vulkan on Linux / Windows desktop** is a build option of the runtime (`KGGML_ENABLE_VULKAN=ON`).
+
 ### Native libraries
 
 | Platform | How the native code is shipped |
 | --- | --- |
-| Android | Release AARs are built with `-Pkggml.bundleNative=true` and carry their `.so` files for `arm64-v8a` and `x86_64` (`libggml*.so` and `libkggml_runtime*.so` in `kggml-runtime`, `libkggml_whisper*.so` in `kggml-whisper`, and so on). Nothing to configure. |
+| Android | Release AARs are built with `-Pkggml.bundleNative=true` and carry their `.so` files for `arm64-v8a` and `x86_64` (`libggml*.so` and `libkggml_runtime*.so` in `kggml-runtime`, `libkggml_whisper*.so` in `kggml-whisper`, `libggml-vulkan.so` in the `kggml-runtime-vulkan` add-on, and so on). Nothing to configure. |
 | JVM Desktop | The released `kggml-runtime` jar carries the ggml runtime for `linux-x86_64`, `windows-x86_64` and `macos-aarch64` under `/kggml/native/<os>-<arch>/` and extracts it on first use; `-Dkggml.native.path=<dir>` (or `KGGML_NATIVE_PATH`) points it at your own build instead. Each engine loads its JNI library from `-Dkggml.whisper.native.path` / `kggml.llama.native.path` / `kggml.diffusion.native.path` (or the matching `KGGML_*_NATIVE_PATH` variable), then from the `kggml.native.path` directory, then from `java.library.path`. The engines' `build-host.sh` scripts build these libraries. |
 | iOS | The Kotlin frameworks link against `GgmlRuntime.xcframework` plus one xcframework per engine (`KggmlWhisper`, `KggmlLlama`, `KggmlDiffusion`). Embed the ones you use in your Xcode app target. Each release attaches them to its GitHub release (with a `SHA256SUMS` file); the `build-ios-xcframework.sh` scripts build them from source (see [Building from source](#building-from-source)). |
 
