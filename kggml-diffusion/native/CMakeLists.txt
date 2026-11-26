@@ -25,6 +25,11 @@ project(kggml_diffusion
     DESCRIPTION "Kggml stable-diffusion.cpp engine"
     LANGUAGES C CXX)
 
+# Host processes may load msvcp140 < 14.40 (e.g. a JVM's bundled copy); see kggml-runtime/native (issue #65).
+if (MSVC)
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
+
 # Exact upstream stable-diffusion.cpp pin (no release tag; `git describe` = master-612-d7ecbe1-2-g3b4d26f). Its
 # ggml submodule is upstream ggml 404fcb9d, two commits behind the :kggml-runtime pin (ggml v0.9.9, a04eea07),
 # which is what makes the shared runtime ggml a drop-in. Keep in sync with the submodule gitlink and NOTICE.

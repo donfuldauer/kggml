@@ -20,6 +20,11 @@ project(kggml_llama
     DESCRIPTION "Kggml llama.cpp + libmtmd engine"
     LANGUAGES C CXX)
 
+# Host processes may load msvcp140 < 14.40 (e.g. a JVM's bundled copy); see kggml-runtime/native (issue #65).
+if (MSVC)
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
+
 # Exact upstream llama.cpp pin (release tag b8598, "sync : ggml" = ggml v0.9.9, the :kggml-runtime pin).
 # libmtmd is built from the same commit (tools/mtmd). Keep in sync with the submodule gitlink and NOTICE.
 set(KGGML_LLAMA_UPSTREAM_COMMIT "9281dd135d6f175ceacca7d3a3ec440012264cfe")

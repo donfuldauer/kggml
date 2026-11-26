@@ -16,6 +16,13 @@ project(kggml_runtime
     DESCRIPTION "Kggml shared ggml runtime"
     LANGUAGES C CXX)
 
+# MSVC >= 19.40 (VS 2022 17.10) made std::mutex's constructor constexpr; code built that way crashes in
+# msvcp140.dll when the host process (e.g. a JVM that bundles its own, older copy) loads msvcp140 < 14.40.
+# Keep the runtime-compatible constructor for every target in this tree, ggml included (issue #65).
+if (MSVC)
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
+
 # Exact upstream ggml pin (tag v0.9.9). Keep in sync with the submodule gitlink and NOTICE.
 set(KGGML_GGML_PINNED_COMMIT "a04eea0761a85d18f3f504d6ab970c5c9dce705f")
 set(KGGML_GGML_PINNED_VERSION "0.9.9")

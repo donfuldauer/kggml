@@ -19,6 +19,11 @@ project(kggml_whisper
     DESCRIPTION "Kggml whisper.cpp engine"
     LANGUAGES C CXX)
 
+# Host processes may load msvcp140 < 14.40 (e.g. a JVM's bundled copy); see kggml-runtime/native (issue #65).
+if (MSVC)
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
+
 # Exact upstream whisper.cpp pin (tag v1.8.4). Keep in sync with the submodule gitlink and NOTICE.
 set(KGGML_WHISPER_UPSTREAM_COMMIT "9386f239401074690479731c1e41683fbbeac557")
 set(KGGML_WHISPER_UPSTREAM_VERSION "1.8.4")
