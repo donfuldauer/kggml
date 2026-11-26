@@ -69,5 +69,12 @@ internal fun parentOf(path: String): String? {
     }
 }
 
-internal fun joinPath(directory: String, name: String): String =
-    if (directory.isNotEmpty() && isSeparator(directory.last())) directory + name else "$directory/$name"
+/**
+ * [directory] + [name] with exactly one separator between them, in the directory's own style: `\` for a Windows path
+ * that uses only `\` (so the result equals `java.io.File(directory, name).path`), else `/`.
+ */
+internal fun joinPath(directory: String, name: String): String = when {
+    directory.isNotEmpty() && isSeparator(directory.last()) -> directory + name
+    '\\' in directory && '/' !in directory -> "$directory\\$name"
+    else -> "$directory/$name"
+}

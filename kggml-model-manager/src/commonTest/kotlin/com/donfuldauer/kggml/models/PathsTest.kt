@@ -31,6 +31,9 @@ class PathsTest {
         assertEquals("/models/a.bin", joinPath("/models", "a.bin"))
         assertEquals("/models/a.bin", joinPath("/models/", "a.bin"))
         assertEquals("C:\\models\\a.bin", joinPath("C:\\models\\", "a.bin"))
-        assertEquals("C:\\models/a.bin", joinPath("C:\\models", "a.bin"))
+        assertEquals("C:\\models\\a.bin", joinPath("C:\\models", "a.bin"))
+        assertEquals("C:/models/a.bin", joinPath("C:/models", "a.bin"))
+        assertEquals("C:\\models/x/a.bin", joinPath("C:\\models/x", "a.bin"))
+        assertEquals("models/a.bin", joinPath("models", "a.bin"))
     }
 }
