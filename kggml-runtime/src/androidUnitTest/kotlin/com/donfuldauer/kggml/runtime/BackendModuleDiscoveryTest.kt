@@ -6,8 +6,8 @@ import kotlin.test.assertEquals
 /** Discovery of the Android GPU backend add-ons packaged in an app ([registerBackendModules]). */
 class BackendModuleDiscoveryTest {
     @Test
-    fun theVulkanAddOnIsTheKnownModule() {
-        assertEquals(listOf("ggml-vulkan"), AndroidNativeLibraryLoader.BACKEND_MODULES)
+    fun theGpuAddOnsAreTheKnownModules() {
+        assertEquals(listOf("ggml-vulkan", "ggml-opencl"), AndroidNativeLibraryLoader.BACKEND_MODULES)
     }
 
     @Test

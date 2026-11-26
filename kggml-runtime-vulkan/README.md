@@ -33,6 +33,6 @@ stub, the first that exports Vulkan 1.1), and shaders are compiled with the NDK'
 
 ```bash
 ./kggml-runtime-vulkan/native/scripts/build-android.sh arm64-v8a x86_64   # -> build/native-android-vulkan-jniLibs
-./scripts/ci/audit-vulkan-addon.sh arm64-v8a x86_64                       # dependencies, exports, 16 KB alignment
+./scripts/ci/audit-gpu-addon.sh vulkan arm64-v8a x86_64                       # dependencies, exports, 16 KB alignment
 ./gradlew :kggml-runtime-vulkan:connectedDebugAndroidTest -Pkggml.bundleNative=true -Pkggml.requireNative=true
 ```

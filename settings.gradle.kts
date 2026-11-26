@@ -43,6 +43,7 @@ include(
     ":kggml-core-api",
     ":kggml-runtime",
     ":kggml-runtime-vulkan",
+    ":kggml-runtime-opencl",
     ":kggml-whisper",
     ":kggml-llama",
     ":kggml-diffusion",

@@ -33,6 +33,7 @@ kotlin {
             implementation("com.donfuldauer:kggml-diffusion")      // text-to-image
             implementation("com.donfuldauer:kggml-model-manager")  // optional: downloads, RAM estimates
             implementation("com.donfuldauer:kggml-runtime-vulkan") // optional: Android GPU (Vulkan); no-op elsewhere
+            implementation("com.donfuldauer:kggml-runtime-opencl") // optional: Android GPU (OpenCL, Adreno)
         }
     }
     // snippet:end gradle-dependencies
@@ -46,6 +47,7 @@ val kggmlLibraryModules = listOf(
     ":kggml-core-api",
     ":kggml-runtime",
     ":kggml-runtime-vulkan",
+    ":kggml-runtime-opencl",
     ":kggml-whisper",
     ":kggml-llama",
     ":kggml-diffusion",
