@@ -51,7 +51,8 @@ val TEST_METADATA = ModelMetadata(
 /**
  * In-memory [ModelStore]. Downloads are scripted per file name: the test sends [DownloadEvent]s (or a [Throwable]
  * to fail) through [script]; a [DownloadEvent.Completed] installs the file. Progress events are mirrored into the
- * `.part` size so a later download "resumes".
+ * `.part` size so a later download "resumes". [failures] makes an operation (`files`, `sha256`, `delete`,
+ * `clearPartialDownloads`) throw, like an unreadable or read-only model directory.
  */
 class FakeModelStore(override val directory: String = "/data/models") : ModelStore {
     val files = LinkedHashMap<String, Long>()
@@ -59,11 +60,12 @@ class FakeModelStore(override val directory: String = "/data/models") : ModelSto
     val metadata = HashMap<String, ModelMetadata>()
     val digests = HashMap<String, String>()
     val downloadsStarted = mutableListOf<String>()
+    val failures = HashMap<String, Throwable>()
     private val scripts = HashMap<String, Channel<Any>>()
 
     fun script(fileName: String): Channel<Any> = scripts.getOrPut(fileName) { Channel(Channel.UNLIMITED) }
 
-    override fun files(): List<StoredFile> = files.map { (name, size) -> StoredFile(name, pathFor(name), size) }
+    override fun files(): List<StoredFile> = failures["files"]?.let { throw it } ?: files.map { (name, size) -> StoredFile(name, pathFor(name), size) }
 
     override fun partialBytes(fileName: String): Long = partials[fileName] ?: 0L
 
@@ -97,11 +99,11 @@ class FakeModelStore(override val directory: String = "/data/models") : ModelSto
     override fun inspect(path: String): ModelMetadata =
         metadata[path] ?: throw com.donfuldauer.kggml.models.ModelFormatException("unknown model format (magic 0x0)")
 
-    override fun sha256(fileName: String): String = digests[fileName] ?: error("no file $fileName")
+    override fun sha256(fileName: String): String = failures["sha256"]?.let { throw it } ?: digests[fileName] ?: error("no file $fileName")
 
-    override fun delete(fileName: String): Boolean = files.remove(fileName) != null
+    override fun delete(fileName: String): Boolean = failures["delete"]?.let { throw it } ?: (files.remove(fileName) != null)
 
-    override fun clearPartialDownloads(): List<String> = partials.keys.map { "$it.part" }.also { partials.clear() }
+    override fun clearPartialDownloads(): List<String> = failures["clearPartialDownloads"]?.let { throw it } ?: partials.keys.map { "$it.part" }.also { partials.clear() }
 }
 
 /** A [ResidentModels] driven by a manual observer (the test "OS"). */

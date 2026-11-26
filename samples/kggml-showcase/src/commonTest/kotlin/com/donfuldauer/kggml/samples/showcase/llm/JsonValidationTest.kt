@@ -1,8 +1,10 @@
 package com.donfuldauer.kggml.samples.showcase.llm
 
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -62,6 +64,78 @@ class JsonValidationTest {
         // Without a (parseable) schema, any well-formed JSON is valid.
         assertIs<JsonValidation.Valid>(validateJson("[1]", null))
         assertIs<JsonValidation.Valid>(validateJson("[1]", "{oops"))
+    }
+
+    @Test
+    fun decodesEveryStringEscape() {
+        assertEquals(listOf("q\" s\\ /\b\u000C\n\r\tAé"), MiniJson.parse("""["q\" s\\ \/\b\f\n\r\tAé"]"""))
+    }
+
+    @Test
+    fun invalidUnicodeEscapeIsReportedWithItsPosition() {
+        val e = assertFailsWith<MiniJson.ParseException> { MiniJson.parse("\"\\uZZZZ\"") }
+        assertEquals("invalid \\u escape at offset 3", e.message)
+        assertFalse(e.atEnd)
+        assertIs<JsonValidation.Invalid>(validateJson("""{"a": "\uZZZZ"}""", null))
+    }
+
+    /**
+     * BUG (MiniJson string parsing): a `\u` escape cut off by the end of the streamed text fails with `atEnd = false`
+     * (the position is the escape start, not the end), so live validation flashes "Invalid JSON" while the model is
+     * still streaming, contrary to [validateJson]'s contract that a parse error at the very end is `Incomplete`.
+     * A cut-off `\` escape is already reported as incomplete. Remove `@Ignore` once truncated `\u` escapes are.
+     */
+    @Ignore
+    @Test
+    fun unicodeEscapeCutOffByTheEndOfTheStreamIsIncomplete() {
+        assertIs<JsonValidation.Incomplete>(validateJson("{\"a\": \"\\", null), "cut-off escape")
+        assertIs<JsonValidation.Incomplete>(validateJson("{\"a\": \"\\u00", null), "cut-off \\u escape")
+    }
+
+    @Test
+    fun parsesNumberForms() {
+        assertEquals(listOf(0L, -7L, 100000.0, 0.2, -0.5), MiniJson.parse("[0, -7, 1e+5, 2E-1, -0.5]"))
+        // Integers beyond Long fall back to Double instead of failing.
+        assertEquals(12345678901234567890.0, MiniJson.parse("12345678901234567890"))
+    }
+
+    @Test
+    fun malformedNumbersAreInvalidMidTextAndIncompleteAtTheEnd() {
+        assertEquals("expected a digit at offset 1", assertFailsWith<MiniJson.ParseException> { MiniJson.parse("-x") }.message)
+        assertEquals("expected an exponent digit at offset 3", assertFailsWith<MiniJson.ParseException> { MiniJson.parse("1e+]") }.message)
+        assertIs<JsonValidation.Invalid>(validateJson("[-x]", null))
+        assertIs<JsonValidation.Invalid>(validateJson("[1.5e]", null))
+        // The model may still be streaming the number or the property.
+        listOf("[-", "[1.5e", "[1.5e-", """{"a"""").forEach { text ->
+            assertIs<JsonValidation.Incomplete>(validateJson(text, null), text)
+        }
+    }
+
+    @Test
+    fun arraysIntegersEnumsOfNumbersAndUnknownTypes() {
+        val schema = """
+            {"type": "object", "properties": {
+              "list": {"type": "array"},
+              "count": {"type": "integer"},
+              "level": {"enum": [1, 2]},
+              "id": {"type": "uuid"}
+            }}
+        """.trimIndent()
+        // An array without "items" accepts any elements; 2.0 is an integer; 1.0 equals the enum's 1; unknown types
+        // are not checked.
+        assertIs<JsonValidation.Valid>(validateJson("""{"list": [1, "a", null], "count": 2.0, "level": 1.0, "id": 5}""", schema))
+        val violation = assertIs<JsonValidation.SchemaViolation>(validateJson("""{"list": {}, "count": 2.5, "level": 3}""", schema))
+        assertEquals(listOf("$.list must be an array", "$.count must be an integer", "$.level is not one of 1, 2"), violation.problems)
+        assertEquals("Schema violations: $.list must be an array; $.count must be an integer; $.level is not one of 1, 2", violation.message)
+    }
+
+    @Test
+    fun malformedSchemaKeywordsAreIgnored() {
+        // "required" that is not a list, "properties" that is not an object and a property schema that is not an
+        // object constrain nothing; a blank schema validates syntax only.
+        assertIs<JsonValidation.Valid>(validateJson("""{"a": 1}""", """{"type": "object", "required": "a", "properties": []}"""))
+        assertIs<JsonValidation.Valid>(validateJson("""{"a": 1}""", """{"type": "object", "properties": {"a": "string"}}"""))
+        assertIs<JsonValidation.Valid>(validateJson("""{"a": 1}""", "   "))
     }
 
     @Test

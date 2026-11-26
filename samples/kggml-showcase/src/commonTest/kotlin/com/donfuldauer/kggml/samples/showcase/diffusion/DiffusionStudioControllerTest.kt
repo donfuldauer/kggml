@@ -5,6 +5,7 @@ import com.donfuldauer.kggml.core.ManualMemoryPressureObserver
 import com.donfuldauer.kggml.core.MemoryPressureLevel
 import com.donfuldauer.kggml.core.ModelLoadException
 import com.donfuldauer.kggml.core.OutOfMemoryException
+import com.donfuldauer.kggml.diffusion.DiffusionPhase
 import com.donfuldauer.kggml.samples.showcase.models.ResidentModels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -234,6 +235,107 @@ class DiffusionStudioControllerTest {
         h.controller.export()
         advanceUntilIdle()
         assertContains(h.state.error!!, "Export failed: IllegalStateException: read-only")
+    }
+
+    @Test
+    fun progressLabelsAndFractions() {
+        assertEquals("Decoding VAE tile 2 / 4", GenerationProgress(DiffusionPhase.VAE_TILES, 2, 4, 0.1f).label)
+        assertEquals("Denoising step 3 / 20", GenerationProgress(DiffusionPhase.DENOISING, 3, 20, 0.1f).label)
+        assertEquals(0f, GenerationProgress(DiffusionPhase.DENOISING, 0, 0, 0f).fraction, "no division by zero steps")
+        assertEquals(0.25f, GenerationProgress(DiffusionPhase.VAE_TILES, 1, 4, 0f).fraction)
+    }
+
+    @Test
+    fun negativeSeedTextIsNotASeed() {
+        assertNull(DiffusionStudioState(seedText = "-1").seed)
+        assertNull(DiffusionStudioState(seedText = "abc").seed)
+        assertEquals(7L, DiffusionStudioState(seedText = " 7 ").seed)
+        assertFalse(DiffusionStudioState(modelPath = "/m.gguf", seedText = "-1").canGenerate)
+    }
+
+    @Test
+    fun exportFileNameIsJoinedToAnyExportDirectory() = runTest {
+        fun exportPathFor(directory: String): String {
+            val controller = DiffusionStudioController(
+                scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()),
+                factory = FakeImageGeneratorFactory(),
+                residents = ResidentModels(1L shl 40, ManualMemoryPressureObserver()),
+                ioDispatcher = StandardTestDispatcher(testScheduler),
+                writeFile = { _, _ -> },
+                exportDirectory = directory,
+                initialModelPath = "/models/sd15.gguf",
+            )
+            controller.setSteps(1)
+            controller.setSeedText("9")
+            controller.generate()
+            advanceUntilIdle()
+            return controller.state.value.exportPath
+        }
+        assertEquals("kggml-diffusion-9.png", exportPathFor(""))
+        assertEquals("/exports/kggml-diffusion-9.png", exportPathFor("/exports/"))
+        assertEquals("C:\\Users\\me\\Pictures\\kggml-diffusion-9.png", exportPathFor("C:\\Users\\me\\Pictures\\"))
+        assertEquals("/sdcard/Pictures/kggml-diffusion-9.png", exportPathFor("/sdcard/Pictures"))
+    }
+
+    @Test
+    fun defaultsHaveNoModel() = runTest {
+        val controller = DiffusionStudioController(
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()),
+            factory = FakeImageGeneratorFactory(),
+            residents = ResidentModels(1L shl 40, ManualMemoryPressureObserver()),
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+            writeFile = { _, _ -> },
+            exportDirectory = "/exports",
+        )
+        assertEquals("", controller.state.value.modelPath)
+        assertFalse(controller.state.value.canGenerate)
+        controller.setRandomSeed(true)
+        controller.setModelPath("/m.gguf")
+        controller.setSteps(1)
+        controller.generate()
+        advanceUntilIdle()
+        val seed = controller.state.value.result!!.seed
+        assertTrue(seed in 0..DiffusionStudioController.MAX_SEED, "a random seed from the default Random is in range")
+    }
+
+    @Test
+    fun cancelWithNothingRunningDoesNothing() = runTest {
+        val h = Harness(this)
+        h.controller.cancel()
+        advanceUntilIdle()
+        assertNull(h.state.status)
+        assertEquals(DiffusionActivity.IDLE, h.state.activity)
+        assertTrue(h.factory.opened.isEmpty())
+    }
+
+    @Test
+    fun cancelWhileTheEngineIsOpeningClosesTheOpenedEngine() = runTest {
+        lateinit var h: Harness
+        h = Harness(this, FakeImageGeneratorFactory { h.controller.cancel() })
+        h.controller.generate()
+        advanceUntilIdle()
+        assertTrue(h.generator.closed, "the engine loaded under a cancelled job is closed, not leaked")
+        assertTrue(h.residents.state.value.entries.isEmpty())
+        // No step ran yet, so the status names no step.
+        assertEquals("Cancelled", h.state.status)
+        assertEquals(DiffusionActivity.IDLE, h.state.activity)
+        assertNull(h.state.loadedBackend)
+    }
+
+    @Test
+    fun exportNeedsAnImageAndAPath() = runTest {
+        val h = Harness(this)
+        h.controller.export() // no image yet
+        assertEquals(DiffusionActivity.IDLE, h.state.activity)
+        h.controller.setSteps(1)
+        h.controller.generate()
+        advanceUntilIdle()
+        h.controller.setExportPath("  ")
+        assertFalse(h.state.canExport)
+        h.controller.export()
+        advanceUntilIdle()
+        assertTrue(h.written.isEmpty())
+        assertEquals(DiffusionActivity.IDLE, h.state.activity)
     }
 
     @Test

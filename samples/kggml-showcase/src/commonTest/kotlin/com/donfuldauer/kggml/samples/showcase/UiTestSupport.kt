@@ -12,6 +12,7 @@ import com.donfuldauer.kggml.core.ManualMemoryPressureObserver
 import com.donfuldauer.kggml.samples.showcase.diffusion.FakeImageGeneratorFactory
 import com.donfuldauer.kggml.samples.showcase.llm.FakeChatModelFactory
 import com.donfuldauer.kggml.samples.showcase.llm.FakeImageSource
+import com.donfuldauer.kggml.samples.showcase.models.CatalogModel
 import com.donfuldauer.kggml.samples.showcase.models.FakeModelStore
 import com.donfuldauer.kggml.samples.showcase.models.TEST_CATALOG
 import com.donfuldauer.kggml.samples.showcase.whisper.FakeAudioCapture
@@ -29,6 +30,7 @@ class FakeShowcase(
     val generatorFactory: FakeImageGeneratorFactory = FakeImageGeneratorFactory(),
     llmModelPath: String = "/models/qwen.gguf",
     diffusionModelPath: String = "/models/sd15.gguf",
+    catalog: List<CatalogModel> = TEST_CATALOG,
 ) {
     val written = LinkedHashMap<String, ByteArray>()
     val transcriberFactory = FakeTranscriberFactory()
@@ -40,7 +42,7 @@ class FakeShowcase(
         initialModelPath = "",
         backgroundStressSupported = false,
     )
-    val models = ModelManagerEnvironment(store = store, memoryObserver = observer, residentBudgetBytes = 10_000, catalog = TEST_CATALOG)
+    val models = ModelManagerEnvironment(store = store, memoryObserver = observer, residentBudgetBytes = 10_000, catalog = catalog)
     val llm = LlmChatEnvironment(
         modelFactory = chatFactory,
         imageSource = imageSource,
