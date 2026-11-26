@@ -25,10 +25,18 @@ adb="${sdk}/platform-tools/adb${exe}"
 [[ -x "${adb}" ]] || adb="$(command -v adb || true)"
 [[ -n "${adb}" ]] || { echo "adb not found (install platform-tools)" >&2; exit 2; }
 
-if [[ -z "${ANDROID_NDK_HOME:-}" && -d "${sdk}/ndk" ]]; then
-  ANDROID_NDK_HOME="$(find "${sdk}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-  export ANDROID_NDK_HOME
+is_ndk() { [[ -n "$1" && -f "$1/build/cmake/android.toolchain.cmake" ]]; }
+if ! is_ndk "${ANDROID_NDK_HOME:-}"; then
+  # Unset, or stale (e.g. a shell profile pointing at an uninstalled NDK): use the newest NDK under the SDK.
+  [[ -n "${ANDROID_NDK_HOME:-}" ]] && echo "ANDROID_NDK_HOME=${ANDROID_NDK_HOME} is not an NDK; looking under ${sdk}/ndk" >&2
+  unset ANDROID_NDK_HOME
+  if [[ -d "${sdk}/ndk" ]]; then
+    candidate="$(find "${sdk}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+    if is_ndk "${candidate}"; then export ANDROID_NDK_HOME="${candidate}"; fi
+  fi
+  is_ndk "${ANDROID_NDK_HOME:-}" || { echo "Android NDK not found (install one under ${sdk}/ndk or set ANDROID_NDK_HOME)" >&2; exit 2; }
 fi
+echo "Android NDK: ${ANDROID_NDK_HOME}"
 
 booted_pid=""
 cleanup() {
