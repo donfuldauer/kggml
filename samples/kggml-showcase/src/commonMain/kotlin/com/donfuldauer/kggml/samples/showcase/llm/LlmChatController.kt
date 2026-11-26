@@ -1,6 +1,7 @@
 package com.donfuldauer.kggml.samples.showcase.llm
 
 import com.donfuldauer.kggml.core.InvalidInputException
+import com.donfuldauer.kggml.core.ModelLoadException
 import com.donfuldauer.kggml.core.BackendConfig
 import com.donfuldauer.kggml.core.ComputeBackend
 import com.donfuldauer.kggml.core.StopReason
@@ -182,9 +183,13 @@ class LlmChatController(
     fun setImagePath(path: String) = mutableState.update { it.copy(imagePath = path) }
     fun setVisionQuestion(text: String) = mutableState.update { it.copy(visionQuestion = text) }
 
-    /** Selects a model file (from the Model Manager). */
+    /**
+     * Selects a model file (from the Model Manager or the model picker) with its own vision projector, if it has one.
+     * A projector only works with the model it was made for (libmtmd rejects any other), so the previous one is never
+     * carried over: without [projectorPath] the projector is cleared.
+     */
     fun useModel(path: String, projectorPath: String? = null) = mutableState.update {
-        it.copy(modelPath = path, projectorPath = projectorPath ?: it.projectorPath)
+        it.copy(modelPath = path, projectorPath = projectorPath.orEmpty())
     }
 
     fun useProjector(path: String) = mutableState.update { it.copy(projectorPath = path) }
@@ -433,7 +438,7 @@ class LlmChatController(
                 mutableState.update { it.copy(status = "Cancelled") }
                 throw e
             } catch (t: Throwable) {
-                mutableState.update { it.copy(error = t.describe()) }
+                mutableState.update { it.copy(error = t.describe() + projectorHint(t, it.projectorPath)) }
             } finally {
                 mutableState.update { it.copy(activity = ChatActivity.IDLE) }
             }
@@ -518,3 +523,16 @@ private fun StopReason?.label(): String = when (this) {
     StopReason.CONTEXT_FULL -> "context full"
     null -> "unknown"
 }
+
+/**
+ * What to do about a vision projector that did not load: libmtmd refuses a projector made for another model (its
+ * embedding width differs from the text model's), and the native message cannot tell that apart from a broken file.
+ */
+internal fun projectorHint(failure: Throwable, projectorPath: String): String =
+    if (failure is ModelLoadException && projectorPath.isNotBlank() && failure.message.orEmpty().contains("projector")) {
+        "\n\nA vision projector (mmproj) only works with the model it was made for, e.g. SmolVLM's projector with the " +
+            "SmolVLM model. Pick the matching model (the picker fills in its projector), or clear the projector for " +
+            "text-only chat. If they do match, the projector file may be incomplete: delete it and download it again."
+    } else {
+        ""
+    }

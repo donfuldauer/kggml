@@ -139,6 +139,26 @@ class LlmChatControllerTest {
     }
 
     @Test
+    fun projectorLoadFailureExplainsThatAProjectorBelongsToItsModel() = runTest {
+        val failure = ModelLoadException(
+            "kggml_llama_mtmd_init failed: KGGML_STATUS_MODEL_LOAD_FAILED (1): libmtmd could not load projector " +
+                "'/models/mmproj-SmolVLM.gguf' (invalid file or not compatible with the text model)",
+        )
+        val h = Harness(this, FakeChatModelFactory(failure = failure))
+        h.controller.useModel("/models/qwen.gguf")
+        h.controller.useProjector("/models/mmproj-SmolVLM.gguf")
+        h.say("hi")
+        advanceUntilIdle()
+        assertContains(h.state.error!!, "libmtmd could not load projector")
+        assertContains(h.state.error!!, "only works with the model it was made for")
+
+        // Not a projector problem (or no projector set): no hint.
+        assertEquals("", projectorHint(ModelLoadException("not a GGUF file"), "/models/mmproj.gguf"))
+        assertEquals("", projectorHint(failure, ""))
+        assertEquals("", projectorHint(IllegalStateException("projector"), "/models/mmproj.gguf"))
+    }
+
+    @Test
     fun threadAndGpuLayerChangesReloadTheEngineWithTheNewConfig() = runTest {
         val h = Harness(this)
         h.controller.loadModel()
@@ -465,14 +485,14 @@ class LlmChatControllerTest {
     }
 
     @Test
-    fun useModelKeepsTheProjectorUnlessANewOneIsGiven() = runTest {
+    fun useModelReplacesTheProjectorWithTheModelsOwnOrClearsIt() = runTest {
         val h = Harness(this, modelPath = "")
         h.controller.useModel("/models/vlm.gguf", "/models/mmproj.gguf")
         assertEquals("/models/vlm.gguf", h.state.modelPath)
         assertEquals("/models/mmproj.gguf", h.state.projectorPath)
         h.controller.useModel("/models/other.gguf")
         assertEquals("/models/other.gguf", h.state.modelPath)
-        assertEquals("/models/mmproj.gguf", h.state.projectorPath, "no projector given: the selected one is kept")
+        assertEquals("", h.state.projectorPath, "a projector belongs to one model: never carried over to another")
         h.controller.useProjector("/models/mmproj2.gguf")
         assertEquals("/models/other.gguf", h.state.modelPath)
         assertEquals("/models/mmproj2.gguf", h.state.projectorPath)

@@ -36,6 +36,11 @@ callback.
   **Inspect a model file** does the same for any path.
 - **Use in Chat / Whisper / Diffusion** hands the installed path to the matching screen (a vision LLM also gets its
   installed projector).
+- **Model picker on every feature screen:** the Whisper, Chat (model and vision projector) and Diffusion screens list
+  the downloaded models that fit them (installed catalog models, then other files in the model folder matched by
+  extension: `.bin` for Whisper, `.gguf` for Chat with `mmproj…` files offered as projectors, `.safetensors` / `.ckpt`
+  for Diffusion) next to a **Custom path** field. Picking a vision LLM also fills in its projector when that is
+  downloaded; the list follows downloads and deletions in the Model Manager.
 - **Loaded engines & low-memory eviction:** the Chat and Diffusion engines live in a `ResidentModelCache` (budget:
   half the physical RAM) subscribed to the platform's memory-pressure observer — `AndroidMemoryPressureObserver`
   (`onTrimMemory`), `IosMemoryPressureObserver` (memory warnings), or a manual observer on desktop. `MODERATE` trims
@@ -48,7 +53,8 @@ callback.
 
 ## LLM Chat, Structured Output & Vision
 
-- **Model controls:** GGUF model path, optional vision projector (`mmproj`), prompt template (ChatML, Gemma,
+- **Model controls:** GGUF model and optional vision projector (`mmproj`), each picked from the downloaded models or
+  given as a custom path, prompt template (ChatML, Gemma,
   User / Assistant for SmolVLM), system prompt, compute backend, **CPU threads** (Auto or 1…), **GPU layers** (All,
   or a count; always 0 on CPU) and max tokens. **Load model / Reload with these settings** applies them right away;
   otherwise a changed setting reloads the engine on next use (the old one is closed). The card shows the backend in
@@ -71,7 +77,7 @@ callback.
 
 ## Diffusion Image Studio
 
-- Model path (`.gguf`, `.safetensors`, `.ckpt`), compute backend, prompt and negative prompt, **sampling steps**
+- Model (a downloaded one, or a custom path to a `.gguf` / `.safetensors` / `.ckpt`), compute backend, prompt and negative prompt, **sampling steps**
   slider (1–50), **CFG scale** slider (1–20 in 0.5 steps), size (256 / 384 / 512), **seed** field with **Randomize**
   and a "new random seed for every image" switch (the chosen seed is always shown, so an image can be reproduced).
 - **Generate** streams `DiffusionEvent.Progress` into a progress bar (`Denoising step n / N`, seconds per step) and
@@ -116,7 +122,8 @@ callback.
 # (default ~/.kggml/models, or set KGGML_MODELS_DIR)
 ./gradlew :samples:kggml-showcase:run -Pkggml.whisper.model=/path/to/ggml-tiny.en.bin -Pkggml.models.dir=/path/to/models
 
-# Android (grant the microphone permission when asked; push a model with adb and type its path)
+# Android (grant the microphone permission when asked; download models in the Models tab, or push one with adb and
+# type its path)
 ./gradlew :samples:kggml-showcase:installDebug -Pkggml.bundleNative=true
 ```
 
@@ -152,6 +159,9 @@ libraries do not load (Robolectric, desktop without host builds) and fails with 
     installed / partial files, progress → verify → install → inspect, pause and resume from the `.part` file,
     SHA-256 mismatch, network failure, re-verification, delete / clear partials, "use", path inspection, manual and
     simulated-OS eviction (leased engines survive).
+  - `ModelChoicesTest`: which downloaded files each screen's model picker offers (kinds, other files by extension,
+    projector pairing). `ModelPickerUiTest`: the pickers on the Whisper, Chat and Diffusion screens (choose, custom
+    path, vision LLM + projector reaching the engine, nothing downloaded, live update after a download / delete).
   - `LlmChatControllerTest` (`LlmFakes.kt`): multi-turn streaming and prefix-preserving prompts, cancel mid-stream,
     in-band and load errors, thread / GPU-layer / backend reloads, snapshot save / restore, clear, eviction and
     reload, JSON-schema extraction (grammar, greedy, live validation, schema violations, invalid schema), embedding

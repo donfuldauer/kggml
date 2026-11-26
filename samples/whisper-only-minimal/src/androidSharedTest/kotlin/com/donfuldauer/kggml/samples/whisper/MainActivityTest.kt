@@ -57,7 +57,12 @@ class MainActivityTest {
 
     private fun launch(configure: Intent.() -> Unit = {}): ActivityScenario<MainActivity> {
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java).apply(configure)
-        return ActivityScenario.launch<MainActivity>(intent).also { scenario = it }
+        return ActivityScenario.launch<MainActivity>(intent).also {
+            scenario = it
+            // The runtime status grows from one line to several when it loads in the background; wait for it so that
+            // reflow cannot move a view between scrollTo() and click().
+            awaitView(withText(startsWith("Kggml whisper-only minimal sample\n")))
+        }
     }
 
     /**
@@ -155,9 +160,9 @@ class MainActivityTest {
         val audio = File(dir, "tone.wav").apply { writeBytes(toneWav(1)) }
         launch()
         awaitView(withText(containsString("ggml-tiny.en.bin")))
-        onView(withText(containsString("ggml-tiny.en.bin"))).perform(replaceText(model.absolutePath))
-        onView(withText(containsString("jfk.wav"))).perform(replaceText(audio.absolutePath))
-        onView(withText(BackendChoice.CPU_ONLY.label())).perform(click())
+        onView(withText(containsString("ggml-tiny.en.bin"))).perform(scrollTo(), replaceText(model.absolutePath))
+        onView(withText(containsString("jfk.wav"))).perform(scrollTo(), replaceText(audio.absolutePath))
+        onView(withText(BackendChoice.CPU_ONLY.label())).perform(scrollTo(), click())
         onView(withText("Transcribe")).perform(scrollTo(), click())
         if (nativeLoads) {
             awaitView(withText(startsWith("Requested CPU_ONLY, ran on CPU_ONLY (use_gpu=false)\nAudio 1000 ms, ")))
