@@ -16,7 +16,6 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertContentEquals
@@ -298,13 +297,10 @@ class LlmChatControllerTest {
     }
 
     /**
-     * BUG (LlmChatController.extract): only `IllegalArgumentException` is caught around `LlamaGrammar.jsonSchema()`,
-     * but the schema-to-GBNF converter throws `InvalidInputException` (a `RuntimeException`). A well-formed schema it
-     * cannot convert (here: the unsupported `pattern` keyword) therefore escapes `extract()` as an exception (crashing
-     * the button's click handler) instead of being shown as "Unsupported schema: …". Remove `@Ignore` once the catch
-     * covers `InferenceException`.
+     * Regression: only `IllegalArgumentException` was caught around `LlamaGrammar.jsonSchema()`, but the schema-to-GBNF
+     * converter throws `InvalidInputException`, so a well-formed schema it cannot convert (here: `pattern`) escaped
+     * `extract()` and crashed the click handler instead of showing "Unsupported schema: …".
      */
-    @Ignore
     @Test
     fun schemaTheGrammarConverterRejectsIsReportedAsUnsupported() = runTest {
         val h = Harness(this)

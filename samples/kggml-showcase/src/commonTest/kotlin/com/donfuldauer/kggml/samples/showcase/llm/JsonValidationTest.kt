@@ -1,6 +1,5 @@
 package com.donfuldauer.kggml.samples.showcase.llm
 
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -79,13 +78,18 @@ class JsonValidationTest {
         assertIs<JsonValidation.Invalid>(validateJson("""{"a": "\uZZZZ"}""", null))
     }
 
+    /** RFC 8259: exactly four hex digits after `\u`; a sign (accepted by `toIntOrNull(16)`) is invalid, not incomplete. */
+    @Test
+    fun signedUnicodeEscapeIsInvalid() {
+        assertIs<JsonValidation.Invalid>(validateJson("{\"a\": \"\\u+041\"}", null))
+        assertIs<JsonValidation.Invalid>(validateJson("{\"a\": \"\\u-041\"}", null))
+        assertEquals(mapOf("a" to "A"), MiniJson.parse("{\"a\": \"\\u0041\"}"))
+    }
+
     /**
-     * BUG (MiniJson string parsing): a `\u` escape cut off by the end of the streamed text fails with `atEnd = false`
-     * (the position is the escape start, not the end), so live validation flashes "Invalid JSON" while the model is
-     * still streaming, contrary to [validateJson]'s contract that a parse error at the very end is `Incomplete`.
-     * A cut-off `\` escape is already reported as incomplete. Remove `@Ignore` once truncated `\u` escapes are.
+     * Regression: a `\u` escape cut off by the end of the streamed text failed with `atEnd = false` (the position was
+     * the escape start), so live validation flashed "Invalid JSON" while the model was still streaming.
      */
-    @Ignore
     @Test
     fun unicodeEscapeCutOffByTheEndOfTheStreamIsIncomplete() {
         assertIs<JsonValidation.Incomplete>(validateJson("{\"a\": \"\\", null), "cut-off escape")

@@ -112,8 +112,14 @@ object MiniJson {
                             'r' -> sb.append('\r')
                             't' -> sb.append('\t')
                             'u' -> {
-                                if (i + 4 > s.length) fail("truncated \\u escape")
-                                val code = s.substring(i, i + 4).toIntOrNull(16) ?: fail("invalid \\u escape")
+                                if (i + 4 > s.length) {
+                                    // Cut off by the end of the (possibly still streaming) text: incomplete, not invalid.
+                                    i = s.length
+                                    fail("truncated \\u escape")
+                                }
+                                val hex = s.substring(i, i + 4)
+                                if (!hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) fail("invalid \\u escape")
+                                val code = hex.toInt(16)
                                 sb.append(code.toChar())
                                 i += 4
                             }

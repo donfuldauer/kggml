@@ -1,5 +1,6 @@
 package com.donfuldauer.kggml.samples.showcase.llm
 
+import com.donfuldauer.kggml.core.InvalidInputException
 import com.donfuldauer.kggml.core.BackendConfig
 import com.donfuldauer.kggml.core.ComputeBackend
 import com.donfuldauer.kggml.core.StopReason
@@ -272,6 +273,10 @@ class LlmChatController(
         val grammar = try {
             LlamaGrammar.jsonSchema(current.schema)
         } catch (e: IllegalArgumentException) {
+            mutableState.update { it.copy(error = "Unsupported schema: ${e.message}") }
+            return
+        } catch (e: InvalidInputException) {
+            // The schema-to-GBNF converter rejects valid JSON it cannot express (e.g. `pattern`) with this type.
             mutableState.update { it.copy(error = "Unsupported schema: ${e.message}") }
             return
         }
