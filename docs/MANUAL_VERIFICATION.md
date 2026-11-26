@@ -95,3 +95,17 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#23] CI re-run on macOS/Windows once Actions minutes reset (billing / spending-limit refusal, every hosted job
   failed in ~2 s with no logs: macOS release dry-run with the iOS klibs, `release.yml` iOS/xcframework path, Windows
   MSVC build + `jvmTest`) — https://github.com/donfuldauer/kggml/pull/57
+- [ ] [#24] Owner, before the visibility flip: no runner registered to the repository (`gh api repos/donfuldauer/kggml/actions/runners
+  --jq .total_count` prints `0`, `gh variable list` shows no runner variable) — procedure in `docs/OSS_LAUNCH.md`
+  ("Owner steps before the visibility flip", step 1).
+- [ ] [#24] Owner: GitHub secret scanning and push protection enabled (Settings → Code security), and no secret
+  scanning alerts after the flip — procedure in `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip",
+  step 2).
+- [ ] [#24] Owner decision: keep or rewrite the personal commit e-mail on 12 early/merge commits
+  (`./scripts/ci/audit-history.sh` lists them without the address) — procedure in `docs/OSS_LAUNCH.md` ("Commit
+  e-mail addresses").
+- [ ] [#24] Owner: `./scripts/ci/audit-history.sh` passes on a fresh full clone right before the visibility flip, then
+  flip to public — procedure in `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip", steps 4–5).
+- [ ] [#24] CI re-run once Actions minutes reset (billing / spending-limit refusal: every hosted job, including
+  repo-hygiene's `secret-scan` full-history audit with the pinned gitleaks download, the Ubuntu job and the labelled
+  macOS/Windows jobs, failed in 1–3 s with no logs) — https://github.com/donfuldauer/kggml/pull/58
