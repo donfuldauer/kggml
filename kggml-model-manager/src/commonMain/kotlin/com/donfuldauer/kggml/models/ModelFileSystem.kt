@@ -1,8 +1,8 @@
 package com.donfuldauer.kggml.models
 
 /**
- * Minimal blocking file-system API used by the model manager. Paths are platform paths (`/` separated on every
- * supported platform). Call it from an I/O dispatcher.
+ * Minimal blocking file-system API used by the model manager. Paths are platform paths: `/` separated on every
+ * supported platform, and `\` separated too on Windows. Call it from an I/O dispatcher.
  *
  * [defaultModelFileSystem] returns the platform implementation (`java.io`/`java.nio` on Android and JVM, POSIX on
  * iOS); tests use an in-memory fake.
@@ -51,14 +51,23 @@ public interface FileSink : AutoCloseable {
 /** The platform [ModelFileSystem]. */
 public expect fun defaultModelFileSystem(): ModelFileSystem
 
+/** `/` everywhere; `\` too, because Windows JVM paths (`java.io.File.getPath()`) use it. */
+private fun isSeparator(c: Char): Boolean = c == '/' || c == '\\'
+
+/**
+ * The parent directory of [path], or `null` when it has none. Handles `/` and `\` separators and keeps a root as a
+ * root: `/a` -> `/`, `C:\a` -> `C:\`.
+ */
 internal fun parentOf(path: String): String? {
-    val i = path.trimEnd('/').lastIndexOf('/')
+    val trimmed = path.trimEnd('/', '\\')
+    val i = trimmed.indexOfLast(::isSeparator)
     return when {
         i < 0 -> null
-        i == 0 -> "/"
-        else -> path.substring(0, i)
+        i == 0 -> trimmed.substring(0, 1)
+        i == 2 && trimmed[1] == ':' -> trimmed.substring(0, 3)
+        else -> trimmed.substring(0, i)
     }
 }
 
 internal fun joinPath(directory: String, name: String): String =
-    if (directory.endsWith("/")) directory + name else "$directory/$name"
+    if (directory.isNotEmpty() && isSeparator(directory.last())) directory + name else "$directory/$name"
