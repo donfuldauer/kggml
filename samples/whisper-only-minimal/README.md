@@ -105,7 +105,15 @@ issue / PR.
 ## Tests
 
 ```bash
-./gradlew :samples:whisper-only-minimal:check                    # commonTest on Android (debug + release) + dependency audit
+./gradlew :samples:whisper-only-minimal:check                    # commonTest + MainActivityTest (Robolectric) + dependency audit
 ./gradlew :samples:whisper-only-minimal:iosSimulatorArm64Test    # macOS, needs both xcframeworks
+./scripts/ci/run-android-instrumented.sh                         # on a device / emulator, real native libraries
 ./scripts/tests/test-audit-binary-symbols.sh                     # audit script incl. negative (forbidden symbol) cases
 ```
+
+- `RealWhisperSampleTest` (commonTest) runs `WhisperSampleSession` on the real engine with the synthetic
+  `TinyWhisperModel`: CPU-only runs, engine reuse vs. replacement, a 44.1 kHz stereo WAV, typed load errors. It runs on
+  the iOS simulator and Android devices and skips in local unit tests.
+- `MainActivityTest` (`src/androidSharedTest`, Espresso) runs under Robolectric (native runtime unavailable: the
+  status and transcription failures are shown, never a crash) and on a device (real transcription from intent extras
+  and from edited paths). Test dependencies never reach the audited app APK.

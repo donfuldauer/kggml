@@ -1,5 +1,7 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetTree
 
 // Kggml showcase: Compose Multiplatform app (Android, iOS, JVM Desktop) consuming the SDK exclusively through
 // the `kggml-bom` platform (no Kggml module versions are repeated here). Samples are never published.
@@ -24,9 +26,30 @@ val iosDiffusionXcframeworkDir: File =
 val iosEngineXcframeworkDirs: List<File> =
     listOf(iosWhisperXcframeworkDir, iosLlamaXcframeworkDir, iosDiffusionXcframeworkDir, iosXcframeworkDir)
 
+// -Pkggml.requireNative=true: native-backed tests (desktop, iOS, Android device) FAIL instead of skip when the engines'
+// native libraries are missing.
+val requireNative = providers.gradleProperty("kggml.requireNative").map(String::toBoolean).getOrElse(false)
+
+// The engines' synthetic model fixtures (internal test sources of :kggml-whisper / :kggml-llama, MIT, see NOTICE) are
+// compiled into this module's tests verbatim, like :integration-tests does, so the real-engine end-to-end UI tests load
+// the exact models the engines' own native tests use.
+val engineFixtureSources: List<File> = listOf(
+    "kggml-whisper/src/commonTest/kotlin/com/donfuldauer/kggml/whisper/TinyWhisperModel.kt",
+    "kggml-llama/src/commonTest/kotlin/com/donfuldauer/kggml/llama/TinyLlamaModel.kt",
+).map { rootProject.layout.projectDirectory.file(it).asFile }
+val syncEngineFixtures by tasks.registering(Sync::class) {
+    description = "Copies the engines' synthetic model fixtures (TinyWhisperModel, TinyLlamaModel) into this module's tests."
+    from(engineFixtureSources)
+    into(layout.buildDirectory.dir("generated/engine-fixtures/kotlin"))
+}
+
 kotlin {
     androidTarget {
         compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
+        // commonTest (fake-driven controller + Compose UI tests, real-engine end-to-end tests) runs everywhere:
+        // desktop, iOS simulator, Android local unit tests (Robolectric) AND on an Android device / emulator.
+        @OptIn(ExperimentalKotlinGradlePluginApi::class)
+        instrumentedTestVariant.sourceSetTree.set(KotlinSourceSetTree.test)
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
@@ -45,6 +68,8 @@ kotlin {
         }
     }
 
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
+
     sourceSets {
         commonMain.dependencies {
             // Kggml SDK: versions come from the BOM only.
@@ -61,12 +86,39 @@ kotlin {
             implementation(compose.ui)
             implementation(libs.kotlinx.coroutines.core)
         }
+        commonTest {
+            kotlin.srcDir(syncEngineFixtures)
+        }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
+        }
+        // Robolectric runs the Android variant of commonTest (and the Android-only tests) on the host JVM.
+        val androidUnitTest by getting {
+            kotlin.srcDir("src/androidSharedTest/kotlin")
+            dependencies {
+                implementation(libs.robolectric)
+                implementation(libs.junit4)
+                implementation(libs.androidx.test.core)
+                implementation(libs.androidx.test.ext.junit)
+                implementation(libs.androidx.compose.ui.test.junit4)
+            }
+        }
+        val androidInstrumentedTest by getting {
+            kotlin.srcDir("src/androidSharedTest/kotlin")
+            dependencies {
+                implementation(libs.junit4)
+                implementation(libs.androidx.test.core)
+                implementation(libs.androidx.test.runner)
+                implementation(libs.androidx.test.rules)
+                implementation(libs.androidx.test.ext.junit)
+                implementation(libs.androidx.compose.ui.test.junit4)
+            }
         }
         val desktopMain by getting {
             dependencies {
@@ -93,6 +145,12 @@ android {
         targetSdk = libs.versions.android.compileSdk.get().toInt()
         versionCode = 1
         versionName = sampleVersion
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Read by the instrumented tests (InstrumentationRegistry arguments).
+        testInstrumentationRunnerArguments["kggml.requireNative"] = requireNative.toString()
+    }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(jvmTargetVersion)
@@ -101,6 +159,20 @@ android {
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     }
+}
+
+// Local unit tests (Robolectric) run on the debug variant only: the release variant has the same code but not the
+// test activity from ui-test-manifest, which must stay out of release APKs.
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        (variant as com.android.build.api.variant.HasUnitTestBuilder).enableUnitTest = false
+    }
+}
+
+dependencies {
+    // Declares the empty ComponentActivity that runComposeUiTest / createComposeRule host content in (debug only,
+    // never in release APKs).
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 // Host runtime / engines built by build-host.sh: shared libraries land in build/native(-whisper|-llama|-diffusion)/lib,
@@ -132,17 +204,30 @@ compose.desktop {
     }
 }
 
-// Native-backed desktop test (KggmlRuntimeInspectorDesktopTest): uses the host runtime built by
-// kggml-runtime/native/scripts/build-host.sh when present; otherwise asserts the graceful "runtime unavailable"
-// state. -Pkggml.requireNative=true makes the native path mandatory.
+// Native-backed desktop tests (KggmlRuntimeInspectorDesktopTest and the real-engine end-to-end UI tests in commonTest)
+// use the host runtime / engines built by kggml-{runtime,whisper,llama,diffusion}/native/scripts/build-host.sh when
+// present; otherwise they assert the graceful "runtime unavailable" state or skip. -Pkggml.requireNative=true makes the
+// native path mandatory.
 tasks.named<Test>("desktopTest") {
-    val requireNative = providers.gradleProperty("kggml.requireNative").map(String::toBoolean).getOrElse(false)
-    val libDir = hostNativeLibDir
-    val jniLibraryName = System.mapLibraryName("kggml_runtime_jni")
+    val hostLibs = mapOf(
+        "kggml.native.path" to (hostNativeLibDir to "kggml_runtime_jni"),
+        "kggml.whisper.native.path" to (hostWhisperLibDir to "kggml_whisper_jni"),
+        "kggml.llama.native.path" to (hostLlamaLibDir to "kggml_llama_jni"),
+        "kggml.diffusion.native.path" to (hostDiffusionLibDir to "kggml_diffusion_jni"),
+    )
     systemProperty("kggml.test.requireNative", requireNative.toString())
     inputs.property("kggml.requireNative", requireNative)
+    // The real-engine tests' results depend on the native libraries they load, so those are inputs: a cached result
+    // must never be reused for different (or missing) native builds.
+    hostLibs.forEach { (property, lib) ->
+        inputs.files(fileTree(lib.first) { include("*.so*", "*.dylib", "*.dll") })
+            .withPropertyName("nativeLibs.$property").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
     doFirst {
-        if (libDir.resolve(jniLibraryName).isFile) systemProperty("kggml.native.path", libDir.absolutePath)
+        hostLibs.forEach { (property, lib) ->
+            val (dir, jni) = lib
+            if (dir.resolve(System.mapLibraryName(jni)).isFile) systemProperty(property, dir.absolutePath)
+        }
     }
 }
 
@@ -150,6 +235,10 @@ tasks.named<Test>("desktopTest") {
 // xcframeworks; skip them (like the engine modules) until all of them are built.
 tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
     onlyIf("GgmlRuntime, KggmlWhisper, KggmlLlama and KggmlDiffusion xcframeworks are built (native/scripts/build-ios-xcframework.sh)") {
-        iosEngineXcframeworkDirs.all { it.isDirectory }
+        val present = iosEngineXcframeworkDirs.all { it.isDirectory }
+        if (!present && requireNative) {
+            throw GradleException("-Pkggml.requireNative=true but an engine xcframework is missing: $iosEngineXcframeworkDirs")
+        }
+        present
     }
 }

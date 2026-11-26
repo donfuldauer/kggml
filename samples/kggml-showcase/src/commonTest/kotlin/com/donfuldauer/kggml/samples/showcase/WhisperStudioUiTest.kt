@@ -40,7 +40,7 @@ import kotlin.test.assertEquals
  * committed rendering, file transcription, and error states.
  */
 @OptIn(ExperimentalTestApi::class)
-class WhisperStudioUiTest {
+class WhisperStudioUiTest : UiTestBase() {
     private val mic = FakeAudioCapture()
 
     private fun ComposeUiTest.openStudio(

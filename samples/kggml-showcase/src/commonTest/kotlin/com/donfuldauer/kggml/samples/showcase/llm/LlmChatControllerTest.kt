@@ -6,6 +6,7 @@ import com.donfuldauer.kggml.core.InvalidInputException
 import com.donfuldauer.kggml.core.ManualMemoryPressureObserver
 import com.donfuldauer.kggml.core.MemoryPressureLevel
 import com.donfuldauer.kggml.core.ModelLoadException
+import com.donfuldauer.kggml.core.StopReason
 import com.donfuldauer.kggml.samples.showcase.models.ResidentModels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -19,6 +20,7 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
@@ -294,6 +296,23 @@ class LlmChatControllerTest {
         assertTrue(h.factory.opened.isEmpty())
     }
 
+    /**
+     * Regression: only `IllegalArgumentException` was caught around `LlamaGrammar.jsonSchema()`, but the schema-to-GBNF
+     * converter throws `InvalidInputException`, so a well-formed schema it cannot convert (here: `pattern`) escaped
+     * `extract()` and crashed the click handler instead of showing "Unsupported schema: …".
+     */
+    @Test
+    fun schemaTheGrammarConverterRejectsIsReportedAsUnsupported() = runTest {
+        val h = Harness(this)
+        h.controller.setSchema("""{"type": "object", "properties": {"code": {"type": "string", "pattern": "^[A-Z]+"}}}""")
+        assertNull(h.state.schemaError, "the schema is well-formed JSON, so only the grammar converter can reject it")
+        h.controller.extract()
+        advanceUntilIdle()
+        assertContains(h.state.error!!, "Unsupported schema")
+        assertTrue(h.factory.opened.isEmpty())
+        assertEquals(ChatActivity.IDLE, h.state.activity)
+    }
+
     @Test
     fun embeddingsSimilarityIsComputed() = runTest {
         val h = Harness(this)
@@ -379,5 +398,215 @@ class LlmChatControllerTest {
     fun cosineSimilarityHandlesZeroVectors() {
         assertEquals(0f, cosineSimilarity(FloatArray(3), floatArrayOf(1f, 0f, 0f)))
         assertEquals(-1f, cosineSimilarity(floatArrayOf(1f, 0f), floatArrayOf(-2f, 0f)), 1e-6f)
+    }
+
+    @Test
+    fun cosineSimilarityRejectsEmbeddingsOfDifferentSizes() {
+        val e = assertFailsWith<IllegalArgumentException> { cosineSimilarity(FloatArray(2), FloatArray(3)) }
+        assertEquals("embedding sizes differ: 2 != 3", e.message)
+    }
+
+    @Test
+    fun defaultsHaveNoModelNoPickerAndNoFileAccess() = runTest {
+        val controller = LlmChatController(
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()),
+            factory = FakeChatModelFactory(),
+            residents = ResidentModels(1L shl 40, ManualMemoryPressureObserver()),
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        assertEquals("", controller.state.value.modelPath)
+        assertFalse(controller.state.value.hasModel)
+        // NoImageSource: no picker, no camera, and asking anyway attaches nothing.
+        assertFalse(controller.canPickFromGallery)
+        assertFalse(controller.canCapture)
+        controller.pickFromGallery()
+        controller.captureFromCamera()
+        advanceUntilIdle()
+        assertNull(controller.state.value.image)
+        assertNull(controller.state.value.error)
+        // Without a readFile function, loading an image by path fails visibly instead of crashing.
+        controller.setImagePath("/photos/cat.png")
+        controller.loadImageFromPath()
+        advanceUntilIdle()
+        assertEquals("Cannot read image: IllegalStateException: file access unavailable", controller.state.value.error)
+        assertNull(controller.state.value.image)
+    }
+
+    @Test
+    fun templateAndSystemPromptShapeTheNextPrompt() = runTest {
+        val h = Harness(this, FakeChatModelFactory { it.reply = { "Short answer." } })
+        h.controller.setTemplate(PromptTemplate.GEMMA)
+        h.controller.setSystemPrompt("Be brief.")
+        h.say("hi")
+        advanceUntilIdle()
+        val call = h.model.calls.single()
+        // Gemma has no system role: the system prompt prefixes the first user turn.
+        assertEquals("<start_of_turn>user\nBe brief.\n\nhi<end_of_turn>\n<start_of_turn>model\n", call.prompt)
+        assertEquals(listOf("<end_of_turn>"), call.options.stopSequences)
+        assertEquals(ChatMessage(ChatRole.ASSISTANT, "Short answer."), h.state.messages.last())
+    }
+
+    @Test
+    fun editedExtractionInputAndVisionQuestionAreSentToTheModel() = runTest {
+        val h = Harness(this)
+        h.controller.setExtractionInput("Bob is 40 and lives in Oslo.")
+        h.controller.extract()
+        advanceUntilIdle()
+        val extraction = h.model.calls.single().prompt
+        assertContains(extraction, "Text:\nBob is 40 and lives in Oslo.")
+        assertFalse(extraction.contains("Maria"), "the default extraction input was replaced")
+
+        h.controller.useProjector("/models/mmproj.gguf")
+        h.controller.attachImage(FakeImageSource.PNG_MAGIC + ByteArray(2), "test")
+        h.controller.setVisionQuestion("What colour is it?")
+        h.controller.analyzeImage()
+        advanceUntilIdle()
+        assertContains(h.model.calls.last().prompt, "<__media__>\nWhat colour is it?<|im_end|>")
+    }
+
+    @Test
+    fun useModelKeepsTheProjectorUnlessANewOneIsGiven() = runTest {
+        val h = Harness(this, modelPath = "")
+        h.controller.useModel("/models/vlm.gguf", "/models/mmproj.gguf")
+        assertEquals("/models/vlm.gguf", h.state.modelPath)
+        assertEquals("/models/mmproj.gguf", h.state.projectorPath)
+        h.controller.useModel("/models/other.gguf")
+        assertEquals("/models/other.gguf", h.state.modelPath)
+        assertEquals("/models/mmproj.gguf", h.state.projectorPath, "no projector given: the selected one is kept")
+        h.controller.useProjector("/models/mmproj2.gguf")
+        assertEquals("/models/other.gguf", h.state.modelPath)
+        assertEquals("/models/mmproj2.gguf", h.state.projectorPath)
+    }
+
+    @Test
+    fun cancellingBeforeTheFirstTokenAddsNoEmptyAssistantMessage() = runTest {
+        val gate = Channel<Unit>(Channel.UNLIMITED)
+        val h = Harness(this, FakeChatModelFactory { it.tokenGate = gate })
+        h.say("hi")
+        advanceUntilIdle()
+        assertEquals("", h.state.streaming)
+        h.controller.cancel()
+        advanceUntilIdle()
+        assertEquals(listOf(ChatMessage(ChatRole.USER, "hi")), h.state.messages)
+        assertNull(h.state.streaming)
+        assertEquals("Cancelled", h.state.status)
+    }
+
+    @Test
+    fun cancelWithNothingRunningAndUnknownSnapshotsAreIgnored() = runTest {
+        val h = Harness(this)
+        h.controller.cancel()
+        h.controller.restoreSnapshot(42)
+        advanceUntilIdle()
+        assertEquals(ChatActivity.IDLE, h.state.activity)
+        assertNull(h.state.status)
+        assertTrue(h.factory.opened.isEmpty(), "restoring an unknown snapshot loads nothing")
+    }
+
+    @Test
+    fun snapshotsCannotBeRestoredWhileBusyAndDeleteOnlyRemovesTheGivenOne() = runTest {
+        val gate = Channel<Unit>(Channel.UNLIMITED)
+        val h = Harness(this, FakeChatModelFactory { it.tokenGate = gate })
+        repeat(2) { gate.send(Unit) } // "Echo: first" is two tokens
+        h.say("first")
+        advanceUntilIdle()
+        h.controller.saveSnapshot()
+        advanceUntilIdle()
+        h.controller.saveSnapshot()
+        advanceUntilIdle()
+        assertEquals(listOf(1, 2), h.state.snapshots.map { it.id })
+
+        h.say("second") // blocks on the token gate
+        advanceUntilIdle()
+        assertTrue(h.state.isBusy)
+        h.controller.restoreSnapshot(1)
+        advanceUntilIdle()
+        assertTrue(h.model.restored.isEmpty(), "a snapshot is never restored under a running generation")
+        repeat(2) { gate.send(Unit) }
+        advanceUntilIdle()
+        assertEquals(4, h.state.messages.size)
+
+        h.controller.deleteSnapshot(1)
+        assertEquals(listOf(2), h.state.snapshots.map { it.id })
+    }
+
+    @Test
+    fun stopReasonsAreLabelledInTheStatus() = runTest {
+        val expected = mapOf(
+            StopReason.MAX_TOKENS to "max tokens",
+            StopReason.STOP_SEQUENCE to "stop sequence",
+            StopReason.CONTEXT_FULL to "context full",
+            null to "unknown",
+        )
+        for ((reason, label) in expected) {
+            val h = Harness(this, FakeChatModelFactory { it.stopReason = reason; it.reply = { "a b" } })
+            h.say("hi")
+            advanceUntilIdle()
+            assertEquals("2 token(s), stopped: $label", h.state.status, "stop reason $reason")
+        }
+    }
+
+    @Test
+    fun analyzeImageNeedsAnImageAndAQuestion() = runTest {
+        val h = Harness(this)
+        h.controller.analyzeImage()
+        advanceUntilIdle()
+        assertTrue(h.factory.opened.isEmpty(), "no image attached")
+        h.controller.attachImage(FakeImageSource.PNG_MAGIC, "test")
+        h.controller.setVisionQuestion("  ")
+        assertFalse(h.state.canAnalyzeImage)
+        h.controller.analyzeImage()
+        advanceUntilIdle()
+        assertTrue(h.factory.opened.isEmpty(), "blank question")
+        assertEquals(ChatActivity.IDLE, h.state.activity)
+    }
+
+    @Test
+    fun emptyImagesAreRejected() = runTest {
+        val h = Harness(this)
+        h.controller.attachImage(ByteArray(0), "test")
+        assertEquals("The image is empty", h.state.error)
+        assertNull(h.state.image)
+    }
+
+    @Test
+    fun pickerFailureIsReportedWithItsSource() = runTest {
+        val failing = object : ImageSource {
+            override val canPickFromGallery = true
+            override val canCapture = true
+            override suspend fun pickFromGallery(): ByteArray? = null
+            override suspend fun capture(): ByteArray? = throw IllegalStateException("camera permission denied")
+        }
+        val h = Harness(this, imageSource = failing)
+        h.controller.captureFromCamera()
+        advanceUntilIdle()
+        assertEquals("Camera unavailable: IllegalStateException: camera permission denied", h.state.error)
+        assertNull(h.state.image)
+    }
+
+    @Test
+    fun cancelWhileTheEngineIsOpeningClosesTheOpenedEngine() = runTest {
+        lateinit var h: Harness
+        // The cancel arrives while the factory is loading: the engine it returns must be closed, not leaked.
+        h = Harness(this, FakeChatModelFactory { h.controller.cancel() })
+        h.controller.loadModel()
+        advanceUntilIdle()
+        assertTrue(h.model.closed)
+        assertNull(h.state.loaded)
+        assertTrue(h.residents.state.value.entries.isEmpty())
+        assertEquals("Cancelled", h.state.status)
+        assertEquals(ChatActivity.IDLE, h.state.activity)
+    }
+
+    @Test
+    fun closedControllerStartsNoWorkAndClosingTwiceIsHarmless() = runTest {
+        val h = Harness(this)
+        h.controller.close()
+        h.controller.close()
+        h.controller.loadModel()
+        h.say("hi")
+        advanceUntilIdle()
+        assertTrue(h.factory.opened.isEmpty())
+        assertEquals(ChatActivity.IDLE, h.state.activity)
     }
 }

@@ -18,7 +18,10 @@
 # on a macOS host the host build, CTest, linkage audit and jvmTest steps below cover the macOS job.
 #
 # Usage: ./scripts/ci-local.sh [--only <steps>] [--skip <steps>] [--strict] [--clean] [--full]
-#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample,snippets,release,check
+#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample,snippets,release,check,coverage,instrumented
+#   coverage      (only with --only) merged Kover report of every JVM test (scripts/ci/coverage.sh)
+#   instrumented  (only with --only) every Android instrumented suite on a connected device / KGGML_AVD emulator
+#                 with the real native libraries (scripts/ci/run-android-instrumented.sh)
 #   --full     run every step regardless of what changed, including `check` (./gradlew check + sample
 #              assembles, which need an Android SDK). This is the merge gate when GitHub Actions cannot
 #              run (quota exhausted); see AGENTS.md "When the Actions quota is exhausted".
@@ -35,7 +38,7 @@ cd "${REPO_ROOT}"
 # Make sure commit attribution hooks (.githooks/) are active in this clone.
 ./scripts/install-git-hooks.sh
 
-all_steps=(parity gitleaks pin native jvm android sample snippets release check)
+all_steps=(parity gitleaks pin native jvm android sample snippets release check coverage instrumented)
 only=""
 skip=""
 strict=0
@@ -49,7 +52,7 @@ while [[ $# -gt 0 ]]; do
     --strict) strict=1 ;;
     --clean) clean_flag=(--clean) ;;
     --full) full=1 ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -109,6 +112,8 @@ selected() {
   local step="$1"
   if [[ -n "${only}" ]]; then in_list "${step}" "${only}"; return; fi
   in_list "${step}" "${skip}" && return 1
+  # Opt-in steps: coverage re-runs every JVM test with the Kover agent; instrumented needs a device.
+  case "${step}" in coverage|instrumented) return 1 ;; esac
   [[ ${full} -eq 1 ]] && return 0
   case "${step}" in
     check) return 1 ;;   # full Gradle check only with --full or --only check
@@ -271,6 +276,16 @@ for step in "${all_steps[@]}"; do
           :samples:kggml-showcase:desktopJar :samples:whisper-only-minimal:assembleDebug
       else
         missing check "Android SDK not found (./gradlew check needs ANDROID_HOME)"
+      fi ;;
+    coverage)
+      run_step coverage ./scripts/ci/coverage.sh ;;
+    instrumented)
+      if sdk="$(find_sdk)"; then
+        export ANDROID_HOME="${sdk}"
+        if ndk="$(find_ndk)"; then export ANDROID_NDK_HOME="${ndk}"; fi
+        run_step instrumented ./scripts/ci/run-android-instrumented.sh
+      else
+        missing instrumented "Android SDK not found (instrumented tests need ANDROID_HOME and a device)"
       fi ;;
   esac
 done

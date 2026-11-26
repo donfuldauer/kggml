@@ -230,3 +230,12 @@ tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex
         iosFrameworkPresent
     }
 }
+
+// The same pinned versions for the on-device runtime test (AndroidNativeRuntimeTest, InstrumentationRegistry arguments).
+android.defaultConfig.testInstrumentationRunnerArguments.putAll(
+    mapOf(
+        "kggml.expectedRuntimeVersion" to project.version.toString(),
+        "kggml.expectedGgmlVersion" to ggmlPinnedVersion,
+        "kggml.expectedGgmlCommit" to ggmlPinnedCommit,
+    ),
+)

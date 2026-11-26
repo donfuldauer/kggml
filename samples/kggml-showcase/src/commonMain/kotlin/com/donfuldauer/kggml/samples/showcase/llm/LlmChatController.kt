@@ -1,5 +1,6 @@
 package com.donfuldauer.kggml.samples.showcase.llm
 
+import com.donfuldauer.kggml.core.InvalidInputException
 import com.donfuldauer.kggml.core.BackendConfig
 import com.donfuldauer.kggml.core.ComputeBackend
 import com.donfuldauer.kggml.core.StopReason
@@ -138,6 +139,8 @@ class LlmChatController(
     private val imageSource: ImageSource = NoImageSource,
     private val readFile: (String) -> ByteArray = { error("file access unavailable") },
     initialModelPath: String = "",
+    /** Sampler seed of chat replies; `null` (the app) draws a random one per reply, tests pin it. */
+    private val chatSeed: Long? = null,
 ) : AutoCloseable {
     private val mutableState = MutableStateFlow(LlmChatState(modelPath = initialModelPath))
     val state: StateFlow<LlmChatState> = mutableState.asStateFlow()
@@ -274,6 +277,10 @@ class LlmChatController(
         } catch (e: IllegalArgumentException) {
             mutableState.update { it.copy(error = "Unsupported schema: ${e.message}") }
             return
+        } catch (e: InvalidInputException) {
+            // The schema-to-GBNF converter rejects valid JSON it cannot express (e.g. `pattern`) with this type.
+            mutableState.update { it.copy(error = "Unsupported schema: ${e.message}") }
+            return
         }
         mutableState.update { it.copy(extractionOutput = "", validation = JsonValidation.Empty) }
         launchWork(ChatActivity.EXTRACTING) {
@@ -389,6 +396,7 @@ class LlmChatController(
     private fun chatOptions(state: LlmChatState) = GenerationOptions(
         maxTokens = state.maxTokens,
         temperature = 0.7f,
+        seed = chatSeed,
         stopSequences = state.template.stopSequences,
     )
 

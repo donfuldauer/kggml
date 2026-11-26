@@ -168,7 +168,7 @@ abstract class NativeLlamaEngineContract {
                 val options = GenerationOptions(temperature = temperature, seed = 42, maxTokens = 64, grammar = grammar)
                 val result = engine.generateText("ab", options)
                 assertEquals(StopReason.END_OF_GENERATION, result.stopReason, "a completed grammar admits only EOG")
-                assertTrue(Regex("\\{\"[a-z]{1,6}\"}").matches(result.text), "'${result.text}' violates the grammar")
+                assertTrue(Regex("\\{\"[a-z]{1,6}\"\\}").matches(result.text), "'${result.text}' violates the grammar")
             }
         }
     }

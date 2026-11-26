@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
  * validation, embedding similarity and in-memory image analysis.
  */
 @OptIn(ExperimentalTestApi::class)
-class LlmChatUiTest {
+class LlmChatUiTest : UiTestBase() {
     private fun androidx.compose.ui.test.ComposeUiTest.send(text: String) {
         typeInto(LlmChatTags.DRAFT, text)
         click(LlmChatTags.SEND)

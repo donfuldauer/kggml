@@ -137,4 +137,48 @@ class ResidentModelCacheTest {
         assertEquals(1, ok.closeCount)
         assertTrue(cache.keys.isEmpty())
     }
+
+    @Test
+    fun getOrPutClosesItsCopyWhenAnotherCallerLoadedTheKeyFirst() = runTest {
+        val cache = ResidentModelCache()
+        val winner = FakeModel("winner")
+        val loser = FakeModel("loser")
+        val lease = cache.getOrPut("k", 1) {
+            // Another caller finishes loading the same key while this loader is running.
+            cache.put("k", 1, winner).close()
+            loser
+        }
+        assertSame(winner, lease.resource)
+        assertEquals(1, loser.closeCount)
+        assertEquals(0, winner.closeCount)
+        assertEquals(listOf("k"), cache.keys)
+        assertFalse(cache.remove("k"), "the returned lease is held")
+        lease.close()
+        assertTrue(cache.remove("k"))
+    }
+
+    @Test
+    fun rePuttingTheSameResourceDoesNotCloseIt() {
+        val cache = ResidentModelCache()
+        val a = FakeModel("a")
+        cache.put("k", 10, a).close()
+        cache.put("k", 20, a).close()
+        assertEquals(0, a.closeCount)
+        assertEquals(20L, cache.residentBytes, "the new size estimate replaces the old one")
+    }
+
+    @Test
+    fun laterCloseFailuresAreSuppressedIntoTheFirst() {
+        val cache = ResidentModelCache()
+        val first = IllegalStateException("first")
+        val second = IllegalArgumentException("second")
+        val ok = FakeModel("ok")
+        cache.put("a", 1, AutoCloseable { throw first }).close()
+        cache.put("b", 1, ok).close()
+        cache.put("c", 1, AutoCloseable { throw second }).close()
+        val thrown = assertFailsWith<IllegalStateException> { cache.close() }
+        assertSame(first, thrown)
+        assertEquals(listOf<Throwable>(second), thrown.suppressedExceptions)
+        assertEquals(1, ok.closeCount)
+    }
 }

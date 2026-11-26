@@ -59,6 +59,27 @@ private class QueueDispatcher : CoroutineDispatcher(), AutoCloseable {
     }
 }
 
+/** Rejects every dispatch (like a shut-down executor), counting the attempts. */
+private open class RejectingDispatcher(private val rejection: Throwable) : CoroutineDispatcher() {
+    var dispatchCount = 0
+        private set
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        dispatchCount++
+        throw rejection
+    }
+}
+
+/** A [RejectingDispatcher] the executor owns and must close. */
+private class CloseableRejectingDispatcher(rejection: Throwable) : RejectingDispatcher(rejection), AutoCloseable {
+    var closeCount = 0
+        private set
+
+    override fun close() {
+        closeCount++
+    }
+}
+
 private class FakeFactory(private val scope: TestScope) : SerialDispatcherFactory {
     val created = mutableListOf<Pair<String, FakeSerialDispatcher>>()
 
@@ -162,6 +183,35 @@ class SerialExecutorTest {
         advanceUntilIdle()
         assertTrue(executor.isClosed)
         assertTrue(factory.created.single().second.isClosed)
+    }
+
+    @Test
+    fun dispatchFailureDuringClosePropagatesButTheDispatcherIsStillClosed() = runTest {
+        val rejection = IllegalStateException("dispatcher rejected the release step")
+        val dispatcher = CloseableRejectingDispatcher(rejection)
+        val executor = SerialExecutor("rejecting") { dispatcher }
+        var released = false
+
+        val e = assertFailsWith<IllegalStateException> { executor.close { released = true } }
+
+        assertSame(rejection, e)
+        assertEquals(1, dispatcher.closeCount, "the dispatcher must be shut down even if scheduling release fails")
+        assertFalse(released)
+        assertTrue(executor.isClosed)
+        executor.close() // idempotent: no second dispatch or shutdown attempt
+        assertEquals(1, dispatcher.dispatchCount)
+        assertEquals(1, dispatcher.closeCount)
+        assertFailsWith<IllegalStateException> { executor.execute { } }
+    }
+
+    @Test
+    fun dispatchFailureDuringCloseOfANonCloseableDispatcherPropagates() = runTest {
+        val rejection = IllegalStateException("rejected")
+        val dispatcher = RejectingDispatcher(rejection)
+        val executor = SerialExecutor("rejecting") { dispatcher }
+        assertSame(rejection, assertFailsWith<IllegalStateException> { executor.close() })
+        assertTrue(executor.isClosed)
+        assertEquals(1, dispatcher.dispatchCount)
     }
 
     @Test

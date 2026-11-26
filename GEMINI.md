@@ -80,12 +80,21 @@ Also run whichever of these apply to the modules your change touches:
 
 # Native C++ CTest suites (when native code is added)
 ctest --test-dir build/native --output-on-failure
+
+# Android instrumented tests on a connected device / emulator (every library + both samples, real native libraries
+# bundled and required; KGGML_AVD=<avd> boots a headless emulator first). ci-local step: --only instrumented.
+# CI runs it in the macOS job on the owner's Mac (local-mac) with the AVD named by the ANDROID_AVD repo variable.
+./scripts/ci/run-android-instrumented.sh
+
+# Merged Kover coverage of every JVM / Robolectric test -> build/reports/kover/html (ci-local step: --only coverage)
+./scripts/ci/coverage.sh -Pkggml.requireNative=true
 ```
 
 ### Mandatory Testing & Coverage Policy (Section 9.4)
 - **Pure Kotlin Logic (`:kggml-core-api`, ring buffer, VAD, GGUF/Whisper header parser, `BackendConfig`):** Thorough `commonTest` unit tests with deterministic fakes and high statement/branch coverage.
 - **Native C++ & Bridge Layers (`:kggml-runtime`, `:kggml-whisper`, `:kggml-llama`, `:kggml-diffusion`):** CTest/GoogleTest suites (resampling, short-buffer padding, abort callbacks, exception handling) + platform integration tests (`androidUnitTest`, `iosSimulatorArm64Test`, `jvmTest`) using tiny CC0/MIT synthetic fixtures and PCM arrays.
 - **Modularity & UI:** CI binary symbol audit on `:samples:whisper-only-minimal` (`nm`/`otool` on iOS, `apkanalyzer`/`readelf` on Android) and Compose UI tests on `:samples:kggml-showcase`.
+- **Every platform:** put tests in `commonTest` unless they need a platform API. Library `commonTest` and the shared native contracts (`Native*EngineContract`) run on the JVM, the iOS simulator and Android devices (`androidInstrumentedTest` subclasses); the showcase's Compose UI tests (`UiTestBase`) run on desktop, the iOS simulator, Robolectric and Android devices. Real-engine tests skip without native libraries and fail with `-Pkggml.requireNative=true`.
 
 ### Deferred Manual & Physical Verification
 Agent sessions never wait on a person to test anything by hand. Manual and physical-device checks (real iPhone/Android hardware, backgrounding on a device, thermal/battery behaviour, listening to audio, eyeballing UI on a real screen) are reserved for a single owner acceptance pass **after every phase is complete**.

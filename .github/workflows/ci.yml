@@ -14,7 +14,8 @@ name: CI (Phase 1 cross-platform matrix)
 #   - macOS (10x billed):  only on PRs labelled `ci:macos` or a manual dispatch. macOS arm64 native runtime
 #              (Metal + Accelerate) + whisper + llama + diffusion + CTest, JVM tests, GgmlRuntime/KggmlWhisper.xcframework
 #              (CoreML) + KggmlLlama.xcframework + KggmlDiffusion.xcframework, iosSimulatorArm64Test, sample iOS
-#              frameworks + whisper-only-minimal iOS symbol audit, release dry-run with the iOS components.
+#              frameworks + whisper-only-minimal iOS symbol audit, release dry-run with the iOS components, and (on the
+#              owner's Mac only) every Android instrumented suite on an emulator (scripts/ci/run-android-instrumented.sh).
 #   - Windows (2x billed): only on PRs labelled `ci:windows` or a manual dispatch. Windows x64 native
 #              runtime + whisper + llama + diffusion (MSVC) + CTest, JVM tests against it.
 # Checkouts fetch first-level submodules only (`submodules: true`): stable-diffusion.cpp's own nested submodules
@@ -172,6 +173,14 @@ jobs:
           :samples:kggml-showcase:desktopJar
           :samples:whisper-only-minimal:assembleDebug
 
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
+
       - name: Upload reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -183,6 +192,7 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore
 
   linux-mac:
@@ -230,7 +240,7 @@ jobs:
     # Every step below has its own timeout so a hang fails in minutes with a named step instead of holding the
     # PR (and the agent waiting on it) for hours; the job cap is only a backstop. Agents treat a timed-out or
     # runner-lost job per AGENTS.md "When a runner fails or hangs".
-    timeout-minutes: 90
+    timeout-minutes: 140
     steps:
       - name: Checkout repository (with ggml submodule)
         uses: actions/checkout@v4
@@ -341,10 +351,28 @@ jobs:
         timeout-minutes: 10
         run: ./scripts/ci/audit-minimal-sample.sh ios
 
+      # Every library's and both samples' instrumented suites on an Android emulator with the real native libraries
+      # bundled and required. Only on the owner's Mac (local-mac): it has the Android SDK and an arm64 AVD, while hosted
+      # macOS images cannot run the emulator. The AVD name comes from the ANDROID_AVD repo variable.
+      - name: Android instrumented tests (emulator, real native libraries)
+        if: vars.MAC_RUNNER == 'on' && inputs.runner != 'hosted'
+        timeout-minutes: 45
+        env:
+          KGGML_AVD: ${{ vars.ANDROID_AVD || 'kggml_api35' }}
+        run: ./scripts/ci/run-android-instrumented.sh
+
       - name: Shut down simulators
         if: always()
         timeout-minutes: 3
         run: xcrun simctl shutdown all || true
+
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
 
       - name: Upload reports on failure
         if: failure()
@@ -357,6 +385,7 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore
 
   windows:
@@ -433,6 +462,14 @@ jobs:
       - name: JVM tests (incl. dual-engine coexistence) against the Windows native runtime
         run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
 
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
+
       - name: Upload reports on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -444,4 +481,5 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore

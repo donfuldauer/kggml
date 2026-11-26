@@ -3,6 +3,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+# shellcheck source=ci/python.sh
+source "${REPO_ROOT}/scripts/ci/python.sh"
+kggml_require_python 3.11
 
 # 1. Mirror root AGENTS.md to CLAUDE.md, GEMINI.md, and .gemini/GEMINI.md
 mkdir -p .gemini
@@ -33,7 +36,7 @@ for dir in .claude/skills .gemini/skills .antigravity/skills; do
 done
 
 # 4. Generate .codex/config.toml and .codex/agents/<name>.toml from canonical .agents/agents/*.md
-python3 - <<'PY'
+kggml_python - <<'PY'
 import glob
 import os
 import re
