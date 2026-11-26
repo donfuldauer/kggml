@@ -150,7 +150,7 @@ jobs:
       # checksum and gpg signature audit. iOS components are built only on macOS (see the macOS job).
       - name: Release dry-run (signed Maven Central staging + audit, JVM/Android/metadata)
         timeout-minutes: 20
-        run: ./scripts/ci/stage-release.sh --dry-run --skip-targets ios -- $NATIVE_GRADLE_ARGS
+        run: ./scripts/ci/stage-release.sh --dry-run --skip-targets ios,macos -- $NATIVE_GRADLE_ARGS
 
       - name: Android NDK cross-compile (arm64-v8a, x86_64) incl. the Vulkan and OpenCL GPU add-ons
         run: |
@@ -297,9 +297,14 @@ jobs:
           ./kggml-diffusion/native/scripts/build-host.sh
           ./scripts/ci/audit-diffusion-linkage.sh host
 
-      - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64)
+      - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64 + macosArm64)
         timeout-minutes: 20
         run: ./kggml-runtime/native/scripts/build-ios-xcframework.sh
+
+      # Issue #93: Kotlin/Native macOS (core-api and runtime so far) against the framework's macos-arm64 slice, natively.
+      - name: Kotlin/Native macOS tests (macosArm64Test, core-api + runtime, real GgmlRuntime.framework)
+        timeout-minutes: 20
+        run: ./gradlew :kggml-core-api:macosArm64Test :kggml-runtime:macosArm64Test $NATIVE_GRADLE_ARGS
 
       - name: Build KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML, linked to GgmlRuntime)
         timeout-minutes: 20

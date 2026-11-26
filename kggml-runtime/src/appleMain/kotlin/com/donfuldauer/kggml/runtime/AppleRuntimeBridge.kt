@@ -30,11 +30,12 @@ import kotlinx.cinterop.value
  * [NativeRuntimeBridge] calling the `kggml_runtime.h` C ABI directly through Kotlin/Native cinterop.
  *
  * Every C entry point already catches C++ exceptions and returns a status code, so nothing can unwind into
- * Kotlin/Native frames. The library is linked dynamically (`GgmlRuntime.framework`), so there is nothing to
- * load at runtime.
+ * Kotlin/Native frames. The library is linked dynamically (`GgmlRuntime.framework`, the iOS or macOS slice of
+ * GgmlRuntime.xcframework), so there is nothing to load at runtime. Shared by iosArm64, iosSimulatorArm64 and
+ * macosArm64.
  */
 @OptIn(ExperimentalForeignApi::class)
-internal object IosRuntimeBridge : NativeRuntimeBridge {
+internal object AppleRuntimeBridge : NativeRuntimeBridge {
     override fun init(): Int = kggml_runtime_init().toInt()
 
     override fun shutdown(): Int = kggml_runtime_shutdown().toInt()
@@ -88,4 +89,4 @@ internal object IosRuntimeBridge : NativeRuntimeBridge {
     override fun lastError(): String = kggml_runtime_last_error()?.toKString().orEmpty()
 }
 
-internal actual fun createPlatformRuntimeBridge(): NativeRuntimeBridge = IosRuntimeBridge
+internal actual fun createPlatformRuntimeBridge(): NativeRuntimeBridge = AppleRuntimeBridge
