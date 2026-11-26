@@ -27,7 +27,8 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/../../build/native-vulkan-${presetName}",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },
     {

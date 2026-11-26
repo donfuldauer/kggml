@@ -27,6 +27,20 @@ max_name="$(sed -n 's/^set(KGGML_GGML_MAX_NAME \([0-9]*\)).*/\1/p' kggml-runtime
 readelf_bin="$(command -v readelf || command -v llvm-readelf || true)"
 [[ -n "${readelf_bin}" ]] || { echo "FAIL: readelf not found" >&2; exit 1; }
 
+# check_max_name <compile_commands.json>: every ggml source of the module was compiled with the runtime's GGML_MAX_NAME.
+check_max_name() {
+  kggml_python - "$1" "${max_name}" <<'PY'
+import json, sys
+commands, want = sys.argv[1], sys.argv[2]
+ggml = [c for c in json.load(open(commands)) if "/ggml/src/" in c["file"].replace("\\", "/")]
+bad = [c["file"] for c in ggml if f"-DGGML_MAX_NAME={want}" not in c.get("command", " ".join(c.get("arguments", [])))]
+if not ggml or bad:
+    print(f"{len(bad)} of {len(ggml)} ggml sources lack -DGGML_MAX_NAME={want}: {[c.rsplit('/', 1)[-1] for c in bad[:3]]}")
+    sys.exit(1)
+print(f"{len(ggml)} ggml sources built with GGML_MAX_NAME={want}")
+PY
+}
+
 kind="${1:-}"
 case "${kind}" in
   vulkan) api_loader=libvulkan.so ;;
@@ -50,8 +64,14 @@ if [[ "${1:-}" == --desktop ]]; then
   if grep -Eq ' (FUNC|OBJECT) +GLOBAL +DEFAULT +[0-9]+ (ggml_init|ggml_backend_cpu_init|ggml_backend_reg_count)$' <<<"${symbols}"; then
     echo "FAIL: ${so} defines ggml core / CPU backend / registry symbols" >&2; bad=1
   fi
+  commands="build/native-vulkan-${platform/x86_64/x64}/compile_commands.json"
+  if [[ ! -f "${commands}" ]]; then
+    echo "FAIL: ${commands} missing (the preset exports compile commands)" >&2; bad=1
+  elif ! abi_report="$(check_max_name "${commands}")"; then
+    echo "FAIL: ${abi_report}" >&2; bad=1
+  fi
   [[ ${bad} -eq 0 ]] || exit 1
-  echo "kggml-runtime-vulkan desktop ${platform} audit: OK (needs: $(tr '\n' ' ' <<<"${needed}"))"
+  echo "kggml-runtime-vulkan desktop ${platform} audit: OK (needs: $(tr '\n' ' ' <<<"${needed}"); ${abi_report})"
   exit 0
 fi
 abis=("$@")
@@ -86,17 +106,7 @@ for abi in "${abis[@]}"; do
   commands="build/native-${kind}-android-${abi}/compile_commands.json"
   if [[ ! -f "${commands}" ]]; then
     fail "${abi}: ${commands} missing (the preset exports compile commands)"
-  elif ! abi_report="$(kggml_python - "${commands}" "${max_name}" <<'PY'
-import json, sys
-commands, want = sys.argv[1], sys.argv[2]
-ggml = [c for c in json.load(open(commands)) if "/ggml/src/" in c["file"].replace("\\", "/")]
-bad = [c["file"] for c in ggml if f"-DGGML_MAX_NAME={want}" not in c.get("command", " ".join(c.get("arguments", [])))]
-if not ggml or bad:
-    print(f"{len(bad)} of {len(ggml)} ggml sources lack -DGGML_MAX_NAME={want}: {[c.rsplit('/', 1)[-1] for c in bad[:3]]}")
-    sys.exit(1)
-print(f"{len(ggml)} ggml sources built with GGML_MAX_NAME={want}")
-PY
-  )"; then
+  elif ! abi_report="$(check_max_name "${commands}")"; then
     fail "${abi}: ${abi_report}"
   fi
   echo "${abi}: ${module_name} OK (needs: $(tr '\n' ' ' <<<"${needed}"); ${abi_report:-})"
