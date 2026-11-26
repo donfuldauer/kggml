@@ -117,10 +117,11 @@ KGGML_API int32_t kggml_runtime_has_coreml(void);
 /* ------------------------------------------------------------------------------------------------------ */
 
 /**
- * Number of performance (P-) cores, a good default for inference thread pools. Always in
- * [1, hardware threads]. Linux/Android: cores whose cpuinfo_max_freq equals the highest one (SMT siblings
- * counted once); Apple: hw.perflevel0.physicalcpu (fallback hw.physicalcpu); Windows: cores of the highest
- * EfficiencyClass. Falls back to std::thread::hardware_concurrency(). Does not require init.
+ * Number of performance cores, a good default for inference thread pools. Always in [1, hardware threads].
+ * Linux/Android (SMT siblings counted once): with differing cpu_capacity (ARM phones), the cores with at least half
+ * the highest capacity, i.e. prime + performance cores without the efficiency cores; otherwise the cores whose
+ * cpuinfo_max_freq equals the highest one. Apple: hw.perflevel0.physicalcpu (fallback hw.physicalcpu); Windows: cores
+ * of the highest EfficiencyClass. Falls back to std::thread::hardware_concurrency(). Does not require init.
  */
 KGGML_API kggml_status kggml_runtime_performance_thread_count(int32_t * out_count);
 

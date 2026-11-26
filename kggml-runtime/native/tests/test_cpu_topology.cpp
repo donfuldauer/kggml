@@ -1,4 +1,4 @@
-// Performance (P-) core detection: public query plus the sysfs parser against fake sysfs trees.
+// Performance core detection: public query plus the sysfs parser against fake sysfs trees.
 #include "kggml_runtime.h"
 
 #include "cpu_topology.hpp"
@@ -61,6 +61,7 @@ protected:
         fs::create_directories(p.parent_path());
         std::ofstream(p) << content << "\n";
     }
+    void capacity(int id, long long value) { write("cpu" + std::to_string(id) + "/cpu_capacity", std::to_string(value)); }
     void cpu(int id, long long max_freq_khz, const std::string & siblings = "") {
         write("cpu" + std::to_string(id) + "/cpufreq/cpuinfo_max_freq", std::to_string(max_freq_khz));
         if (!siblings.empty()) {
@@ -72,8 +73,56 @@ protected:
     fs::path root_;
 };
 
-TEST_F(FakeSysfs, BigLittleCountsOnlyTopFrequencyCores) {
-    // Typical phone: 4x little @1.8 GHz, 3x big @2.4 GHz, 1x prime @3.0 GHz.
+TEST_F(FakeSysfs, PhoneCountsPrimeAndPerformanceCoresByCapacity) {
+    // Pixel-style 1+3+4 (Tensor G4: 1x X4 @3.1 GHz, 3x A720 @2.6 GHz, 4x A520 @1.95 GHz): the scheduler's
+    // cpu_capacity puts the efficiency cores far below half of the prime core. Before capacity was used, only the
+    // single prime core (top frequency) was counted, leaving inference on one thread.
+    write("present", "0-7");
+    for (int i = 0; i < 4; ++i) { cpu(i, 1950000); capacity(i, 255); }
+    for (int i = 4; i < 7; ++i) { cpu(i, 2600000); capacity(i, 785); }
+    cpu(7, 3100000);
+    capacity(7, 1024);
+    EXPECT_EQ(detect(), 4);
+}
+
+TEST_F(FakeSysfs, PhoneWithFivePerformanceCores) {
+    // 1+5+2 (Tensor G5 / Snapdragon 8 Gen 3 style): 6 cores at or above half the top capacity.
+    write("present", "0-7");
+    cpu(0, 2250000); capacity(0, 280);
+    cpu(1, 2250000); capacity(1, 280);
+    for (int i = 2; i < 7; ++i) { cpu(i, 3050000); capacity(i, 830); }
+    cpu(7, 3780000);
+    capacity(7, 1024);
+    EXPECT_EQ(detect(), 6);
+}
+
+TEST_F(FakeSysfs, CapacityThresholdIsInclusiveAtHalf) {
+    write("present", "0-2");
+    cpu(0, 2000000); capacity(0, 512);
+    cpu(1, 2000000); capacity(1, 511);
+    cpu(2, 3000000); capacity(2, 1024);
+    EXPECT_EQ(detect(), 2);
+}
+
+TEST_F(FakeSysfs, EqualCapacitiesFallBackToFrequency) {
+    // Emulators and homogeneous SoCs report 1024 everywhere: capacity says nothing, the frequency rule applies.
+    write("present", "0-3");
+    for (int i = 0; i < 4; ++i) { cpu(i, i < 2 ? 2000000 : 2500000); capacity(i, 1024); }
+    EXPECT_EQ(detect(), 2);
+}
+
+TEST_F(FakeSysfs, CapacityWithoutCpufreqStillCounts) {
+    // Some kernels expose cpu_capacity but no cpufreq (e.g. cpufreq driver not loaded).
+    write("present", "0-3");
+    capacity(0, 300);
+    capacity(1, 300);
+    capacity(2, 900);
+    capacity(3, 1024);
+    EXPECT_EQ(detect(), 2);
+}
+
+TEST_F(FakeSysfs, BigLittleWithoutCapacityCountsOnlyTopFrequencyCores) {
+    // No cpu_capacity (older kernels): 4x little @1.8 GHz, 3x big @2.4 GHz, 1x prime @3.0 GHz.
     write("present", "0-7");
     for (int i = 0; i < 4; ++i) cpu(i, 1800000);
     for (int i = 4; i < 7; ++i) cpu(i, 2400000);

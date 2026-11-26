@@ -77,6 +77,11 @@ callback.
 
 ## Diffusion Image Studio
 
+- **Models:** the catalog offers **SD-Turbo Q8_0** (2.0 GB, Stability AI Community License; powered by Stability AI), a
+  distilled model that makes a 512x512 image in 1–4 steps without classifier-free guidance, and Stable Diffusion v1.5
+  (4.3 GB, ~20 steps with CFG, i.e. about ten times the work per image: slow on phones, which run diffusion on the
+  CPU). Choosing a model with settings of its own (SD-Turbo: 4 steps, CFG 1, 512x512) applies them; for a quick check
+  of SD 1.5 use 256x256 and 4–8 steps.
 - Model (a downloaded one, or a custom path to a `.gguf` / `.safetensors` / `.ckpt`), compute backend, prompt and negative prompt, **sampling steps**
   slider (1–50), **CFG scale** slider (1–20 in 0.5 steps), size (256 / 384 / 512), **seed** field with **Randomize**
   and a "new random seed for every image" switch (the chosen seed is always shown, so an image can be reproduced).
@@ -131,10 +136,21 @@ The desktop app passes `-Dkggml.{native,whisper.native,llama.native,diffusion.na
 that exists. Android needs the `INTERNET` permission (declared) for downloads; the camera uses the system camera app
 through `TakePicturePreview`, so no `CAMERA` permission is declared.
 
-iOS: embed `KggmlShowcase.framework` together with `GgmlRuntime.xcframework`, `KggmlWhisper.xcframework`,
-`KggmlLlama.xcframework` and `KggmlDiffusion.xcframework` in an Xcode host app whose `Info.plist` contains
-`NSMicrophoneUsageDescription`, `NSCameraUsageDescription` (VLM camera) and, for background dictation,
-`UIBackgroundModes` = `audio`. A `ggml-tiny.en.bin` bundled as an app resource is pre-filled as the Whisper model path.
+iOS: `iosApp/iosApp.xcodeproj` is the Xcode host app (UIKit app delegate hosting the Compose UI, product
+`KggmlShowcaseApp`). Its first build phase compiles the static `KggmlShowcase.framework` with Gradle
+(`scripts/ios/xcode-kotlin-framework.sh`, which finds JDK 17 on its own); it embeds the `GgmlRuntime`, `KggmlWhisper`,
+`KggmlLlama` and `KggmlDiffusion` xcframeworks from `build/native-ios`, built once first:
+
+```bash
+./scripts/ios/build-xcframeworks.sh            # build/native-ios: the four xcframeworks
+open samples/kggml-showcase/iosApp/iosApp.xcodeproj
+```
+
+Pick a simulator, or your iPhone after choosing your team under *Signing & Capabilities* (`DEVELOPMENT_TEAM` is left
+empty), and run; `./scripts/ios/build-sample-apps.sh all kggml-showcase` builds it unsigned from the command line, as
+CI does. `Info.plist` declares `NSMicrophoneUsageDescription`, `NSCameraUsageDescription` (VLM camera) and
+`UIBackgroundModes` = `audio` (background dictation). Models are downloaded in the Models tab (stored in Application
+Support/kggml/models); a `ggml-tiny.en.bin` added to the app target as a resource is pre-filled as the Whisper model.
 
 ## Automated tests
 

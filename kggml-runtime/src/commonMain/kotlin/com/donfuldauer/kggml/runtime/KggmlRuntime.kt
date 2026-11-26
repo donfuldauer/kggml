@@ -52,8 +52,10 @@ public object KggmlRuntime {
         client.resolveBackend(requested, allowFallback)
 
     /**
-     * Recommended inference thread count: the number of performance (P-) cores, always at least `1` and at
-     * most [hardwareThreadCount]. Use it as the default for `BackendConfig.cpuThreads`.
+     * Recommended inference thread count: the number of performance cores, always at least `1` and at most
+     * [hardwareThreadCount]. On phones these are the prime and performance cores (cores with at least half the
+     * fastest core's scheduler capacity), never the efficiency cores; on Apple silicon the P-cores. Use it as the
+     * default for `BackendConfig.cpuThreads`.
      */
     public fun recommendedThreadCount(): Int = client.recommendedThreadCount()
 
