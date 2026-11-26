@@ -213,6 +213,9 @@ tasks.named<Test>("jvmTest") {
     systemProperty("kggml.test.expectedGgmlVersion", ggmlPinnedVersion)
     systemProperty("kggml.test.expectedGgmlCommit", ggmlPinnedCommit)
     inputs.property("kggml.requireNative", requireNative)
+    // The native-backed tests' results depend on the host libraries they load: track them, so a native-only
+    // rebuild reruns the tests and a cached result is never reused for different (or missing) native builds.
+    inputs.files(fileTree(libDir)).withPropertyName("nativeLibs.libDir").withPathSensitivity(PathSensitivity.RELATIVE)
     doFirst {
         // Point the loader at the host build tree only when it actually contains the JNI bridge; otherwise
         // native-backed tests are skipped (or fail when -Pkggml.requireNative=true).

@@ -136,6 +136,10 @@ tasks.named<Test>("jvmTest") {
     val whisperJni = System.mapLibraryName("kggml_whisper_jni")
     systemProperty("kggml.test.requireNative", requireNative.toString())
     inputs.property("kggml.requireNative", requireNative)
+    // The native-backed tests' results depend on the host libraries they load: track them, so a native-only
+    // rebuild reruns the tests and a cached result is never reused for different (or missing) native builds.
+    inputs.files(fileTree(runtimeDir)).withPropertyName("nativeLibs.runtimeDir").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(fileTree(whisperDir)).withPropertyName("nativeLibs.whisperDir").withPathSensitivity(PathSensitivity.RELATIVE)
     doFirst {
         // Point the loaders at the host build trees only when they contain the JNI bridges; otherwise
         // native-backed tests are skipped (or fail when -Pkggml.requireNative=true).
