@@ -46,6 +46,9 @@ jobs:
       - name: Test the Maven Central release audit (scripts/ci/verify_release.py)
         run: ./scripts/tests/test-verify-release.sh
 
+      - name: Test the desktop runtime architecture check (scripts/ci/check_native_arch.py)
+        run: ./scripts/tests/test-check-native-arch.sh
+
   license-audit:
     name: License, NOTICE & Fixture Audit
     runs-on: >-

@@ -19,10 +19,15 @@ description = "Kggml shared dynamic ggml runtime (CPU, Metal, Vulkan backends)."
 //                               other hosts: each <dir> holds kggml/native/<platform>/ as written by
 //                               stageJvmNativeResources there. The release workflow uses this to ship linux-x86_64,
 //                               windows-x86_64 and macos-aarch64 in one jar.
+//   -Pkggml.nativePlatform=<os>-<arch>  stage (and, for linux-aarch64, cross-compile) the release runtime for that JVM
+//                               platform instead of the host's: linux-aarch64 is built by build-host.sh --target;
+//                               windows-aarch64 is built beforehand with the windows-arm64 preset (needs an MSVC
+//                               arm64 environment) and only staged here, like windows-x86_64 in the release.
 // ---------------------------------------------------------------------------------------------------------
 
 val requireNative = providers.gradleProperty("kggml.requireNative").map(String::toBoolean).getOrElse(false)
 val bundleNative = providers.gradleProperty("kggml.bundleNative").map(String::toBoolean).getOrElse(false)
+val nativePlatform: String? = providers.gradleProperty("kggml.nativePlatform").orNull?.trim()?.takeIf { it.isNotEmpty() }
 
 val nativeDir = layout.projectDirectory.dir("native")
 val rootBuildDir = rootProject.layout.projectDirectory.dir("build")
@@ -114,9 +119,11 @@ val buildNativeHostRelease by tasks.registering(Exec::class) {
     description = "Builds and installs a release (no tests, no test hooks) host runtime into <root>/build/native-release-install."
     workingDir(rootProject.layout.projectDirectory)
     commandLine(
-        "bash", buildHostScript, "--no-tests",
-        "--build-dir", nativeReleaseBuildDir.asFile.absolutePath,
-        "--install", nativeReleaseInstallDir.asFile.absolutePath,
+        listOf(
+            "bash", buildHostScript, "--no-tests",
+            "--build-dir", nativeReleaseBuildDir.asFile.absolutePath,
+            "--install", nativeReleaseInstallDir.asFile.absolutePath,
+        ) + listOfNotNull(nativePlatform?.let { "--target" }, nativePlatform),
     )
 }
 
@@ -158,7 +165,7 @@ val stageJvmNativeResources by tasks.registering {
     val outRoot = jvmNativeResourcesDir
     outputs.dir(outRoot)
     doLast {
-        val platform = hostPlatformId()
+        val platform = nativePlatform ?: hostPlatformId()
         val out = outRoot.get().asFile.resolve("kggml/native/$platform")
         out.deleteRecursively()
         out.mkdirs()

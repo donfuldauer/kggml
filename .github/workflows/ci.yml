@@ -125,6 +125,19 @@ jobs:
           ./kggml-runtime/native/scripts/build-host.sh
           ./scripts/ci/audit-host-linkage.sh
 
+      # Issue #91: the JVM jar also ships linux-aarch64. Cross-compiled here (no arm64 Linux runner); CTest runs the
+      # aarch64 test binaries under qemu-user, and the release staging path is checked for the right ELF machine.
+      - name: Native runtime (linux-aarch64 cross, CTest under qemu-aarch64) + linkage audit + staged arch check
+        run: |
+          if ! command -v aarch64-linux-gnu-g++ >/dev/null || ! command -v qemu-aarch64 >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu qemu-user
+          fi
+          ./kggml-runtime/native/scripts/build-host.sh --target linux-aarch64
+          READELF=aarch64-linux-gnu-readelf NM=aarch64-linux-gnu-nm \
+            ./scripts/ci/audit-host-linkage.sh build/native-linux-aarch64/lib
+          ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=linux-aarch64 --console=plain
+          python3 scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm linux-aarch64
+
       - name: Native whisper (linux-x64) build + CTest + dynamic ggml linkage audit
         run: |
           ./scripts/ci/verify-whisper-pin.sh
@@ -485,6 +498,20 @@ jobs:
         run: |
           ./gradlew jvmTest :samples:kggml-showcase:desktopTest :samples:whisper-only-minimal:desktopTest $NATIVE_GRADLE_ARGS
           ./scripts/ci/audit-minimal-sample.sh desktop $NATIVE_GRADLE_ARGS
+
+      # Issue #91: the JVM jar also ships windows-aarch64 (Windows on ARM). Cross-compiled with LLVM clang for the
+      # MSVC ABI (ggml rejects cl.exe for ARM); there is no arm64 Windows runner to run it, so the staged DLLs are
+      # checked for the ARM64 PE machine type instead.
+      - name: Native runtime (windows-arm64 cross, LLVM clang) build
+        shell: cmd
+        run: call kggml-runtime\native\scripts\build-windows-arm64.cmd build\native-release-install
+
+      - name: Stage the windows-aarch64 runtime + staged arch check
+        run: |
+          ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=windows-aarch64 \
+            -x :kggml-runtime:buildNativeHostRelease --console=plain
+          source scripts/ci/python.sh && kggml_require_python 3.9
+          kggml_python scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm windows-aarch64
 
       - name: Print JVM crash reports on failure
         if: failure()

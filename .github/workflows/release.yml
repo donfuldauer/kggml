@@ -4,8 +4,9 @@ name: Release (Maven Central)
 #   kggml-bom, kggml-core-api, kggml-runtime, kggml-runtime-vulkan, kggml-runtime-opencl, kggml-whisper, kggml-llama, kggml-diffusion, kggml-model-manager
 # (each Kotlin Multiplatform library with its android, jvm, iosArm64 and iosSimulatorArm64 components).
 #
-#   desktop-natives  ubuntu-latest + windows-latest build the release ggml runtime for linux-x86_64 and
-#                    windows-x86_64 and stage it as JVM resources (kggml/native/<platform>/).
+#   desktop-natives  ubuntu-latest + windows-latest build the release ggml runtime for linux-x86_64,
+#                    windows-x86_64 and (cross-compiled, issue #91) linux-aarch64 and windows-aarch64, and stage it as
+#                    JVM resources (kggml/native/<platform>/).
 #   publish          macos-latest (the only host that builds every KMP target) builds the iOS xcframeworks, then
 #                    scripts/ci/stage-release.sh publishes every publication signed into build/kggml-staging-repo
 #                    with the macOS + Android runtimes bundled and the two desktop runtimes above added to the
@@ -59,6 +60,10 @@ jobs:
             platform: linux-x86_64
           - os: windows-latest
             platform: windows-x86_64
+          - os: ubuntu-latest
+            platform: linux-aarch64
+          - os: windows-latest
+            platform: windows-aarch64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -83,15 +88,27 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ninja-build
 
+      - name: Install the aarch64 cross toolchain (linux-aarch64)
+        if: matrix.platform == 'linux-aarch64'
+        run: sudo apt-get install -y g++-aarch64-linux-gnu
+
       - name: Set up MSVC developer environment (Windows)
-        if: runner.os == 'Windows'
+        if: matrix.platform == 'windows-x86_64'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
       # Windows: build in cmd so MSVC wins over Git Bash's `link`, exactly as ci.yml does; Gradle then only stages.
+      - name: Release runtime build (Windows arm64, LLVM clang)
+        if: matrix.platform == 'windows-aarch64'
+        shell: cmd
+        timeout-minutes: 30
+        run: |
+          where ninja >nul 2>&1 || choco install ninja -y --no-progress || exit /b 1
+          call kggml-runtime\native\scripts\build-windows-arm64.cmd build\native-release-install
+
       - name: Release runtime build (Windows, MSVC)
-        if: runner.os == 'Windows'
+        if: matrix.platform == 'windows-x86_64'
         shell: cmd
         timeout-minutes: 30
         run: |
@@ -105,10 +122,13 @@ jobs:
         run: |
           skip=()
           [[ "${RUNNER_OS}" == Windows ]] && skip=(-x :kggml-runtime:buildNativeHostRelease)
-          ./gradlew :kggml-runtime:stageJvmNativeResources --console=plain "${skip[@]}"
+          ./gradlew :kggml-runtime:stageJvmNativeResources --console=plain "${skip[@]}" \
+            -Pkggml.nativePlatform=${{ matrix.platform }}
           index="kggml-runtime/build/generated/kggml-native/jvm/kggml/native/${{ matrix.platform }}/index.txt"
           test -f "${index}" || { echo "missing ${index}" >&2; exit 1; }
           cat "${index}"
+          source scripts/ci/python.sh && kggml_require_python 3.9
+          kggml_python scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm ${{ matrix.platform }}
 
       - name: Upload staged runtime
         uses: actions/upload-artifact@v4
@@ -182,11 +202,15 @@ jobs:
         run: |
           version="$(sed -n 's/^VERSION_NAME=//p' gradle.properties)"
           jar="build/kggml-staging-repo/com/donfuldauer/kggml-runtime-jvm/${version}/kggml-runtime-jvm-${version}.jar"
-          for platform in linux-x86_64 windows-x86_64 macos-aarch64; do
+          for platform in linux-x86_64 linux-aarch64 windows-x86_64 windows-aarch64 macos-aarch64; do
             unzip -l "${jar}" "kggml/native/${platform}/index.txt" >/dev/null \
               || { echo "kggml-runtime-jvm jar is missing kggml/native/${platform}/" >&2; exit 1; }
           done
           unzip -l "${jar}" 'kggml/native/*'
+          # Every bundled library matches its platform directory (ELF / PE / Mach-O machine type; issue #91).
+          tmp="$(mktemp -d)"
+          unzip -q "${jar}" 'kggml/native/*' -d "${tmp}"
+          python3 scripts/ci/check_native_arch.py "${tmp}"
 
       - name: Zip the iOS xcframeworks
         run: |

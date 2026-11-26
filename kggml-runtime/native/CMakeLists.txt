@@ -19,7 +19,8 @@ project(kggml_runtime
 # MSVC >= 19.40 (VS 2022 17.10) made std::mutex's constructor constexpr; code built that way crashes in
 # msvcp140.dll when the host process (e.g. a JVM that bundles its own, older copy) loads msvcp140 < 14.40.
 # Keep the runtime-compatible constructor for every target in this tree, ggml included (issue #65).
-if (MSVC)
+# clang targeting the MSVC ABI (the windows-arm64 preset) uses the same STL, so it needs it too.
+if (MSVC OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
