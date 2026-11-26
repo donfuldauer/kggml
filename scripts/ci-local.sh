@@ -2,21 +2,23 @@
 # Runs the same checks as the Linux PR CI jobs locally, so they pass before anything is pushed.
 #
 # Mirrors:
-#   .github/workflows/repo-hygiene.yml    -> agent parity, CI-waiter test, license/NOTICE/fixture audit, docs audit
-#                                            (links, README snippets, coordinates, KDoc), gitleaks
+#   .github/workflows/repo-hygiene.yml    -> agent parity, CI-waiter test, hosted-runner audit, release-audit test,
+#                                            license/NOTICE/fixture audit, docs audit (links, README snippets,
+#                                            coordinates, KDoc), gitleaks
 #   .github/workflows/ci.yml (Ubuntu)     -> ggml + whisper.cpp + llama.cpp + stable-diffusion.cpp pins, host build +
 #                                            CTest (runtime, whisper, llama and diffusion), host linkage audits,
 #                                            :kggml-runtime + :kggml-whisper + :kggml-llama + :kggml-diffusion
 #                                            jvmTest,
 #                                            Android cross-compile + audits, :samples:whisper-only-minimal check +
 #                                            release APK binary symbol audit, :docs-snippets compile (README code
-#                                            against the published artifacts); with --full also `./gradlew check`
-#                                            and the sample assemble tasks
+#                                            against the published artifacts), Maven Central release dry-run
+#                                            (signed staging + audit; iOS components only on macOS); with --full
+#                                            also `./gradlew check` and the sample assemble tasks
 # The macOS/iOS jobs (ci.yml macOS, runtime-native-macos.yml) cannot run on a Linux host;
 # on a macOS host the host build, CTest, linkage audit and jvmTest steps below cover the macOS job.
 #
 # Usage: ./scripts/ci-local.sh [--only <steps>] [--skip <steps>] [--strict] [--clean] [--full]
-#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample,snippets,check
+#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample,snippets,release,check
 #   --full     run every step regardless of what changed, including `check` (./gradlew check + sample
 #              assembles, which need an Android SDK). This is the merge gate when GitHub Actions cannot
 #              run (quota exhausted); see AGENTS.md "When the Actions quota is exhausted".
@@ -33,7 +35,7 @@ cd "${REPO_ROOT}"
 # Make sure commit attribution hooks (.githooks/) are active in this clone.
 ./scripts/install-git-hooks.sh
 
-all_steps=(parity gitleaks pin native jvm android sample snippets check)
+all_steps=(parity gitleaks pin native jvm android sample snippets release check)
 only=""
 skip=""
 strict=0
@@ -90,6 +92,19 @@ snippets_changed() {
     || [[ -n "$(git ls-files --others --exclude-standard -- "${snippet_paths[@]}")" ]]
 }
 
+# Paths that affect the published artifacts or the release staging/audit.
+release_paths=(build-logic gradle gradle.properties settings.gradle.kts kggml-bom kggml-core-api/build.gradle.kts
+  kggml-runtime/build.gradle.kts kggml-whisper/build.gradle.kts kggml-llama/build.gradle.kts
+  kggml-diffusion/build.gradle.kts kggml-model-manager/build.gradle.kts scripts/ci/stage-release.sh
+  scripts/ci/verify_release.py .github/workflows/release.yml)
+release_changed() {
+  local base
+  base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
+  [[ -n "${base}" ]] || return 0
+  [[ -n "$(git diff --name-only "${base}" -- "${release_paths[@]}")" ]] \
+    || [[ -n "$(git ls-files --others --exclude-standard -- "${release_paths[@]}")" ]]
+}
+
 selected() {
   local step="$1"
   if [[ -n "${only}" ]]; then in_list "${step}" "${only}"; return; fi
@@ -100,6 +115,7 @@ selected() {
     pin|native|jvm|android) native_changed ;;
     sample) sample_changed ;;
     snippets) snippets_changed ;;
+    release) release_changed ;;
     *) return 0 ;;
   esac
 }
@@ -184,6 +200,9 @@ for step in "${all_steps[@]}"; do
     parity)
       run_step parity ./scripts/verify-agent-parity.sh
       run_step waiter ./scripts/tests/test-wait-pr-checks.sh
+      run_step runners ./scripts/ci/verify-hosted-runners.sh
+      run_step rn-test ./scripts/tests/test-verify-hosted-runners.sh
+      run_step rel-test ./scripts/tests/test-verify-release.sh
       run_step license ./scripts/ci/verify-licenses.sh
       run_step l-test ./scripts/tests/test-verify-licenses.sh
       run_step docs ./scripts/ci/verify-docs.sh
@@ -236,6 +255,11 @@ for step in "${all_steps[@]}"; do
       fi ;;
     snippets)
       run_step snippets ./gradlew :docs-snippets:compileKotlinJvm --console=plain ;;
+    release)
+      # On Linux the iOS components cannot be built; the ci.yml macOS job stages them.
+      release_skip=(--skip-targets ios)
+      [[ "$(uname -s)" == Darwin ]] && release_skip=()
+      run_step release ./scripts/ci/stage-release.sh --dry-run ${release_skip[@]+"${release_skip[@]}"} ;;
     check)
       if sdk="$(find_sdk)"; then
         export ANDROID_HOME="${sdk}"

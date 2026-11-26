@@ -15,6 +15,10 @@ description = "Kggml shared dynamic ggml runtime (CPU, Metal, Vulkan backends)."
 //   -Pkggml.bundleNative=true   build release (no test hooks) native libraries and package them: host
 //                               libraries into the JVM jar (/kggml/native/<platform>/) and Android ABIs
 //                               (arm64-v8a, x86_64) into the AAR jniLibs.
+//   -Pkggml.extraJvmNativeResources=<dir>[,<dir>...]  (with bundleNative) also package desktop runtimes staged on
+//                               other hosts: each <dir> holds kggml/native/<platform>/ as written by
+//                               stageJvmNativeResources there. The release workflow uses this to ship linux-x86_64,
+//                               windows-x86_64 and macos-aarch64 in one jar.
 // ---------------------------------------------------------------------------------------------------------
 
 val requireNative = providers.gradleProperty("kggml.requireNative").map(String::toBoolean).getOrElse(false)
@@ -182,8 +186,16 @@ val stageJvmNativeResources by tasks.registering {
     }
 }
 
+val extraJvmNativeResources: List<File> = providers.gradleProperty("kggml.extraJvmNativeResources").orNull
+    ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.map { file(it) }.orEmpty()
+
 if (bundleNative) {
     kotlin.sourceSets.getByName("jvmMain").resources.srcDir(stageJvmNativeResources)
+    extraJvmNativeResources.forEach { dir ->
+        val platforms = dir.resolve("kggml/native").listFiles()?.filter { it.resolve("index.txt").isFile }.orEmpty()
+        require(platforms.isNotEmpty()) { "kggml.extraJvmNativeResources: no kggml/native/<platform>/index.txt under $dir" }
+        kotlin.sourceSets.getByName("jvmMain").resources.srcDir(dir)
+    }
     android.sourceSets.getByName("main").jniLibs.srcDir(androidJniLibsDir)
     tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeAndroid) }
 }

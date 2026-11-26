@@ -1,7 +1,7 @@
 name: Repo Hygiene & Agent Parity
 
 # Cheap Linux checks on every PR. Not re-run on pushes to main: PRs merge with a merge commit after
-# these passed on the PR head. Both jobs follow the same runner order as ci.yml (AGENTS.md "Runner order").
+# these passed on the PR head. Every job runs on a GitHub-hosted runner.
 on:
   pull_request:
   workflow_dispatch:
@@ -18,9 +18,7 @@ permissions:
 jobs:
   agent-parity:
     name: Verify Multi-Harness Agent & Skill Parity
-    runs-on: >-
-      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -32,11 +30,18 @@ jobs:
       - name: Test the agent CI waiter (scripts/ci/wait-pr-checks.sh)
         run: ./scripts/tests/test-wait-pr-checks.sh
 
+      - name: Verify every workflow job runs on a GitHub-hosted runner
+        run: ./scripts/ci/verify-hosted-runners.sh
+
+      - name: Test the hosted-runner audit (scripts/ci/verify-hosted-runners.sh)
+        run: ./scripts/tests/test-verify-hosted-runners.sh
+
+      - name: Test the Maven Central release audit (scripts/ci/verify_release.py)
+        run: ./scripts/tests/test-verify-release.sh
+
   license-audit:
     name: License, NOTICE & Fixture Audit
-    runs-on: >-
-      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -50,9 +55,7 @@ jobs:
 
   docs-audit:
     name: Docs, Links, README Snippets & KDoc Audit
-    runs-on: >-
-      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout repository
@@ -68,9 +71,7 @@ jobs:
 
   secret-scan:
     name: Gitleaks Secret Scan
-    runs-on: >-
-      ${{ vars.MAC_RUNNER == 'on' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
-      && fromJSON('["self-hosted","macOS","ARM64","local-mac"]') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout full history
@@ -83,5 +84,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The action downloads to a fixed name in the temp dir and fails if it is already there; runner.temp
-          # is emptied for every job, so this also works on a self-hosted runner.
+          # is emptied for every job.
           TMPDIR: ${{ runner.temp }}

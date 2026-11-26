@@ -79,3 +79,19 @@ when it has been run; a failed check becomes a new issue.
   (compiled by `:docs-snippets`) produce sensible output with real models on desktop, a physical Android phone and an
   iPhone, and the iOS background guidance (`BackendConfig.CPU` / `observeAppLifecycle`) keeps transcription running
   in the background — the same procedures as the module READMEs' "Manual verification" sections.
+
+## Phase OSS
+
+- [ ] [#23] Owner, before the repository is made public: remove the Mac runner registered for #43 (on the Mac:
+  `gh-runner remove donfuldauer/kggml`, then check Settings → Actions → Runners is empty) and delete the Mac runner's
+  on/off repository variable (Settings → Secrets and variables → Actions → Variables). Nothing in the repository refers
+  to either any more (`scripts/ci/verify-hosted-runners.sh`) — procedure in `docs/RELEASING.md` ("Before the first
+  release").
+- [ ] [#23] Owner: Central Portal namespace `com.donfuldauer` verified, release secrets added, public signing key on a
+  keyserver, then a `release.yml` dry-run dispatch from `main` is green and its bundle validates in the portal —
+  procedure in `docs/RELEASING.md` ("Before the first release" and "Dry run").
+- [ ] [#23] Full `ci.yml` matrix (Ubuntu, macOS, Windows) green on GitHub-hosted runners from `main` after merge
+  (`Actions → CI → Run workflow`) — procedure in `docs/RELEASING.md` ("Dry run").
+- [ ] [#23] CI re-run on macOS/Windows once Actions minutes reset (billing / spending-limit refusal, every hosted job
+  failed in ~2 s with no logs: macOS release dry-run with the iOS klibs, `release.yml` iOS/xcframework path, Windows
+  MSVC build + `jvmTest`) — https://github.com/donfuldauer/kggml/pull/57

@@ -153,7 +153,7 @@ Perform this step autonomously (see **Standing Authorization**): once the gates 
    ```
    If checks never started because the Actions quota is exhausted (queued indefinitely, or failed instantly with a billing / spending-limit annotation and no logs), do not wait or re-push: follow AGENTS.md "When the Actions quota is exhausted" (`./scripts/ci-local.sh --full`, summary in the PR body, deferred macOS/Windows re-runs in `docs/MANUAL_VERIFICATION.md`) and merge on that local gate.
 
-   If a check is queued past its deadline, lost its runner, was cancelled or timed out, or fails only on macOS/iOS or Windows after two fix pushes, follow AGENTS.md "When a runner fails or hangs": fall back in runner order once, then merge on `./scripts/ci-local.sh --full` with the deferred re-run (and, for a platform-only code failure, a follow-up issue) recorded. Never leave the PR waiting on a runner.
+   If a check is queued past its deadline, lost its runner, was cancelled or timed out, or fails only on macOS/iOS or Windows after two fix pushes, follow AGENTS.md "When a runner fails or hangs": merge on `./scripts/ci-local.sh --full` with the deferred re-run (and, for a platform-only code failure, a follow-up issue) recorded. Never leave the PR waiting on a runner.
 2. **Merge with a merge commit** (squash merges are disabled on the repository). Do not delete the remote branch or pass `--delete-branch`: the repository deletes head branches automatically on merge.
    ```bash
    gh pr merge <PR_NUMBER> --merge
