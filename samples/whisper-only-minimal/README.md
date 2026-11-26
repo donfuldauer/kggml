@@ -15,6 +15,7 @@ The UI uses only platform toolkits (`android.widget`, UIKit), no Compose/Android
 | Feature | Android | iOS |
 | --- | --- | --- |
 | Transcribe a PCM file (16-bit / float WAV, or raw 16 kHz mono s16le `.pcm`) | ✓ | ✓ |
+| Pick a whisper model (`.bin`) already in the app's folder, or a custom path | ✓ (radio list) | ✓ (Model menu) |
 | Backend toggle: CPU only / GPU (Vulkan on Android, Metal on iOS) / Auto | ✓ | ✓ |
 | Backend switch reuses the engine (`WhisperEngine.reinitialize`) | ✓ | ✓ |
 | Engine follows the app lifecycle (GPU → `CPU_ONLY` in the background) | — | ✓ (`observeAppLifecycle`) |
@@ -27,6 +28,11 @@ covered by `commonTest` with fake engines.
 
 Not committed (license / size). Use e.g. `ggml-tiny.en.bin` from the whisper.cpp model repository (MIT) and
 `jfk.wav` from `kggml-whisper/native/third_party/whisper.cpp/samples/` (16 kHz mono 16-bit).
+
+The screen lists every whisper model (`.bin`) in the app's folder (Android: external files directory; iOS:
+Documents) next to **Custom path**, rescanning when the app returns to the foreground. It starts on
+`ggml-tiny.en.bin` when that is there, otherwise on the first model found; the path field always holds the model in
+use and can be edited.
 
 ## Android
 

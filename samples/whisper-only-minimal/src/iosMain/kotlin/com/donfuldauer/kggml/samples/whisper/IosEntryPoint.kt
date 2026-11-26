@@ -33,11 +33,15 @@ import platform.UIKit.UIApplicationWillEnterForegroundNotification
 import platform.UIKit.UIBackgroundTaskInvalid
 import platform.UIKit.UIButton
 import platform.UIKit.UIColor
+import platform.UIKit.UIControlContentHorizontalAlignmentLeft
+import platform.UIKit.UIControlEventEditingChanged
 import platform.UIKit.UIControlEventTouchUpInside
 import platform.UIKit.UIControlStateDisabled
 import platform.UIKit.UIControlStateNormal
 import platform.UIKit.UIFont
 import platform.UIKit.UILabel
+import platform.UIKit.UIMenu
+import platform.UIKit.UIMenuElementState
 import platform.UIKit.UISegmentedControl
 import platform.UIKit.UITextField
 import platform.UIKit.UITextView
@@ -69,7 +73,9 @@ fun runtimeStatusText(): String = describeRuntime()
  *
  * The engine follows the app lifecycle (`WhisperEngine.observeAppLifecycle`), so GPU runs are switched to
  * `CPU_ONLY` in the background automatically; select **CPU only** to verify the explicit `CPU_ONLY` path.
- * Defaults read `ggml-tiny.en.bin` and `jfk.wav` from the app's Documents directory.
+ * The **Model** menu lists the whisper models (`.bin`) in the app's Documents directory (rescanned when the app
+ * returns to the foreground) and **Custom path**; the field below always holds the path in use. Defaults read
+ * `ggml-tiny.en.bin` and `jfk.wav` from Documents.
  */
 @Suppress("FunctionName", "unused")
 fun MainViewController(): UIViewController = WhisperSampleScreen().controller
@@ -87,7 +93,15 @@ private class WhisperSampleScreen {
     val controller = UIViewController(nibName = null, bundle = null)
     private val documents = NSHomeDirectory() + "/Documents"
     private val status = UILabel().apply { numberOfLines = 0; text = "Loading Kggml runtime…" }
-    private val modelField = textField("$documents/ggml-tiny.en.bin")
+    private var folderModels: List<FolderModel> = scanWhisperModels(documents)
+    private val modelField = textField(initialModelPath(null, "$documents/ggml-tiny.en.bin", folderModels)).apply {
+        addAction(UIAction.actionWithHandler { refreshModelPicker() }, forControlEvents = UIControlEventEditingChanged)
+    }
+    private val modelPicker = UIButton().apply {
+        showsMenuAsPrimaryAction = true
+        contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft
+        setTitleColor(UIColor.systemBlueColor, forState = UIControlStateNormal)
+    }
     private val audioField = textField("$documents/jfk.wav")
     private val backendControl = UISegmentedControl(items = BackendChoice.entries.map { it.label() }).apply {
         selectedSegmentIndex = BackendChoice.CPU_ONLY.ordinal.toLong()
@@ -106,7 +120,11 @@ private class WhisperSampleScreen {
         }
         center.addObserverForName(UIApplicationWillEnterForegroundNotification, null, null as NSOperationQueue?) {
             inBackground.store(false)
+            // Models copied into Documents (Finder / Files) while the app was away show up on return.
+            folderModels = scanWhisperModels(documents)
+            refreshModelPicker()
         }
+        refreshModelPicker()
         layout(controller.view)
         scope.launch {
             val text = describeRuntime()
@@ -125,6 +143,7 @@ private class WhisperSampleScreen {
             y += height + 8.0
         }
         place(status, 88.0)
+        place(modelPicker, 32.0)
         place(modelField, 36.0)
         place(audioField, 36.0)
         place(backendControl, 32.0)
@@ -134,6 +153,29 @@ private class WhisperSampleScreen {
         output.setFrame(CGRectMake(MARGIN, y, width, height))
         output.autoresizingMask = UIViewAutoresizingFlexibleWidth or UIViewAutoresizingFlexibleHeight
         root.addSubview(output)
+    }
+
+    /** Rebuilds the Model menu (folder models + Custom path, the one in use checked) and its title. */
+    private fun refreshModelPicker() {
+        val chosen = chosenModelIndex(folderModels, modelField.text.orEmpty())
+        val items = folderModels.mapIndexed { index, model ->
+            UIAction.actionWithTitle(model.fileName, image = null, identifier = null) { _ ->
+                modelField.text = model.path
+                refreshModelPicker()
+            }.apply { state = if (index == chosen) UIMenuElementState.UIMenuElementStateOn else UIMenuElementState.UIMenuElementStateOff }
+        } + UIAction.actionWithTitle("Custom path", image = null, identifier = null) { _ ->
+            // Leaving a folder model for a custom path starts from an empty field.
+            if (chosenModelIndex(folderModels, modelField.text.orEmpty()) != null) modelField.text = ""
+            refreshModelPicker()
+            modelField.becomeFirstResponder()
+        }.apply { state = if (chosen == null) UIMenuElementState.UIMenuElementStateOn else UIMenuElementState.UIMenuElementStateOff }
+        modelPicker.menu = UIMenu.menuWithTitle(
+            title = if (folderModels.isEmpty()) noModelsHint(documents) else "Whisper models in Documents",
+            children = items,
+        )
+        val name = chosen?.let { folderModels[it].fileName } ?: "Custom path"
+        val count = if (folderModels.isEmpty()) "none in Documents" else "${folderModels.size} in Documents"
+        modelPicker.setTitle("Model: $name ($count) ▾", forState = UIControlStateNormal)
     }
 
     private fun selectedBackend(): ComputeBackend =

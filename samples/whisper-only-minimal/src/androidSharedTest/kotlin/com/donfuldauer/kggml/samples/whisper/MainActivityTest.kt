@@ -155,9 +155,9 @@ class MainActivityTest {
         val audio = File(dir, "tone.wav").apply { writeBytes(toneWav(1)) }
         launch()
         awaitView(withText(containsString("ggml-tiny.en.bin")))
-        onView(withText(containsString("ggml-tiny.en.bin"))).perform(replaceText(model.absolutePath))
-        onView(withText(containsString("jfk.wav"))).perform(replaceText(audio.absolutePath))
-        onView(withText(BackendChoice.CPU_ONLY.label())).perform(click())
+        onView(withText(containsString("ggml-tiny.en.bin"))).perform(scrollTo(), replaceText(model.absolutePath))
+        onView(withText(containsString("jfk.wav"))).perform(scrollTo(), replaceText(audio.absolutePath))
+        onView(withText(BackendChoice.CPU_ONLY.label())).perform(scrollTo(), click())
         onView(withText("Transcribe")).perform(scrollTo(), click())
         if (nativeLoads) {
             awaitView(withText(startsWith("Requested CPU_ONLY, ran on CPU_ONLY (use_gpu=false)\nAudio 1000 ms, ")))
