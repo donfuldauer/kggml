@@ -29,14 +29,14 @@ class ModelFolderTest {
 
     @Test
     fun windowsPathsJoinAndCompareWithTheirOwnSeparator() {
-        val models = whisperModelsIn("C:\\Users\\me\\.kggml\\models\\", listOf("ggml-tiny.en.bin"))
-        assertEquals("C:\\Users\\me\\.kggml\\models\\ggml-tiny.en.bin", models.single().path)
+        val models = whisperModelsIn("C:\\Users\\someone\\.kggml\\models\\", listOf("ggml-tiny.en.bin"))
+        assertEquals("C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin", models.single().path)
         // java.io.File on Windows gives backslashes; a pasted path may use slashes: both are the same model.
         assertEquals(0, chosenModelIndex(models, "C:/Users/someone/.kggml/models/ggml-tiny.en.bin"))
-        assertEquals(0, chosenModelIndex(models, "C:\\Users\\me\\.kggml\\models\\ggml-tiny.en.bin"))
+        assertEquals(0, chosenModelIndex(models, "C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin"))
         assertEquals(
-            "C:\\Users\\me\\.kggml\\models\\ggml-tiny.en.bin",
-            initialModelPath(null, "C:\\Users\\me\\.kggml\\models\\ggml-tiny.en.bin", models),
+            "C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin",
+            initialModelPath(null, "C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin", models),
         )
         // A directory with forward slashes (macOS, Linux, Android, iOS, or Windows written with /) keeps them.
         assertEquals("C:/m/a.bin", whisperModelsIn("C:/m", listOf("a.bin")).single().path)
