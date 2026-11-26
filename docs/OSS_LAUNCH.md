@@ -103,7 +103,8 @@ If the audit ever reports a real finding, only the owner rewrites history, and o
 | 8 | Agent and harness instruction mirrors in sync | `scripts/verify-agent-parity.sh` (every PR) | Verified |
 | 9 | GitHub secret scanning and push protection on | Settings → Code security | Owner step (below) |
 | 10 | Full CI matrix (Ubuntu, macOS, Windows) green on hosted runners from `main` | `ci.yml` manual dispatch | Owner step (Actions minutes) |
-| 11 | `phase-reviewer` OSS launch gate | issue #24 PR | `APPROVED` (see the PR) |
+| 11 | Private vulnerability reporting on, so the `SECURITY.md` and issue-template report links open | Settings → Code security | Owner step (below, after the flip) |
+| 12 | `phase-reviewer` OSS launch gate | issue #24 PR | `APPROVED` (see the PR) |
 
 ## Owner steps before the visibility flip
 
@@ -117,5 +118,9 @@ If the audit ever reports a real finding, only the owner rewrites history, and o
 3. **Commit e-mails.** Decide on [Commit e-mail addresses](#commit-e-mail-addresses).
 4. **Audit once more** on a fresh full clone, as above, right before the flip.
 5. **Flip.** Settings → General → Danger Zone → Change visibility → Public.
-6. **After the flip.** Run `./scripts/ci/verify-docs.sh --online --only links` (from #22) and dispatch the full
+6. **Private vulnerability reporting.** GitHub offers it only on public repositories, so until the flip the report
+   link in [`SECURITY.md`](../SECURITY.md) and [`.github/ISSUE_TEMPLATE/config.yml`](../.github/ISSUE_TEMPLATE/config.yml)
+   (`/security/advisories/new`) answers 404. Right after the flip, turn on Settings → Code security → "Private
+   vulnerability reporting", then check that Security → "Report a vulnerability" opens the form.
+7. **After the flip.** Run `./scripts/ci/verify-docs.sh --online --only links` (from #22) and dispatch the full
    `ci.yml` matrix from `main` (from #23).
