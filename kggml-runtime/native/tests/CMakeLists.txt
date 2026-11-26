@@ -63,6 +63,10 @@ foreach(_fake IN ITEMS good bad)
         ${KGGML_GGML_SOURCE_DIR}/include ${KGGML_GGML_SOURCE_DIR}/src)
     target_compile_definitions(kggml_fake_backend_${_fake} PRIVATE GGML_BACKEND_DL GGML_BACKEND_SHARED GGML_BACKEND_BUILD)
     add_dependencies(kggml_runtime_tests kggml_fake_backend_${_fake})
+    # Test-only modules stay out of lib/ and bin/, which hold the runtime's shipped libraries (binary audits read them).
+    set_target_properties(kggml_fake_backend_${_fake} PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-modules"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test-modules")
 endforeach()
 target_compile_definitions(kggml_fake_backend_good PRIVATE KGGML_FAKE_BACKEND_NAME="KggmlFake")
 target_compile_definitions(kggml_fake_backend_bad PRIVATE KGGML_FAKE_BACKEND_NAME="KggmlFakeBad" KGGML_FAKE_BAD_API_VERSION=1)

@@ -28,7 +28,11 @@ case "${mode}" in
     "${AUDIT}" apk samples/whisper-only-minimal/build/outputs/apk/release/whisper-only-minimal-release-unsigned.apk
     ;;
   desktop)
-    ./gradlew :samples:whisper-only-minimal:desktopDistribution --console=plain "$@"
+    # --console=plain unless the caller passed its own (Gradle rejects a repeated --console, as CI's
+    # NATIVE_GRADLE_ARGS carries one).
+    gradle_args=("$@")
+    [[ " $* " == *" --console"* ]] || gradle_args+=(--console=plain)
+    ./gradlew :samples:whisper-only-minimal:desktopDistribution "${gradle_args[@]}"
     "${AUDIT}" jars samples/whisper-only-minimal/build/desktop-dist/lib
     host_os="$(uname -s)"
     if [[ "${host_os}" == Linux || "${host_os}" == Darwin ]]; then
