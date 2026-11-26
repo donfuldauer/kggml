@@ -85,6 +85,7 @@ sample_changed() {
 
 # Paths that affect the README snippet compile (:docs-snippets against the published library artifacts).
 snippet_paths=(docs-snippets README.md kggml-bom kggml-core-api kggml-runtime/src kggml-runtime/build.gradle.kts
+  kggml-runtime-vulkan/src kggml-runtime-vulkan/build.gradle.kts
   kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/src kggml-llama/build.gradle.kts kggml-diffusion/src
   kggml-diffusion/build.gradle.kts kggml-model-manager settings.gradle.kts build-logic gradle gradle.properties)
 snippets_changed() {
@@ -97,7 +98,7 @@ snippets_changed() {
 
 # Paths that affect the published artifacts or the release staging/audit.
 release_paths=(build-logic gradle gradle.properties settings.gradle.kts kggml-bom kggml-core-api/build.gradle.kts
-  kggml-runtime/build.gradle.kts kggml-whisper/build.gradle.kts kggml-llama/build.gradle.kts
+  kggml-runtime/build.gradle.kts kggml-runtime-vulkan/build.gradle.kts kggml-whisper/build.gradle.kts kggml-llama/build.gradle.kts
   kggml-diffusion/build.gradle.kts kggml-model-manager/build.gradle.kts scripts/ci/stage-release.sh
   scripts/ci/verify_release.py .github/workflows/release.yml)
 release_changed() {
@@ -249,6 +250,8 @@ for step in "${all_steps[@]}"; do
         run_step la-audit ./scripts/ci/audit-llama-linkage.sh android arm64-v8a x86_64
         run_step d-android ./kggml-diffusion/native/scripts/build-android.sh arm64-v8a x86_64
         run_step da-audit ./scripts/ci/audit-diffusion-linkage.sh android arm64-v8a x86_64
+        run_step v-android ./kggml-runtime-vulkan/native/scripts/build-android.sh arm64-v8a x86_64
+        run_step va-audit ./scripts/ci/audit-vulkan-addon.sh arm64-v8a x86_64
       else
         missing android "Android NDK not found (set ANDROID_NDK_HOME or ANDROID_HOME)"
       fi ;;

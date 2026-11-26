@@ -10,3 +10,6 @@
 [submodule "kggml-diffusion/native/third_party/stable-diffusion.cpp"]
 	path = kggml-diffusion/native/third_party/stable-diffusion.cpp
 	url = https://github.com/leejet/stable-diffusion.cpp
+[submodule "kggml-runtime-vulkan/native/third_party/Vulkan-Headers"]
+	path = kggml-runtime-vulkan/native/third_party/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers

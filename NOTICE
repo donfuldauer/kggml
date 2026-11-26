@@ -15,6 +15,7 @@ Kggml (`com.donfuldauer.kggml`) wraps and distributes native components from the
 | `miniz` 2.2.0 (vendored by stable-diffusion.cpp) | https://github.com/richgel999/miniz (`…/stable-diffusion.cpp/thirdparty/miniz.h`, included by `zip.c`) | MIT (original parts Unlicense / public domain) | as vendored at stable-diffusion.cpp `3b4d26f3d92c8db0199d7326f66260f4c18f4b41` | `:kggml-diffusion` (deflate for `zip`) |
 | `nlohmann/json` 3.11.2 (vendored by stable-diffusion.cpp) | https://github.com/nlohmann/json (`…/stable-diffusion.cpp/thirdparty/json.hpp`) | MIT | as vendored at stable-diffusion.cpp `3b4d26f3d92c8db0199d7326f66260f4c18f4b41` | `:kggml-diffusion` (safetensors headers, tokenizer vocabularies) |
 | `darts-clone` (vendored by stable-diffusion.cpp) | https://github.com/s-yata/darts-clone via google/sentencepiece (`…/stable-diffusion.cpp/thirdparty/darts.h`, `LICENSE.darts_clone.txt`) | BSD-3-Clause | as vendored at stable-diffusion.cpp `3b4d26f3d92c8db0199d7326f66260f4c18f4b41` | `:kggml-diffusion` (T5 unigram tokenizer) |
+| `Vulkan-Headers` (`vulkan.h`, `vulkan.hpp`) | https://github.com/KhronosGroup/Vulkan-Headers | Apache-2.0 OR MIT | `b5c8f996196ba4aa6d8f97e52b5d3b6e70f7e4e2` (tag `vulkan-sdk-1.4.341.0`, git submodule `kggml-runtime-vulkan/native/third_party/Vulkan-Headers`; header-only, compiled into ggml's Vulkan backend; the Vulkan loader is the device's `libvulkan.so`) | `:kggml-runtime-vulkan` (Android GPU add-on) |
 
 ### Build- and test-only tooling (not redistributed)
 

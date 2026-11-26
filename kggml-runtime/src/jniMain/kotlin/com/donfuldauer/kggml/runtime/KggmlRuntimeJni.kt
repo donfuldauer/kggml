@@ -18,6 +18,9 @@ internal object KggmlRuntimeJni {
 
     @JvmStatic external fun nativeInit(): Int
 
+    /** `kggml_runtime_load_backend(path)`: registers a ggml backend module (an Android GPU add-on). */
+    @JvmStatic external fun nativeLoadBackend(path: String): Int
+
     @JvmStatic external fun nativeShutdown(): Int
 
     @JvmStatic external fun nativeIsInitialized(): Int

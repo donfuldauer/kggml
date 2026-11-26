@@ -28,8 +28,9 @@ set -euo pipefail
 # ggml CPU backend exports e.g. ggml_cpu_has_llamafile); their uniqueness is checked separately. ggml's own
 # llamafile sgemm kernels (GGML_LLAMAFILE) are not llama.cpp and are allowed as well.
 FORBIDDEN_SYMBOL_RE='llama|mtmd|stable_?diffusion|diffusion_?engine|kggml_diffusion|(^|_)(new|free)_sd_ctx|(^|_)sd_(ctx|image|img_gen|vid_gen|get_system_info)|(^|_)(txt2img|img2img|upscaler_ctx)'
-FORBIDDEN_LIB_RE='(llama|mtmd|stable-diffusion|stable_diffusion|diffusion)'
-FORBIDDEN_CLASS_RE='com/donfuldauer/kggml/(llama|diffusion)/|com\.donfuldauer\.kggml\.(llama|diffusion)\.'
+# GPU backend add-ons (kggml-runtime-vulkan, later OpenCL) are opt-in and never part of the minimal sample either.
+FORBIDDEN_LIB_RE='(llama|mtmd|stable-diffusion|stable_diffusion|diffusion|ggml-vulkan|ggml-opencl)'
+FORBIDDEN_CLASS_RE='com/donfuldauer/kggml/(llama|diffusion|runtime/vulkan)/|com\.donfuldauer\.kggml\.(llama|diffusion|runtime\.vulkan)\.'
 GGML_SYMBOL_RE='^_?(ggml|gguf)_'
 ALLOWED_SYMBOL_RE='llamafile'
 

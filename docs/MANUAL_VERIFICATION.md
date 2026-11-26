@@ -108,3 +108,7 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#24] CI re-run once Actions minutes reset (billing / spending-limit refusal: every hosted job, including
   repo-hygiene's `secret-scan` full-history audit with the pinned gitleaks download, the Ubuntu job and the labelled
   macOS/Windows jobs, failed in 1–3 s with no logs) — https://github.com/donfuldauer/kggml/pull/58
+- [ ] [#83] Android GPU add-on on a physical phone with a Vulkan 1.1+ GPU (owner's Pixel; ideally also one Adreno and
+  one Mali device): the showcase Backends screen lists Vulkan as available; whisper, llama (SmolVLM / Qwen) and
+  diffusion (SD-Turbo, 4 steps, 512x512) produce correct output on `GPU_VULKAN` and `AUTO`, and diffusion is faster than
+  on `CPU_ONLY`; on a device without a usable driver the logcat warning appears and everything runs on the CPU.

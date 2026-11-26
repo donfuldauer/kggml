@@ -91,6 +91,10 @@ cp -r "${WORK}/elf-clean" "${WORK}/elf-libname"
 so "${WORK}/elf-libname" libllama.so 'int unrelated(void){return 0;}'
 expect fail "forbidden library file name fails" 'forbidden native library libllama.so' elf "${WORK}/elf-libname"
 
+cp -r "${WORK}/elf-clean" "${WORK}/elf-gpu-addon"
+so "${WORK}/elf-gpu-addon" libggml-vulkan.so 'int unrelated_gpu(void){return 0;}'
+expect fail "GPU backend add-on library fails" 'forbidden native library libggml-vulkan.so' elf "${WORK}/elf-gpu-addon"
+
 mkdir -p "${WORK}/elf-dup"
 so "${WORK}/elf-dup" libggml.so "${GGML_SRC}"
 so "${WORK}/elf-dup" libkggml_whisper.so "${GGML_SRC/ggml_init/ggml_init_copy} int ggml_init(void){return 3;} int whisper_full_with_state(void){return 0;}" -L"${WORK}/elf-dup" -lggml
