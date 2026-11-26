@@ -13,14 +13,16 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
 import com.donfuldauer.kggml.core.NativeFailureException
 import com.donfuldauer.kggml.models.DownloadEvent
-import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /** Compose UI smoke tests of the navigation shell and the Hardware Backend Inspector view state. */
-@OptIn(ExperimentalTestApi::class)
-class ShowcaseAppUiTest {
+@OptIn(ExperimentalTestApi::class, ExperimentalAtomicApi::class)
+class ShowcaseAppUiTest : UiTestBase() {
     @Test
     fun navigationShellRendersEveryDestination() = runComposeUiTest {
         setContent { ShowcaseApp(inspector = { fakeSnapshot() }, ioDispatcher = Dispatchers.Unconfined) }
@@ -86,16 +88,16 @@ class ShowcaseAppUiTest {
 
     @Test
     fun refreshQueriesTheRuntimeAgain() = runComposeUiTest {
-        val calls = AtomicInteger()
+        val calls = AtomicInt(0)
         setContent {
-            ShowcaseApp(inspector = { calls.incrementAndGet(); fakeSnapshot() }, ioDispatcher = Dispatchers.Unconfined)
+            ShowcaseApp(inspector = { calls.incrementAndFetch(); fakeSnapshot() }, ioDispatcher = Dispatchers.Unconfined)
         }
-        waitUntil { calls.get() == 1 }
+        waitUntil { calls.load() == 1 }
         waitForIdle()
         onNodeWithTag("inspector-refresh").performClick()
-        waitUntil { calls.get() == 2 }
+        waitUntil { calls.load() == 2 }
         waitForIdle()
-        assertEquals(2, calls.get())
+        assertEquals(2, calls.load())
         onNodeWithTag("backend-row-cpu_only").assertExists()
     }
 

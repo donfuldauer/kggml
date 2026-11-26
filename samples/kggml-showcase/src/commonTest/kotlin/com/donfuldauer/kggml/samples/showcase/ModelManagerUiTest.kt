@@ -23,7 +23,7 @@ import kotlin.test.Test
  * engine eviction (manual and simulated OS signal).
  */
 @OptIn(ExperimentalTestApi::class)
-class ModelManagerUiTest {
+class ModelManagerUiTest : UiTestBase() {
     private val llm = modelRowTag("llm")
     private val whisper = modelRowTag("whisper")
 

@@ -16,12 +16,9 @@ import com.donfuldauer.kggml.samples.showcase.diffusion.DiffusionStudioTags
 import com.donfuldauer.kggml.samples.showcase.diffusion.FakeImageGeneratorFactory
 import com.donfuldauer.kggml.samples.showcase.diffusion.PngEncoderTest
 import com.donfuldauer.kggml.samples.showcase.diffusion.fakeImage
-import java.io.ByteArrayInputStream
-import javax.imageio.ImageIO
 import kotlinx.coroutines.channels.Channel
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -29,7 +26,7 @@ import kotlin.test.assertTrue
  * controls, live step progress, the rendered result, mid-generation cancel, PNG export and errors.
  */
 @OptIn(ExperimentalTestApi::class)
-class DiffusionStudioUiTest {
+class DiffusionStudioUiTest : UiTestBase() {
     private fun androidx.compose.ui.test.ComposeUiTest.setSlider(tag: String, value: Float) {
         onNodeWithTag(tag).performScrollTo().performSemanticsAction(SemanticsActions.SetProgress) { it(value) }
     }
@@ -93,16 +90,13 @@ class DiffusionStudioUiTest {
         click(DiffusionStudioTags.EXPORT)
         waitForText(DiffusionStudioTags.STATUS, "to /exports/fox.png")
         val png = fakes.written.getValue("/exports/fox.png")
-        // A real PNG decoder (javax.imageio) reads the pure-Kotlin encoder's output back pixel for pixel.
-        val decoded = assertNotNull(ImageIO.read(ByteArrayInputStream(png)))
-        assertEquals(256, decoded.width)
+        // The exported bytes are exactly the generated image's pixels (decoded back by the test's PNG reader); an
+        // independent decoder (javax.imageio) checks the encoder itself in PngExportImageIoDesktopTest.
         val expected = fakeImage(256, 256, 42)
-        val rgb = decoded.getRGB(3, 2)
-        val offset = expected.offsetOf(3, 2)
-        assertEquals(expected.pixels[offset].toInt() and 0xFF, (rgb shr 16) and 0xFF)
-        assertEquals(expected.pixels[offset + 1].toInt() and 0xFF, (rgb shr 8) and 0xFF)
-        assertEquals(expected.pixels[offset + 2].toInt() and 0xFF, rgb and 0xFF)
-        assertTrue(PngEncoderTest.decodeStoredPng(png).pixels.contentEquals(expected.pixels))
+        val decoded = PngEncoderTest.decodeStoredPng(png)
+        assertEquals(256, decoded.width)
+        assertEquals(256, decoded.height)
+        assertTrue(decoded.pixels.contentEquals(expected.pixels))
     }
 
     @Test

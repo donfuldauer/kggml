@@ -1,4 +1,6 @@
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetTree
 
 // Minimal Android + iOS sample used for CI binary symbol leakage audits (AGENTS.md §2.1): it depends ONLY on the
 // `kggml-bom` platform and `:kggml-whisper` (which brings `:kggml-runtime`). It must never depend on
@@ -22,9 +24,23 @@ val iosXcframeworkDir: File = rootProject.layout.projectDirectory.dir("build/nat
 val iosWhisperXcframeworkDir: File =
     rootProject.layout.projectDirectory.dir("build/native-ios/KggmlWhisper.xcframework").asFile
 
+// -Pkggml.requireNative=true: real-engine tests on an Android device FAIL instead of skip when the native libraries are
+// missing (pair with -Pkggml.bundleNative=true, which packages them).
+val requireNative = providers.gradleProperty("kggml.requireNative").map(String::toBoolean).getOrElse(false)
+
+// :kggml-whisper's synthetic model fixture (internal test source, MIT, see NOTICE), compiled into this module's tests.
+val syncWhisperFixture by tasks.registering(Sync::class) {
+    description = "Copies :kggml-whisper's synthetic model fixture (TinyWhisperModel) into this module's tests."
+    from(rootProject.layout.projectDirectory.file("kggml-whisper/src/commonTest/kotlin/com/donfuldauer/kggml/whisper/TinyWhisperModel.kt"))
+    into(layout.buildDirectory.dir("generated/engine-fixtures/kotlin"))
+}
+
 kotlin {
     androidTarget {
         compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
+        // commonTest (session logic, real-engine tests) also runs on an Android device / emulator.
+        @OptIn(ExperimentalKotlinGradlePluginApi::class)
+        instrumentedTestVariant.sourceSetTree.set(KotlinSourceSetTree.test)
     }
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.binaries.framework {
@@ -40,15 +56,43 @@ kotlin {
         }
     }
 
+    compilerOptions { freeCompilerArgs.add("-Xexpect-actual-classes") }
+
     sourceSets {
         commonMain.dependencies {
             // Kggml SDK: versions come from the BOM only.
             implementation(project.dependencies.platform(project(":kggml-bom")))
             implementation(project(":kggml-whisper"))
         }
+        commonTest {
+            kotlin.srcDir(syncWhisperFixture)
+        }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+        }
+        // MainActivityTest (androidSharedTest) runs under Robolectric locally and on the device when instrumented.
+        // Test-only dependencies: they never reach the audited app APK.
+        val androidUnitTest by getting {
+            kotlin.srcDir("src/androidSharedTest/kotlin")
+            dependencies {
+                implementation(libs.robolectric)
+                implementation(libs.junit4)
+                implementation(libs.androidx.test.core)
+                implementation(libs.androidx.test.ext.junit)
+                implementation(libs.androidx.test.espresso.core)
+            }
+        }
+        val androidInstrumentedTest by getting {
+            kotlin.srcDir("src/androidSharedTest/kotlin")
+            dependencies {
+                implementation(libs.junit4)
+                implementation(libs.androidx.test.core)
+                implementation(libs.androidx.test.runner)
+                implementation(libs.androidx.test.rules)
+                implementation(libs.androidx.test.ext.junit)
+                implementation(libs.androidx.test.espresso.core)
+            }
         }
     }
 }
@@ -62,6 +106,9 @@ android {
         targetSdk = libs.versions.android.compileSdk.get().toInt()
         versionCode = 1
         versionName = sampleVersion
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Read by NativeTestEnvironment (InstrumentationRegistry arguments).
+        testInstrumentationRunnerArguments["kggml.requireNative"] = requireNative.toString()
     }
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(jvmTargetVersion)
@@ -69,6 +116,7 @@ android {
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
