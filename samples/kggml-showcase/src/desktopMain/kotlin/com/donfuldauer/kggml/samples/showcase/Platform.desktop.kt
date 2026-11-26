@@ -39,6 +39,7 @@ actual fun writeLocalFile(path: String, bytes: ByteArray) {
 }
 
 actual fun pixelsToImageBitmap(width: Int, height: Int, channels: Int, pixels: ByteArray): ImageBitmap {
+    preloadNativeRuntime() // before the first Skia use: see preloadNativeRuntime
     val info = ImageInfo(width, height, ColorType.RGBA_8888, ColorAlphaType.UNPREMUL)
     return SkiaImage.makeRaster(info, toRgba(width, height, channels, pixels), width * 4).toComposeImageBitmap()
 }
