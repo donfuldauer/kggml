@@ -131,10 +131,21 @@ The desktop app passes `-Dkggml.{native,whisper.native,llama.native,diffusion.na
 that exists. Android needs the `INTERNET` permission (declared) for downloads; the camera uses the system camera app
 through `TakePicturePreview`, so no `CAMERA` permission is declared.
 
-iOS: embed `KggmlShowcase.framework` together with `GgmlRuntime.xcframework`, `KggmlWhisper.xcframework`,
-`KggmlLlama.xcframework` and `KggmlDiffusion.xcframework` in an Xcode host app whose `Info.plist` contains
-`NSMicrophoneUsageDescription`, `NSCameraUsageDescription` (VLM camera) and, for background dictation,
-`UIBackgroundModes` = `audio`. A `ggml-tiny.en.bin` bundled as an app resource is pre-filled as the Whisper model path.
+iOS: `iosApp/iosApp.xcodeproj` is the Xcode host app (UIKit app delegate hosting the Compose UI, product
+`KggmlShowcaseApp`). Its first build phase compiles the static `KggmlShowcase.framework` with Gradle
+(`scripts/ios/xcode-kotlin-framework.sh`, which finds JDK 17 on its own); it embeds the `GgmlRuntime`, `KggmlWhisper`,
+`KggmlLlama` and `KggmlDiffusion` xcframeworks from `build/native-ios`, built once first:
+
+```bash
+./scripts/ios/build-xcframeworks.sh            # build/native-ios: the four xcframeworks
+open samples/kggml-showcase/iosApp/iosApp.xcodeproj
+```
+
+Pick a simulator, or your iPhone after choosing your team under *Signing & Capabilities* (`DEVELOPMENT_TEAM` is left
+empty), and run; `./scripts/ios/build-sample-apps.sh all kggml-showcase` builds it unsigned from the command line, as
+CI does. `Info.plist` declares `NSMicrophoneUsageDescription`, `NSCameraUsageDescription` (VLM camera) and
+`UIBackgroundModes` = `audio` (background dictation). Models are downloaded in the Models tab (stored in Application
+Support/kggml/models); a `ggml-tiny.en.bin` added to the app target as a resource is pre-filled as the Whisper model.
 
 ## Automated tests
 
