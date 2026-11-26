@@ -92,3 +92,6 @@ when it has been run; a failed check becomes a new issue.
   procedure in `docs/RELEASING.md` ("Before the first release" and "Dry run").
 - [ ] [#23] Full `ci.yml` matrix (Ubuntu, macOS, Windows) green on GitHub-hosted runners from `main` after merge
   (`Actions → CI → Run workflow`) — procedure in `docs/RELEASING.md` ("Dry run").
+- [ ] [#23] CI re-run on macOS/Windows once Actions minutes reset (billing / spending-limit refusal, every hosted job
+  failed in ~2 s with no logs: macOS release dry-run with the iOS klibs, `release.yml` iOS/xcframework path, Windows
+  MSVC build + `jvmTest`) — https://github.com/donfuldauer/kggml/pull/57
