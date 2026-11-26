@@ -16,6 +16,9 @@ actual object NativeTestEnvironment {
     /** iOS test executables link the xcframeworks, so the libraries are always present when tests run. */
     actual val requireNative: Boolean = true
 
+    /** The simulator cannot allocate Metal buffers; the tests run on a simulator. */
+    actual val gpuBackendsUsable: Boolean = false
+
     actual fun writeTempFile(name: String, bytes: ByteArray): String {
         val dir = NSTemporaryDirectory() + "kggml-minimal-" + NSProcessInfo.processInfo.globallyUniqueString
         check(NSFileManager.defaultManager.createDirectoryAtPath(dir, true, null, null)) { "cannot create $dir" }

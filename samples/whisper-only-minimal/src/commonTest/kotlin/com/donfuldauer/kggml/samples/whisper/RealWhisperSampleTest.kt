@@ -74,13 +74,18 @@ class RealWhisperSampleTest {
         WhisperSampleSession().use { session ->
             session.transcribe(first, tone(1), ComputeBackend.CPU_ONLY)
             val engine = session.currentEngine!!
-            // Same model, different backend: WhisperEngine.reinitialize on the same engine (the runtime toggle).
-            val auto = session.transcribe(first, tone(1), ComputeBackend.AUTO)
-            assertSame(engine, session.currentEngine)
-            assertEquals(ComputeBackend.AUTO, auto.requestedBackend)
-            assertTrue(auto.activeBackend != ComputeBackend.AUTO, "AUTO must resolve to a concrete backend")
-            // Back to CPU_ONLY on the same engine.
-            assertEquals(ComputeBackend.CPU_ONLY, session.transcribe(first, tone(1), ComputeBackend.CPU_ONLY).activeBackend)
+            if (NativeTestEnvironment.gpuBackendsUsable) {
+                // Same model, different backend: WhisperEngine.reinitialize on the same engine (the runtime toggle).
+                val auto = session.transcribe(first, tone(1), ComputeBackend.AUTO)
+                assertSame(engine, session.currentEngine)
+                assertEquals(ComputeBackend.AUTO, auto.requestedBackend)
+                assertTrue(auto.activeBackend != ComputeBackend.AUTO, "AUTO must resolve to a concrete backend")
+                // Back to CPU_ONLY on the same engine.
+                assertEquals(ComputeBackend.CPU_ONLY, session.transcribe(first, tone(1), ComputeBackend.CPU_ONLY).activeBackend)
+                assertSame(engine, session.currentEngine)
+            }
+            // Same model, same backend: the engine is reused as is.
+            session.transcribe(first, tone(1), ComputeBackend.CPU_ONLY)
             assertSame(engine, session.currentEngine)
             // A different model file opens a new engine.
             session.transcribe(second, tone(1), ComputeBackend.CPU_ONLY)

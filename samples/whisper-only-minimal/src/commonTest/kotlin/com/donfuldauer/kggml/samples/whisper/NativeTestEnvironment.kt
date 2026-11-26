@@ -12,6 +12,13 @@ expect object NativeTestEnvironment {
      */
     val requireNative: Boolean
 
+    /**
+     * Whether a GPU (or `AUTO`) backend may be requested. `false` on the iOS simulator, which cannot allocate Metal
+     * buffers (whisper.cpp aborts in model load; see `IosNativeWhisperTest`). Android builds have no GPU backend
+     * compiled in, so `AUTO` resolves to the CPU there.
+     */
+    val gpuBackendsUsable: Boolean
+
     /** Writes [bytes] to a new file named [name] in a fresh scratch directory and returns its path. */
     fun writeTempFile(name: String, bytes: ByteArray): String
 }

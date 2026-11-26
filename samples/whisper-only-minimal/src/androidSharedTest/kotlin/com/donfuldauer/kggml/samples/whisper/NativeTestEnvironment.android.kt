@@ -13,6 +13,8 @@ actual object NativeTestEnvironment {
         get() = runCatching { InstrumentationRegistry.getArguments().getString("kggml.requireNative").toBoolean() }
             .getOrDefault(false)
 
+    actual val gpuBackendsUsable: Boolean = true
+
     actual fun writeTempFile(name: String, bytes: ByteArray): String {
         // The app's cache directory on a device / Robolectric; a JVM temp directory in plain local unit tests.
         val base = runCatching { ApplicationProvider.getApplicationContext<Context>().cacheDir }.getOrNull()
