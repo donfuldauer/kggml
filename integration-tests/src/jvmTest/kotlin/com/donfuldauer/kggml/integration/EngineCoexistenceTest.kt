@@ -193,22 +193,49 @@ class EngineCoexistenceTest {
             llama.await()
         }
         withTimeout(5.minutes) {
-            repeat(3) { cycle() } // warm-up: allocator pools, ggml backend registry, JIT
-            val before = residentKb(status)
-            repeat(15) { cycle() }
-            val after = residentKb(status)
-            if (before != null && after != null) {
-                // Each cycle maps ~2 MB of models plus contexts; a per-cycle leak would add up far past this bound.
-                assertTrue(after - before < 64 * 1024, "resident set grew by ${(after - before) / 1024} MB over 15 cycles")
+            // Warm-up: allocator pools and malloc arenas, the ggml backend registry, JIT, and the JVM heap growing to its
+            // working size. That one-off growth depends on the host (cores, RAM) and is not a leak, so it is excluded.
+            repeat(WARM_UP_CYCLES) { cycle() }
+            if (residentKb(status) == null) return@withTimeout // not Linux: nothing to measure
+            val samples = List(MEASURED_CYCLES) {
+                cycle()
+                checkNotNull(residentKb(status))
             }
+            // A leak grows the resident set on every cycle; the allocator does not. After warm-up it still makes the odd
+            // one-off step of 10-20 MB (a new arena or heap region) and then stays flat, so a delta between two points or
+            // windows cannot tell a step from a leak. The median of the per-cycle deltas can: a step is one outlier delta
+            // and the median ignores it, while a leak of even 1 MB per cycle (far less than one engine's model plus
+            // contexts) moves every delta. The total-growth backstop catches a leak that only shows every few cycles.
+            val perCycleKb = samples.takeLast(SLOPE_CYCLES + 1).zipWithNext { a, b -> b - a }
+            val slopeKb = median(perCycleKb)
+            val totalKb = samples.last() - samples.first()
+            val trace = "VmRSS per cycle in MB: " + samples.joinToString { (it / 1024).toString() }
+            assertTrue(
+                slopeKb < MAX_SLOPE_KB_PER_CYCLE,
+                "resident set keeps growing after warm-up: median ${slopeKb} KB per cycle over the last $SLOPE_CYCLES " +
+                    "cycles (bound ${MAX_SLOPE_KB_PER_CYCLE} KB); $trace",
+            )
+            assertTrue(
+                totalKb < MAX_TOTAL_GROWTH_KB,
+                "resident set grew ${totalKb / 1024} MB over $MEASURED_CYCLES cycles after warm-up " +
+                    "(bound ${MAX_TOTAL_GROWTH_KB / 1024} MB); $trace",
+            )
         }
     }
+
+    private fun median(values: List<Long>): Long = values.sorted().let { (it[(it.size - 1) / 2] + it[it.size / 2]) / 2 }
 
     private fun residentKb(status: File): Long? =
         if (!status.isFile) null
         else status.readLines().firstOrNull { it.startsWith("VmRSS:") }?.filter(Char::isDigit)?.toLongOrNull()
 
     private companion object {
+        const val WARM_UP_CYCLES = 5
+        const val MEASURED_CYCLES = 20
+        const val SLOPE_CYCLES = 10 // per-cycle deltas the median slope is taken over
+        const val MAX_SLOPE_KB_PER_CYCLE = 1024L
+        const val MAX_TOTAL_GROWTH_KB = 96L * 1024
+
         val CPU = BackendConfig(ComputeBackend.CPU_ONLY, gpuLayers = 0, cpuThreads = 2)
         val SMALL = LlamaContextConfig(contextLength = 256, batchSize = 16, embeddingContextLength = 64)
     }
