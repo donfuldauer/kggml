@@ -106,6 +106,9 @@ when it has been run; a failed check becomes a new issue.
   e-mail addresses").
 - [ ] [#24] Owner: `./scripts/ci/audit-history.sh` passes on a fresh full clone right before the visibility flip, then
   flip to public — procedure in `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip", steps 4–5).
+- [ ] [#24] Owner, right after the flip: private vulnerability reporting enabled (Settings → Code security), so the
+  `SECURITY.md` and issue-template report links open the advisory form — procedure in `docs/OSS_LAUNCH.md` ("Owner
+  steps before the visibility flip", step 6).
 - [ ] [#24] CI re-run once Actions minutes reset (billing / spending-limit refusal: every hosted job, including
   repo-hygiene's `secret-scan` full-history audit with the pinned gitleaks download, the Ubuntu job and the labelled
   macOS/Windows jobs, failed in 1–3 s with no logs) — https://github.com/donfuldauer/kggml/pull/58

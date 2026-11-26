@@ -136,7 +136,10 @@ iOS: embed `KggmlShowcase.framework` together with `GgmlRuntime.xcframework`, `K
 ./gradlew :samples:kggml-showcase:testDebugUnitTest  # controller state tests on Android
 ```
 
-All tests use deterministic fakes: no native libraries, no network, no model files.
+All tests use deterministic fakes: no native libraries, no network, no model files. The one exception,
+`KggmlRuntimeInspectorDesktopTest`, runs the Hardware Backend Inspector against the host runtime when
+`kggml-runtime/native/scripts/build-host.sh` has been run, and otherwise checks the "runtime unavailable" state
+(`-Pkggml.requireNative=true` makes the host runtime mandatory).
 
 - **commonTest** (desktop and Android unit tests):
   - `WhisperStudioControllerTest` (`WhisperFakes.kt`): start / stop / cancel, backend switching and reload, partial

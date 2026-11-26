@@ -388,4 +388,5 @@ Each `native/README.md` ([runtime](kggml-runtime/native/README.md), [whisper](kg
 - Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Kggml is released under the [MIT License](LICENSE). The bundled upstream libraries are MIT-licensed (darts-clone,
-vendored by llama.cpp, is BSD-3-Clause); see [NOTICE](NOTICE) for every third-party component and its pinned commit.
+vendored by stable-diffusion.cpp, is BSD-3-Clause); see [NOTICE](NOTICE) for every third-party component and its
+pinned commit.

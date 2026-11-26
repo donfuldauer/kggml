@@ -70,7 +70,7 @@ Also run whichever of these apply to the modules your change touches:
 ./scripts/ci/verify-docs.sh
 ./gradlew :docs-snippets:build
 
-# Pure Kotlin & JVM/Android tests (once Gradle is initialized in Issue #1)
+# Pure Kotlin & JVM/Android tests
 ./gradlew check
 ./gradlew :kggml-core-api:allTests
 ./gradlew jvmTest androidUnitTest
@@ -139,7 +139,7 @@ GitHub stops starting hosted jobs once the included minutes (and any spending li
 - **Phase:** `phase-1`, `phase-2`, `phase-3`, `phase-4`, `phase-oss`
 - **Module:** `mod:bom`, `mod:core-api`, `mod:runtime`, `mod:whisper`, `mod:llama`, `mod:diffusion`, `mod:model-manager`, `mod:samples`, `infra:ci`
 - **Status Lifecycle:** `status:ready`, `status:blocked`, `status:in-progress`, `status:in-review`
-- **CI (PRs only):** `ci:macos` — runs the 10×-billed macOS workflow; see Section 3 "CI Minutes Policy"
+- **CI (PRs only):** `ci:macos` — runs the 10×-billed macOS workflow; `ci:windows` — runs the 2×-billed Windows job; see Section 3 "CI Minutes Policy"
 
 ### Branch & PR Conventions
 - Branch name: `feat/issue-<N>-<slug>` cut from `main`.
