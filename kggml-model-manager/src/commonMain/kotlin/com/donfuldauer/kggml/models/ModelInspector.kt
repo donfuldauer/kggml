@@ -12,6 +12,7 @@ public enum class ModelFormat {
 /**
  * Summary of a model file from its header, without loading weights.
  *
+ * @property format the file format.
  * @property parameterCount total tensor elements.
  * @property quantization quantization label (for example `Q4_K_M`, `F16`), or `null` if unknown.
  * @property contextLength training context (LLMs) or text context (Whisper), or `null`.

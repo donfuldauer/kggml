@@ -51,6 +51,9 @@ include(
 // Unpublished cross-engine integration tests (several engines in one process).
 include(":integration-tests")
 
+// Unpublished README snippet compile check: consumes the SDK through the BOM like an external app.
+include(":docs-snippets")
+
 // Samples (never published).
 include(
     ":samples:kggml-showcase",

@@ -3,6 +3,9 @@ package com.donfuldauer.kggml.models
 /**
  * One model file in a [ModelCache].
  *
+ * @property fileName the file name inside [ModelCache.directory].
+ * @property path the full path of the file.
+ * @property sizeBytes the file size in bytes.
  * @property lastAccessMillis last [ModelCache.touch] (or the file's modification time if never touched).
  * @property pinned whether the file is pinned (in use) and therefore never evicted.
  */

@@ -38,6 +38,9 @@ public enum class OverflowPolicy {
  * with a compare-and-set on that same read position: success proves the producer had not yet claimed — and
  * therefore had not yet overwritten — any of the copied slots; failure means the copy may be torn and is
  * retried against the new read position.
+ *
+ * @property capacity maximum number of samples the buffer holds.
+ * @property overflowPolicy what [write] does when the buffer is full.
  */
 public class PcmRingBuffer(
     public val capacity: Int,

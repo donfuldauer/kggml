@@ -33,10 +33,17 @@ public data class LlamaContextConfig(
     public companion object {
         /** [contextLength] sentinel: use the model's training context length. */
         public const val MODEL_CONTEXT_LENGTH: Int = 0
+
+        /** Default [contextLength] in tokens. */
         public const val DEFAULT_CONTEXT_LENGTH: Int = 4096
+
+        /** Default [batchSize] in tokens. */
         public const val DEFAULT_BATCH_SIZE: Int = 512
+
+        /** Default [embeddingContextLength] in tokens. */
         public const val DEFAULT_EMBEDDING_CONTEXT_LENGTH: Int = 512
 
+        /** All defaults: 4096-token context, 512-token batches, the model's own embedding pooling. */
         public val DEFAULT: LlamaContextConfig = LlamaContextConfig()
     }
 }
@@ -199,6 +206,7 @@ public data class GenerationOptions(
 
         private const val RANDOM_SEED: Long = 0xFFFFFFFFL
 
+        /** All defaults: 256 tokens, temperature 0.8, top-k 40, top-p 0.95, min-p 0.05, random seed. */
         public val DEFAULT: GenerationOptions = GenerationOptions()
 
         /** Deterministic greedy decoding. */
@@ -255,8 +263,15 @@ public class LlamaGrammar private constructor(public val gbnf: String, public va
  * Static properties of the loaded model.
  *
  * @property description `llama_model_desc()`, e.g. `"llama 7B Q4_K - Medium"`.
+ * @property vocabularySize number of tokens in the vocabulary.
+ * @property trainContextLength context length the model was trained with (`n_ctx_train`).
+ * @property embeddingSize embedding dimension (`n_embd`): the size of [LlamaEngine.embed] vectors.
+ * @property layerCount number of transformer layers (`n_layer`), the unit of `BackendConfig.gpuLayers`.
+ * @property parameterCount total number of model parameters.
+ * @property sizeBytes total size of the model tensors in bytes.
  * @property bosToken beginning-of-sequence token id, `-1` if the vocabulary has none.
  * @property eosToken end-of-sequence token id, `-1` if the vocabulary has none.
+ * @property hasEncoder `true` for encoder-decoder models (e.g. T5).
  */
 public data class LlamaModelInfo(
     val description: String,
@@ -271,7 +286,13 @@ public data class LlamaModelInfo(
     val hasEncoder: Boolean,
 )
 
-/** The outcome of [LlamaEngine.generateText]. */
+/**
+ * The outcome of [LlamaEngine.generateText].
+ *
+ * @property text the generated text (complete UTF-8 characters only).
+ * @property tokens ids of the generated tokens, in order.
+ * @property stopReason why generation stopped.
+ */
 public data class GenerationResult(
     val text: String,
     val tokens: IntArray,
