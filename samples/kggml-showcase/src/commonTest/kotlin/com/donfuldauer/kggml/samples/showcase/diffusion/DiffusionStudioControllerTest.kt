@@ -6,6 +6,7 @@ import com.donfuldauer.kggml.core.MemoryPressureLevel
 import com.donfuldauer.kggml.core.ModelLoadException
 import com.donfuldauer.kggml.core.OutOfMemoryException
 import com.donfuldauer.kggml.diffusion.DiffusionPhase
+import com.donfuldauer.kggml.samples.showcase.models.DiffusionPreset
 import com.donfuldauer.kggml.samples.showcase.models.ResidentModels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -51,6 +52,34 @@ class DiffusionStudioControllerTest {
         )
         val state get() = controller.state.value
         val generator get() = factory.opened.last()
+    }
+
+    @Test
+    fun choosingAModelAppliesItsPresetAndKeepsTheSettingsWithoutOne() = runTest {
+        val h = Harness(this, modelPath = "")
+        h.controller.setSteps(30)
+        h.controller.setCfgScale(9f)
+        h.controller.setSize(384)
+        h.controller.useModel("/models/sd15.safetensors")
+        assertEquals("/models/sd15.safetensors", h.state.modelPath)
+        assertEquals(Triple(30, 9f, 384), Triple(h.state.steps, h.state.cfgScale, h.state.size), "no preset: settings kept")
+
+        h.controller.useModel("/models/sd_turbo.gguf", DiffusionPreset(steps = 4, cfgScale = 1f, size = 512))
+        assertEquals("/models/sd_turbo.gguf", h.state.modelPath)
+        assertEquals(Triple(4, 1f, 512), Triple(h.state.steps, h.state.cfgScale, h.state.size))
+        assertEquals("Settings for this model: 4 steps, CFG 1, 512x512", h.state.status)
+
+        // The preset reaches the engine as generation parameters.
+        h.controller.generate()
+        advanceUntilIdle()
+        val params = h.generator.requests.single()
+        assertEquals(4, params.sampleSteps)
+        assertEquals(1f, params.cfgScale)
+        assertEquals(512, params.width)
+
+        // Out-of-range presets are clamped like manual input.
+        h.controller.useModel("/models/x.gguf", DiffusionPreset(steps = 500, cfgScale = 99f, size = 256))
+        assertEquals(Triple(DiffusionStudioController.MAX_STEPS, DiffusionStudioController.MAX_CFG, 256), Triple(h.state.steps, h.state.cfgScale, h.state.size))
     }
 
     @Test

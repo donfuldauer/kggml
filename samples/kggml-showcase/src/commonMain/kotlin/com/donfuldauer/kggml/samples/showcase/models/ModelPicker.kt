@@ -54,6 +54,7 @@ enum class ModelSlot(
  *
  * @property id catalog id, or the file name of a non-catalog file (unique within the model folder).
  * @property projectorPath for a vision LLM, the path of its installed projector, if it is downloaded too.
+ * @property diffusionPreset for a diffusion model, the settings it is made for (applied when it is chosen).
  */
 data class ModelChoice(
     val id: String,
@@ -61,6 +62,7 @@ data class ModelChoice(
     val detail: String,
     val path: String,
     val projectorPath: String? = null,
+    val diffusionPreset: DiffusionPreset? = null,
 )
 
 /**
@@ -72,11 +74,12 @@ fun ModelManagerState.choicesFor(slot: ModelSlot): List<ModelChoice> {
     val catalog = installed.filter { it.model.kind in slot.kinds }.map { row ->
         val projector = row.model.projectorId?.let { id -> installed.firstOrNull { it.model.id == id }?.installedPath }
         val note = when {
+            row.model.diffusionPreset != null -> " · uses ${row.model.diffusionPreset.label}"
             row.model.projectorId == null -> ""
             projector != null -> " · with its vision projector"
             else -> " · vision projector not downloaded"
         }
-        ModelChoice(row.model.id, row.model.displayName, row.model.fileName + note, row.installedPath!!, projector)
+        ModelChoice(row.model.id, row.model.displayName, row.model.fileName + note, row.installedPath!!, projector, row.model.diffusionPreset)
     }
     val others = otherFiles.filter { slot.accepts(it.fileName) }.sortedBy { it.fileName }.map { file ->
         ModelChoice(file.fileName, file.fileName, "Other file in the model folder", file.path)
