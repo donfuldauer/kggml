@@ -82,7 +82,8 @@ Also run whichever of these apply to the modules your change touches:
 ctest --test-dir build/native --output-on-failure
 
 # Android instrumented tests on a connected device / emulator (every library + both samples, real native libraries
-# bundled and required; KGGML_AVD=<avd> boots a headless emulator first). ci-local step: --only instrumented
+# bundled and required; KGGML_AVD=<avd> boots a headless emulator first). ci-local step: --only instrumented.
+# CI runs it in the macOS job on the owner's Mac (local-mac) with the AVD named by the ANDROID_AVD repo variable.
 ./scripts/ci/run-android-instrumented.sh
 
 # Merged Kover coverage of every JVM / Robolectric test -> build/reports/kover/html (ci-local step: --only coverage)
