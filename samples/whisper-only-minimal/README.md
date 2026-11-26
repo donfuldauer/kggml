@@ -109,7 +109,7 @@ A Swing window (`WhisperSamplePanel`) with the same controls; the model folder i
 ./scripts/ci/audit-minimal-sample.sh android
 # iOS (macOS CI, after linkDebugFrameworkIos* and both xcframework builds)
 ./scripts/ci/audit-minimal-sample.sh ios
-# Desktop (every CI OS): app jar + runtime classpath; on Linux also the host native libraries it loads
+# Desktop (every CI OS): app jar + runtime classpath; on Linux (ELF) and macOS (Mach-O) also the host native libraries
 ./scripts/ci/audit-minimal-sample.sh desktop
 # Direct use
 ./scripts/audit-binary-symbols.sh apk <app.apk> [abi ...]
