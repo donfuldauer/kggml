@@ -25,7 +25,7 @@ class KggmlRuntimeInspectorDesktopTest {
             assertIs<BackendInspectorState.Ready>(state, "unexpected state: $state")
             val cpu = state.rows.single { it.backend == ComputeBackend.CPU_ONLY }
             assertEquals(BackendStatus.AVAILABLE, cpu.status)
-            assertEquals(listOf("CPU", "Metal", "Vulkan", "Core ML"), state.rows.map { it.label })
+            assertEquals(listOf("CPU", "Metal", "Vulkan", "OpenCL", "Core ML"), state.rows.map { it.label })
             assertTrue(state.recommendedThreadCount in 1..state.hardwareThreadCount)
             assertFalse(state.info.runtimeVersion.isBlank())
             assertEquals(40, state.info.ggmlCommit.length)

@@ -17,9 +17,10 @@ internal object AndroidNativeLibraryLoader {
 
     /**
      * ggml backend modules shipped by the optional Android add-on artifacts, by library name (`lib<name>.so`):
-     * `kggml-runtime-vulkan` packages `libggml-vulkan.so`.
+     * `kggml-runtime-vulkan` packages `libggml-vulkan.so`, `kggml-runtime-opencl` packages `libggml-opencl.so` (which
+     * loads only on devices whose vendor exposes `libOpenCL.so`).
      */
-    val BACKEND_MODULES: List<String> = listOf("ggml-vulkan")
+    val BACKEND_MODULES: List<String> = listOf("ggml-vulkan", "ggml-opencl")
 
     private const val TAG = "kggml"
 

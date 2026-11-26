@@ -159,6 +159,11 @@ void probe_backends(std::array<kggml_backend_info, KGGML_BACKEND_KIND_COUNT> & o
     fill_info(out[KGGML_BACKEND_VULKAN], KGGML_BACKEND_VULKAN, "Vulkan", vulkan_registered,
               vulkan_registered ? probe_devices("Vulkan") : 0);
 
+    // OpenCL is only ever a registered backend module (the Android kggml-runtime-opencl add-on).
+    const bool opencl_registered = ggml_backend_reg_by_name("OpenCL") != nullptr;
+    fill_info(out[KGGML_BACKEND_OPENCL], KGGML_BACKEND_OPENCL, "OpenCL", opencl_registered,
+              opencl_registered ? probe_devices("OpenCL") : 0);
+
     // CoreML is a compile-time capability flag; the engine (whisper.cpp encoder) owns the actual model.
 #if defined(KGGML_HAS_COREML)
     fill_info(out[KGGML_BACKEND_COREML], KGGML_BACKEND_COREML, "CoreML", true, 0);

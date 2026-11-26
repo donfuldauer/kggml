@@ -34,7 +34,7 @@ set -euo pipefail
 FORBIDDEN_SYMBOL_RE='llama|mtmd|stable_?diffusion|diffusion_?engine|kggml_diffusion|(^|_)(new|free)_sd_ctx|(^|_)sd_(ctx|image|img_gen|vid_gen|get_system_info)|(^|_)(txt2img|img2img|upscaler_ctx)'
 # GPU backend add-ons (kggml-runtime-vulkan, later OpenCL) are opt-in and never part of the minimal sample either.
 FORBIDDEN_LIB_RE='(llama|mtmd|stable-diffusion|stable_diffusion|diffusion|ggml-vulkan|ggml-opencl)'
-FORBIDDEN_CLASS_RE='com/donfuldauer/kggml/(llama|diffusion|runtime/vulkan)/|com\.donfuldauer\.kggml\.(llama|diffusion|runtime\.vulkan)\.'
+FORBIDDEN_CLASS_RE='com/donfuldauer/kggml/(llama|diffusion|runtime/vulkan|runtime/opencl)/|com\.donfuldauer\.kggml\.(llama|diffusion|runtime\.vulkan|runtime\.opencl)\.'
 GGML_SYMBOL_RE='^_?(ggml|gguf)_'
 ALLOWED_SYMBOL_RE='llamafile'
 

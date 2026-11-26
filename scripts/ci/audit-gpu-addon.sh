@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Audits the Android GPU add-on module (kggml-runtime-vulkan): libggml-vulkan.so per ABI must
-#   - be a 16 KB-aligned module named libggml-vulkan.so (jniLibs are packaged by file name; no versioned SONAME),
+# Audits an Android GPU add-on module, kggml-runtime-vulkan (libggml-vulkan.so) or kggml-runtime-opencl
+# (libggml-opencl.so). Per ABI the module must
+#   - be a 16 KB-aligned module with the add-on's file name (jniLibs are packaged by file name; no versioned SONAME),
 #   - export the ggml backend module entry point ggml_backend_init (GGML_BACKEND_DL),
 #   - link ggml only dynamically through libggml-base.so (resolved to :kggml-runtime's copy at run time) and need
-#     nothing beyond the system Vulkan loader and the libraries :kggml-runtime already ships (no second ggml, no
-#     CPU backend, no libggml.so registry).
-# Expects kggml-runtime-vulkan/native/scripts/build-android.sh to have staged build/native-android-vulkan-jniLibs/<abi>.
-# Shared by CI (.github/workflows/ci.yml Ubuntu job) and local runs.
+#     nothing beyond the device's API loader (libvulkan.so / the vendor's libOpenCL.so) and the libraries
+#     :kggml-runtime already ships (no second ggml, no CPU backend, no libggml.so registry).
+# Expects kggml-runtime-<kind>/native/scripts/build-android.sh to have staged build/native-android-<kind>-jniLibs/<abi>.
+# Shared by CI (.github/workflows/ci.yml Ubuntu job) and ./scripts/ci-local.sh.
 #
-# Usage: scripts/ci/audit-vulkan-addon.sh [abi ...]   (default: arm64-v8a x86_64)
+# Usage: scripts/ci/audit-gpu-addon.sh <vulkan|opencl> [abi ...]   (default ABIs: arm64-v8a x86_64)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -16,23 +17,31 @@ cd "${REPO_ROOT}"
 readelf_bin="$(command -v readelf || command -v llvm-readelf || true)"
 [[ -n "${readelf_bin}" ]] || { echo "FAIL: readelf not found" >&2; exit 1; }
 
+kind="${1:-}"
+case "${kind}" in
+  vulkan) api_loader=libvulkan.so ;;
+  opencl) api_loader=libOpenCL.so ;;
+  *) echo "usage: $0 <vulkan|opencl> [abi ...]" >&2; exit 2 ;;
+esac
+shift
+module_name="libggml-${kind}.so"
 abis=("$@")
 [[ ${#abis[@]} -gt 0 ]] || abis=(arm64-v8a x86_64)
-allowed_needed=(libggml-base.so libvulkan.so libc++_shared.so libc.so libm.so libdl.so liblog.so)
+allowed_needed=(libggml-base.so "${api_loader}" libc++_shared.so libc.so libm.so libdl.so liblog.so)
 problems=0
 fail() { echo "FAIL: $*" >&2; problems=$((problems + 1)); }
 
 for abi in "${abis[@]}"; do
-  so="build/native-android-vulkan-jniLibs/${abi}/libggml-vulkan.so"
+  so="build/native-android-${kind}-jniLibs/${abi}/${module_name}"
   if [[ ! -f "${so}" ]]; then fail "${abi}: ${so} missing"; continue; fi
   dynamic="$("${readelf_bin}" -d "${so}")"
   needed="$(sed -n 's/.*(NEEDED).*\[\(.*\)\].*/\1/p' <<<"${dynamic}")"
   # A CMake MODULE has no SONAME (it is dlopen()ed by path, never linked against); any SONAME must be unversioned.
-  if grep -q 'SONAME' <<<"${dynamic}" && ! grep -q 'SONAME.*\[libggml-vulkan\.so\]' <<<"${dynamic}"; then
-    fail "${abi}: SONAME is not libggml-vulkan.so"
+  if grep -q 'SONAME' <<<"${dynamic}" && ! grep -qF "[${module_name}]" <<<"$(grep SONAME <<<"${dynamic}")"; then
+    fail "${abi}: SONAME is not ${module_name}"
   fi
   grep -qx 'libggml-base.so' <<<"${needed}" || fail "${abi}: does not link libggml-base.so (ggml must be shared with :kggml-runtime)"
-  grep -qx 'libvulkan.so' <<<"${needed}" || fail "${abi}: does not link the system libvulkan.so"
+  grep -qx "${api_loader}" <<<"${needed}" || fail "${abi}: does not link the device's ${api_loader}"
   while IFS= read -r dep; do
     [[ -z "${dep}" ]] && continue
     printf '%s\n' "${allowed_needed[@]}" | grep -qx "${dep}" || fail "${abi}: unexpected dependency ${dep}"
@@ -45,8 +54,8 @@ for abi in "${abis[@]}"; do
   fi
   "${readelf_bin}" -lW "${so}" | awk '$1 == "LOAD" { if ($NF != "0x4000") bad = 1 } END { exit bad }' \
     || fail "${abi}: LOAD segments are not 16 KB aligned"
-  echo "${abi}: libggml-vulkan.so OK (needs: $(tr '\n' ' ' <<<"${needed}"))"
+  echo "${abi}: ${module_name} OK (needs: $(tr '\n' ' ' <<<"${needed}"))"
 done
 
 [[ ${problems} -eq 0 ]] || exit 1
-echo "kggml-runtime-vulkan audit: OK"
+echo "kggml-runtime-${kind} audit: OK"

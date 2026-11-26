@@ -226,12 +226,14 @@ internal object LlamaBackendKind {
     const val METAL: Int = 1
     const val VULKAN: Int = 2
     const val COREML: Int = 3
+    const val OPENCL: Int = 4
 
     fun of(backend: ComputeBackend): Int = when (backend) {
         ComputeBackend.CPU_ONLY -> CPU
         ComputeBackend.GPU_METAL -> METAL
         ComputeBackend.GPU_VULKAN -> VULKAN
         ComputeBackend.NPU_COREML -> COREML
+        ComputeBackend.GPU_OPENCL -> OPENCL
         ComputeBackend.AUTO -> error("AUTO must be resolved before reaching native code")
     }
 
@@ -240,6 +242,7 @@ internal object LlamaBackendKind {
         METAL -> ComputeBackend.GPU_METAL
         VULKAN -> ComputeBackend.GPU_VULKAN
         COREML -> ComputeBackend.NPU_COREML
+        OPENCL -> ComputeBackend.GPU_OPENCL
         else -> null
     }
 }

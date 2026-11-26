@@ -13,3 +13,9 @@
 [submodule "kggml-runtime-vulkan/native/third_party/Vulkan-Headers"]
 	path = kggml-runtime-vulkan/native/third_party/Vulkan-Headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers
+[submodule "kggml-runtime-opencl/native/third_party/OpenCL-Headers"]
+	path = kggml-runtime-opencl/native/third_party/OpenCL-Headers
+	url = https://github.com/KhronosGroup/OpenCL-Headers
+[submodule "kggml-runtime-opencl/native/third_party/OpenCL-ICD-Loader"]
+	path = kggml-runtime-opencl/native/third_party/OpenCL-ICD-Loader
+	url = https://github.com/KhronosGroup/OpenCL-ICD-Loader

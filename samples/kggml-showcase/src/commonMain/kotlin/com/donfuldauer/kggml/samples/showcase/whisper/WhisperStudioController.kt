@@ -83,6 +83,7 @@ val STUDIO_BACKENDS: List<ComputeBackend> = listOf(
     ComputeBackend.CPU_ONLY,
     ComputeBackend.GPU_METAL,
     ComputeBackend.GPU_VULKAN,
+    ComputeBackend.GPU_OPENCL,
     ComputeBackend.NPU_COREML,
 )
 

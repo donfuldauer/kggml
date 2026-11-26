@@ -26,11 +26,17 @@ public enum class ComputeBackend {
 
     /** Apple Neural Engine via Core ML (iOS Whisper encoder). Falls back to Metal, then CPU. */
     NPU_COREML,
+
+    /**
+     * OpenCL GPU (Android, from the optional `kggml-runtime-opencl` add-on; ggml's OpenCL backend is tuned for
+     * Qualcomm Adreno). Falls back to the CPU.
+     */
+    GPU_OPENCL,
     ;
 
     /** `true` if this backend offloads work to a GPU or NPU (i.e. it is neither [CPU_ONLY] nor [AUTO]). */
     public val isAccelerated: Boolean
-        get() = this == GPU_METAL || this == GPU_VULKAN || this == NPU_COREML
+        get() = this == GPU_METAL || this == GPU_VULKAN || this == GPU_OPENCL || this == NPU_COREML
 
     /**
      * The backend to try next when this one is unavailable, or `null` for [CPU_ONLY] (which is always
@@ -39,18 +45,24 @@ public enum class ComputeBackend {
      * - [NPU_COREML] → [GPU_METAL]
      * - [GPU_METAL] → [CPU_ONLY]
      * - [GPU_VULKAN] → [CPU_ONLY]
+     * - [GPU_OPENCL] → [CPU_ONLY]
      */
     public val fallback: ComputeBackend?
         get() = when (this) {
             NPU_COREML -> GPU_METAL
-            GPU_METAL, GPU_VULKAN -> CPU_ONLY
+            GPU_METAL, GPU_VULKAN, GPU_OPENCL -> CPU_ONLY
             CPU_ONLY, AUTO -> null
         }
 
     public companion object {
-        /** Order in which [AUTO] picks a concrete backend: the first one present in the available set wins. */
+        /**
+         * Order in which [AUTO] picks a concrete backend: the first one present in the available set wins. OpenCL
+         * comes before Vulkan: it is only ever available when the app ships the OpenCL add-on and the device's vendor
+         * exposes OpenCL (in practice Qualcomm Adreno, for which ggml's OpenCL kernels are tuned); everywhere else
+         * AUTO continues with Vulkan.
+         */
         public val AUTO_PREFERENCE_ORDER: List<ComputeBackend> =
-            listOf(NPU_COREML, GPU_METAL, GPU_VULKAN, CPU_ONLY)
+            listOf(NPU_COREML, GPU_METAL, GPU_OPENCL, GPU_VULKAN, CPU_ONLY)
 
         /**
          * Resolves a [requested] backend to a concrete backend (never [AUTO]) given the set of backends the

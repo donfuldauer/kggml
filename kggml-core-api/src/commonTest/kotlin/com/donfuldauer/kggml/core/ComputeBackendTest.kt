@@ -3,6 +3,7 @@ package com.donfuldauer.kggml.core
 import com.donfuldauer.kggml.core.ComputeBackend.AUTO
 import com.donfuldauer.kggml.core.ComputeBackend.CPU_ONLY
 import com.donfuldauer.kggml.core.ComputeBackend.GPU_METAL
+import com.donfuldauer.kggml.core.ComputeBackend.GPU_OPENCL
 import com.donfuldauer.kggml.core.ComputeBackend.GPU_VULKAN
 import com.donfuldauer.kggml.core.ComputeBackend.NPU_COREML
 import kotlin.test.Test
@@ -16,7 +17,7 @@ class ComputeBackendTest {
 
     @Test
     fun declaresExactlyTheSpecifiedBackends() {
-        assertEquals(listOf(AUTO, CPU_ONLY, GPU_METAL, GPU_VULKAN, NPU_COREML), ComputeBackend.entries)
+        assertEquals(listOf(AUTO, CPU_ONLY, GPU_METAL, GPU_VULKAN, NPU_COREML, GPU_OPENCL), ComputeBackend.entries)
     }
 
     @Test
@@ -25,6 +26,7 @@ class ComputeBackendTest {
         assertFalse(CPU_ONLY.isAccelerated)
         assertTrue(GPU_METAL.isAccelerated)
         assertTrue(GPU_VULKAN.isAccelerated)
+        assertTrue(GPU_OPENCL.isAccelerated)
         assertTrue(NPU_COREML.isAccelerated)
     }
 
@@ -33,6 +35,7 @@ class ComputeBackendTest {
         assertEquals(GPU_METAL, NPU_COREML.fallback)
         assertEquals(CPU_ONLY, GPU_METAL.fallback)
         assertEquals(CPU_ONLY, GPU_VULKAN.fallback)
+        assertEquals(CPU_ONLY, GPU_OPENCL.fallback)
         assertNull(CPU_ONLY.fallback)
         assertNull(AUTO.fallback)
     }
@@ -42,6 +45,10 @@ class ComputeBackendTest {
         assertEquals(NPU_COREML, ComputeBackend.resolve(AUTO, setOf(GPU_METAL, NPU_COREML)))
         assertEquals(GPU_METAL, ComputeBackend.resolve(AUTO, setOf(GPU_METAL, CPU_ONLY)))
         assertEquals(GPU_VULKAN, ComputeBackend.resolve(AUTO, setOf(GPU_VULKAN)))
+        // OpenCL (only available with the add-on on an OpenCL device, i.e. Adreno) wins over Vulkan.
+        assertEquals(GPU_OPENCL, ComputeBackend.resolve(AUTO, setOf(GPU_VULKAN, GPU_OPENCL)))
+        assertEquals(GPU_OPENCL, ComputeBackend.resolve(AUTO, setOf(GPU_OPENCL)))
+        assertEquals(listOf(NPU_COREML, GPU_METAL, GPU_OPENCL, GPU_VULKAN, CPU_ONLY), ComputeBackend.AUTO_PREFERENCE_ORDER)
         assertEquals(CPU_ONLY, ComputeBackend.resolve(AUTO, emptySet()))
     }
 
@@ -53,7 +60,7 @@ class ComputeBackendTest {
 
     @Test
     fun availableConcreteBackendResolvesToItself() {
-        val all = setOf(CPU_ONLY, GPU_METAL, GPU_VULKAN, NPU_COREML)
+        val all = setOf(CPU_ONLY, GPU_METAL, GPU_VULKAN, NPU_COREML, GPU_OPENCL)
         for (backend in all) assertEquals(backend, ComputeBackend.resolve(backend, all))
     }
 
@@ -69,6 +76,8 @@ class ComputeBackendTest {
         assertEquals(CPU_ONLY, ComputeBackend.resolve(NPU_COREML, emptySet()))
         assertEquals(CPU_ONLY, ComputeBackend.resolve(GPU_METAL, setOf(GPU_VULKAN)))
         assertEquals(CPU_ONLY, ComputeBackend.resolve(GPU_VULKAN, setOf(GPU_METAL, NPU_COREML)))
+        // OpenCL never falls back to Vulkan: an explicit request means that backend or the CPU.
+        assertEquals(CPU_ONLY, ComputeBackend.resolve(GPU_OPENCL, setOf(GPU_VULKAN)))
     }
 
     @Test

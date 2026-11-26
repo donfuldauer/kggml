@@ -3,6 +3,7 @@
 # native libraries packaged into the APKs (-Pkggml.bundleNative=true) and required (-Pkggml.requireNative=true):
 #   :kggml-{core-api,runtime,whisper,llama,diffusion,model-manager}  commonTest + the native engine contracts on ART
 #   :kggml-runtime-vulkan          the Android GPU add-on is found and registered (CPU fallback without a GPU)
+#   :kggml-runtime-opencl          the OpenCL add-on is packaged; registered only on devices with OpenCL
 #   :samples:kggml-showcase        Compose UI tests (fakes) + real-engine end-to-end UI tests
 #   :samples:whisper-only-minimal  real WhisperEngine session tests + MainActivity Espresso tests
 # Shared by ./scripts/ci-local.sh (step `instrumented`) and CI. Works on macOS, Linux and Windows (Git Bash) hosts.
@@ -78,6 +79,7 @@ esac
   :kggml-core-api:connectedDebugAndroidTest \
   :kggml-runtime:connectedDebugAndroidTest \
   :kggml-runtime-vulkan:connectedDebugAndroidTest \
+  :kggml-runtime-opencl:connectedDebugAndroidTest \
   :kggml-whisper:connectedDebugAndroidTest \
   :kggml-llama:connectedDebugAndroidTest \
   :kggml-diffusion:connectedDebugAndroidTest \
