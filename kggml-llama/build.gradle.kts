@@ -96,6 +96,9 @@ val buildNativeHost by tasks.registering(Exec::class) {
     description = "Builds kggml-llama/native (llama.cpp + libmtmd + kggml_llama + JNI + tests) into <root>/build/native-llama."
     workingDir(rootProject.layout.projectDirectory)
     commandLine("bash", buildHostScript, "--skip-ctest")
+    // The engine script builds the shared runtime first when it is missing; run the runtime task before it so
+    // parallel Gradle workers never configure the same runtime build directory at once.
+    dependsOn(":kggml-runtime:buildNativeHost")
 }
 
 val nativeCtest by tasks.registering(Exec::class) {
@@ -111,6 +114,9 @@ val buildNativeAndroid by tasks.registering(Exec::class) {
     description = "Cross-compiles llama for Android (arm64-v8a, x86_64) into <root>/build/native-android-llama-jniLibs."
     workingDir(rootProject.layout.projectDirectory)
     commandLine("bash", buildAndroidScript, "arm64-v8a", "x86_64")
+    // The engine script builds the shared runtime first when it is missing; run the runtime task before it so
+    // parallel Gradle workers never configure the same runtime build directory at once.
+    dependsOn(":kggml-runtime:buildNativeAndroid")
 }
 
 if (bundleNative) {
