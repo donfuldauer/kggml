@@ -94,7 +94,7 @@ class ShowcaseAppUiTest : UiTestBase() {
         }
         waitUntil(timeoutMillis = 5_000) { calls.load() == 1 }
         waitForIdle()
-        onNodeWithTag("inspector-refresh").performClick()
+        click("inspector-refresh")
         waitUntil(timeoutMillis = 5_000) { calls.load() == 2 }
         waitForIdle()
         assertEquals(2, calls.load())

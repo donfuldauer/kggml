@@ -162,6 +162,14 @@ android {
     }
 }
 
+// Local unit tests (Robolectric) run on the debug variant only: the release variant has the same code but not the
+// test activity from ui-test-manifest, which must stay out of release APKs.
+androidComponents {
+    beforeVariants(selector().withBuildType("release")) { variant ->
+        (variant as com.android.build.api.variant.HasUnitTestBuilder).enableUnitTest = false
+    }
+}
+
 dependencies {
     // Declares the empty ComponentActivity that runComposeUiTest / createComposeRule host content in (debug only,
     // never in release APKs).
