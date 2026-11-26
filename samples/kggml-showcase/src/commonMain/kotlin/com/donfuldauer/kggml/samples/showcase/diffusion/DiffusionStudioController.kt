@@ -8,6 +8,7 @@ import com.donfuldauer.kggml.diffusion.DiffusionImage
 import com.donfuldauer.kggml.diffusion.DiffusionPhase
 import com.donfuldauer.kggml.samples.showcase.describe
 import com.donfuldauer.kggml.samples.showcase.formatBytes
+import com.donfuldauer.kggml.samples.showcase.models.DiffusionPreset
 import com.donfuldauer.kggml.samples.showcase.models.ResidentModels
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -94,6 +95,24 @@ class DiffusionStudioController(
     private var closed = false
 
     fun setModelPath(path: String) = mutableState.update { it.copy(modelPath = path) }
+
+    /**
+     * Selects a model file (from the Model Manager or the model picker); a [preset] (the settings the model is made
+     * for, e.g. 4 steps and CFG 1 for SD-Turbo) replaces the steps, CFG scale and size. Without one they are kept.
+     */
+    fun useModel(path: String, preset: DiffusionPreset? = null) = mutableState.update {
+        if (preset == null) {
+            it.copy(modelPath = path)
+        } else {
+            it.copy(
+                modelPath = path,
+                steps = preset.steps.coerceIn(1, MAX_STEPS),
+                cfgScale = preset.cfgScale.coerceIn(1f, MAX_CFG),
+                size = preset.size,
+                status = "Settings for this model: ${preset.label}",
+            )
+        }
+    }
     fun setBackend(backend: ComputeBackend) = mutableState.update { it.copy(backend = backend) }
     fun setPrompt(text: String) = mutableState.update { it.copy(prompt = text) }
     fun setNegativePrompt(text: String) = mutableState.update { it.copy(negativePrompt = text) }

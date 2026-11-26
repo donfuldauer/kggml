@@ -77,6 +77,11 @@ callback.
 
 ## Diffusion Image Studio
 
+- **Models:** the catalog offers **SD-Turbo Q8_0** (2.0 GB, Stability AI Community License; powered by Stability AI), a
+  distilled model that makes a 512x512 image in 1–4 steps without classifier-free guidance, and Stable Diffusion v1.5
+  (4.3 GB, ~20 steps with CFG, i.e. about ten times the work per image: slow on phones, which run diffusion on the
+  CPU). Choosing a model with settings of its own (SD-Turbo: 4 steps, CFG 1, 512x512) applies them; for a quick check
+  of SD 1.5 use 256x256 and 4–8 steps.
 - Model (a downloaded one, or a custom path to a `.gguf` / `.safetensors` / `.ckpt`), compute backend, prompt and negative prompt, **sampling steps**
   slider (1–50), **CFG scale** slider (1–20 in 0.5 steps), size (256 / 384 / 512), **seed** field with **Randomize**
   and a "new random seed for every image" switch (the chosen seed is always shown, so an image can be reproduced).

@@ -101,7 +101,7 @@ fun DiffusionStudioContent(
             enabled = editable,
             fieldTag = DiffusionStudioTags.MODEL_PATH,
             onPathChange = actions::setModelPath,
-            onChoose = { actions.setModelPath(it.path) },
+            onChoose = { actions.useModel(it.path, it.diffusionPreset) },
         )
         BackendChips(state.backend, DiffusionStudioTags.BACKEND, editable, actions::setBackend)
         state.loadedBackend?.let {
