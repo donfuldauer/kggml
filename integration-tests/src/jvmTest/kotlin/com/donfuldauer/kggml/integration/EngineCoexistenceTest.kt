@@ -201,15 +201,24 @@ class EngineCoexistenceTest {
                 cycle()
                 checkNotNull(residentKb(status))
             }
-            // A leak keeps growing every cycle; a plateau does not. Compare the medians of the first and last windows,
-            // WINDOW_GAP cycles apart: leaking even 2 MB per cycle (far less than one engine's model plus contexts)
-            // adds ~30 MB, while plateau noise stays well inside the bound.
-            val growthKb = median(samples.takeLast(WINDOW)) - median(samples.take(WINDOW))
+            // A leak grows the resident set on every cycle; the allocator does not. After warm-up it still makes the odd
+            // one-off step of 10-20 MB (a new arena or heap region) and then stays flat, so a delta between two points or
+            // windows cannot tell a step from a leak. The median of the per-cycle deltas can: a step is one outlier delta
+            // and the median ignores it, while a leak of even 1 MB per cycle (far less than one engine's model plus
+            // contexts) moves every delta. The total-growth backstop catches a leak that only shows every few cycles.
+            val perCycleKb = samples.takeLast(SLOPE_CYCLES + 1).zipWithNext { a, b -> b - a }
+            val slopeKb = median(perCycleKb)
+            val totalKb = samples.last() - samples.first()
+            val trace = "VmRSS per cycle in MB: " + samples.joinToString { (it / 1024).toString() }
             assertTrue(
-                growthKb < MAX_TREND_GROWTH_KB,
-                "resident set kept growing after warm-up: ${growthKb / 1024} MB over $WINDOW_GAP cycles (median of the " +
-                    "first vs last $WINDOW of $MEASURED_CYCLES, bound ${MAX_TREND_GROWTH_KB / 1024} MB); VmRSS per cycle in MB: " +
-                    samples.joinToString { (it / 1024).toString() },
+                slopeKb < MAX_SLOPE_KB_PER_CYCLE,
+                "resident set keeps growing after warm-up: median ${slopeKb} KB per cycle over the last $SLOPE_CYCLES " +
+                    "cycles (bound ${MAX_SLOPE_KB_PER_CYCLE} KB); $trace",
+            )
+            assertTrue(
+                totalKb < MAX_TOTAL_GROWTH_KB,
+                "resident set grew ${totalKb / 1024} MB over $MEASURED_CYCLES cycles after warm-up " +
+                    "(bound ${MAX_TOTAL_GROWTH_KB / 1024} MB); $trace",
             )
         }
     }
@@ -223,9 +232,9 @@ class EngineCoexistenceTest {
     private companion object {
         const val WARM_UP_CYCLES = 5
         const val MEASURED_CYCLES = 20
-        const val WINDOW = 5
-        const val WINDOW_GAP = MEASURED_CYCLES - WINDOW // cycles between the two windows' medians
-        const val MAX_TREND_GROWTH_KB = 24L * 1024
+        const val SLOPE_CYCLES = 10 // per-cycle deltas the median slope is taken over
+        const val MAX_SLOPE_KB_PER_CYCLE = 1024L
+        const val MAX_TOTAL_GROWTH_KB = 96L * 1024
 
         val CPU = BackendConfig(ComputeBackend.CPU_ONLY, gpuLayers = 0, cpuThreads = 2)
         val SMALL = LlamaContextConfig(contextLength = 256, batchSize = 16, embeddingContextLength = 64)
