@@ -1,4 +1,4 @@
-// cpu_topology.cpp - performance (P-) core detection.
+// cpu_topology.cpp - performance core detection (the default inference thread count).
 #include "cpu_topology.hpp"
 
 #include <algorithm>
@@ -104,38 +104,62 @@ int performance_cores_from_sysfs(const std::string & cpu_root) {
         }
     }
 
-    struct cpu_freq {
+    struct cpu_info {
         int cpu;
-        long long max_freq;
+        long long max_freq;  // 0 when unknown
+        long long capacity;  // 0 when unknown
     };
-    std::vector<cpu_freq> freqs;
+    std::vector<cpu_info> infos;
     for (int cpu : cpus) {
-        long long f = 0;
         const std::string base = cpu_root + "/cpu" + std::to_string(cpu);
-        if (read_long(base + "/cpufreq/cpuinfo_max_freq", f)) {
-            freqs.push_back({cpu, f});
+        long long f = 0;
+        long long c = 0;
+        const bool has_freq = read_long(base + "/cpufreq/cpuinfo_max_freq", f);
+        const bool has_capacity = read_long(base + "/cpu_capacity", c);
+        if (has_freq || has_capacity) {
+            infos.push_back({cpu, has_freq ? f : 0, has_capacity ? c : 0});
         }
     }
-    if (freqs.empty()) {
-        return 0;
-    }
 
+    // Preferred signal (ARM / Android): cpu_capacity, the scheduler's per-core performance score normalised to the
+    // fastest core (1024). Phones have prime, performance and efficiency clusters; the efficiency cores score far
+    // below half of the prime core, the performance cores above it, so "at least half the highest capacity" keeps
+    // prime + performance cores. Only used when the capacities differ (homogeneous CPUs report the same value).
+    long long max_capacity = 0;
+    long long min_capacity = 0;
+    int with_capacity = 0;
+    for (const auto & ci : infos) {
+        if (ci.capacity <= 0) {
+            continue;
+        }
+        max_capacity = std::max(max_capacity, ci.capacity);
+        min_capacity = with_capacity == 0 ? ci.capacity : std::min(min_capacity, ci.capacity);
+        ++with_capacity;
+    }
+    const bool use_capacity = with_capacity >= 2 && min_capacity != max_capacity;
+
+    // Fallback (x86 and anything without differing capacities): cores at the highest cpuinfo_max_freq.
     long long highest = 0;
-    for (const auto & cf : freqs) {
-        highest = std::max(highest, cf.max_freq);
+    for (const auto & ci : infos) {
+        highest = std::max(highest, ci.max_freq);
+    }
+    if (!use_capacity && highest == 0) {
+        return 0;
     }
 
     // Count physical cores: SMT siblings share the same core_cpus_list / thread_siblings_list.
     std::set<std::string> cores;
-    for (const auto & cf : freqs) {
-        if (cf.max_freq != highest) {
+    for (const auto & ci : infos) {
+        const bool selected = use_capacity ? ci.capacity > 0 && ci.capacity * 2 >= max_capacity
+                                           : ci.max_freq > 0 && ci.max_freq == highest;
+        if (!selected) {
             continue;
         }
-        const std::string topo = cpu_root + "/cpu" + std::to_string(cf.cpu) + "/topology/";
+        const std::string topo = cpu_root + "/cpu" + std::to_string(ci.cpu) + "/topology/";
         std::string siblings;
         if (!read_first_line(topo + "core_cpus_list", siblings) &&
             !read_first_line(topo + "thread_siblings_list", siblings)) {
-            siblings = "cpu" + std::to_string(cf.cpu);
+            siblings = "cpu" + std::to_string(ci.cpu);
         }
         cores.insert(siblings);
     }
