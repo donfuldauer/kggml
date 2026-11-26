@@ -4,7 +4,7 @@
 # Mirrors:
 #   .github/workflows/repo-hygiene.yml    -> agent parity, CI-waiter test, hosted-runner audit, release-audit test,
 #                                            license/NOTICE/fixture audit, docs audit (links, README snippets,
-#                                            coordinates, KDoc), gitleaks
+#                                            coordinates, KDoc), gitleaks, full-history audit
 #   .github/workflows/ci.yml (Ubuntu)     -> ggml + whisper.cpp + llama.cpp + stable-diffusion.cpp pins, host build +
 #                                            CTest (runtime, whisper, llama and diffusion), host linkage audits,
 #                                            :kggml-runtime + :kggml-whisper + :kggml-llama + :kggml-diffusion
@@ -206,10 +206,13 @@ for step in "${all_steps[@]}"; do
       run_step license ./scripts/ci/verify-licenses.sh
       run_step l-test ./scripts/tests/test-verify-licenses.sh
       run_step docs ./scripts/ci/verify-docs.sh
-      run_step docs-test ./scripts/tests/test-verify-docs.sh ;;
+      run_step docs-test ./scripts/tests/test-verify-docs.sh
+      run_step h-test ./scripts/tests/test-audit-history.sh ;;
     gitleaks)
       if command -v gitleaks >/dev/null 2>&1; then
         run_step gitleaks gitleaks git --redact --no-banner --config .gitleaks.toml
+        # Full history of every ref: gitleaks plus blob-size, credential-file, binary, key and local-path audit.
+        run_step history ./scripts/ci/audit-history.sh
       else
         missing gitleaks "gitleaks not installed"
       fi ;;

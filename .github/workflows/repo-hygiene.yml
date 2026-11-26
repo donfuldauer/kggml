@@ -69,6 +69,9 @@ jobs:
       - name: Test the docs audit (scripts/ci/verify-docs.sh)
         run: ./scripts/tests/test-verify-docs.sh
 
+      - name: Test the full-history audit (scripts/ci/audit-history.sh)
+        run: ./scripts/tests/test-audit-history.sh
+
   secret-scan:
     name: Gitleaks Secret Scan
     runs-on: ubuntu-latest
@@ -86,3 +89,33 @@ jobs:
           # The action downloads to a fixed name in the temp dir and fails if it is already there; runner.temp
           # is emptied for every job.
           TMPDIR: ${{ runner.temp }}
+
+      # gitleaks-action only scans the PR's own commits; this scans every commit of every branch (plus, on a manual
+      # dispatch, every PR head): secrets, oversized blobs, credential files, unattributed binaries, private
+      # keys, developer-machine paths.
+      - name: Install gitleaks (pinned, checksum-verified)
+        env:
+          GITLEAKS_VERSION: 8.28.0
+          GITLEAKS_SHA256: a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+        run: |
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          # Own directory: gitleaks-action above downloads into runner.temp under a fixed name.
+          dir="${RUNNER_TEMP}/gitleaks-history"
+          mkdir -p "${dir}"
+          curl -fsSL -o "${dir}/${tarball}" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${tarball}"
+          echo "${GITLEAKS_SHA256}  ${dir}/${tarball}" | sha256sum -c -
+          tar -xzf "${dir}/${tarball}" -C "${dir}" gitleaks
+          echo "${dir}" >>"${GITHUB_PATH}"
+
+      # On a PR only the branches plus this PR's head (already checked out) are audited: PR heads stay on GitHub
+      # read-only, so one bad fork PR must not fail every later PR. A manual dispatch audits them all.
+      - name: Fetch every branch
+        run: git fetch --no-tags --prune origin '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Fetch every pull-request head
+        if: github.event_name != 'pull_request'
+        run: git fetch --no-tags origin '+refs/pull/*/head:refs/remotes/pull/*'
+
+      - name: Audit the full git history
+        run: ./scripts/ci/audit-history.sh
