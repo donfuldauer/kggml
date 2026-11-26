@@ -11,7 +11,16 @@ fun whisperModelsIn(directory: String, fileNames: List<String>): List<FolderMode
     fileNames
         .filter { !it.startsWith(".") && it.lowercase().endsWith(MODEL_EXTENSION) && it.length > MODEL_EXTENSION.length }
         .sortedBy { it.lowercase() }
-        .map { FolderModel(it, directory.trimEnd('/', '\\') + "/" + it) }
+        .map { FolderModel(it, joinPath(directory, it)) }
+
+/** [directory] + [name], joined with the directory's own separator (`\\` for a Windows path without `/`). */
+internal fun joinPath(directory: String, name: String): String {
+    val separator = if ('\\' in directory && '/' !in directory) '\\' else '/'
+    return directory.trimEnd('/', '\\') + separator + name
+}
+
+/** Whether [a] and [b] name the same path, whatever separators they use (`C:\\m\\a.bin` == `C:/m/a.bin`). */
+internal fun samePath(a: String, b: String): Boolean = a.trim().replace('\\', '/') == b.trim().replace('\\', '/')
 
 /** The whisper models in [directory] on this platform; empty when it does not exist or cannot be read. */
 fun scanWhisperModels(directory: String): List<FolderModel> = whisperModelsIn(directory, listFileNames(directory))
@@ -25,13 +34,13 @@ internal expect fun listFileNames(directory: String): List<String>
  */
 fun initialModelPath(requested: String?, defaultPath: String, models: List<FolderModel>): String = when {
     !requested.isNullOrBlank() -> requested
-    models.isEmpty() || models.any { it.path == defaultPath } -> defaultPath
+    models.isEmpty() || models.any { samePath(it.path, defaultPath) } -> defaultPath
     else -> models.first().path
 }
 
 /** Index in [models] of the model at [path] (surrounding blanks ignored), or `null` when [path] is a custom path. */
 fun chosenModelIndex(models: List<FolderModel>, path: String): Int? =
-    models.indexOfFirst { it.path == path.trim() }.takeIf { it >= 0 }
+    models.indexOfFirst { samePath(it.path, path) }.takeIf { it >= 0 }
 
 /** The picker's hint when the folder has no whisper models. */
 fun noModelsHint(directory: String): String =

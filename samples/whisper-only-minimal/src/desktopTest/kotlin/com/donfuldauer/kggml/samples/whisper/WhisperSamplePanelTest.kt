@@ -170,7 +170,9 @@ class WhisperSamplePanelTest {
         val p = open(audio = "/nonexistent/kggml/audio.wav")
         p.click(names.TRANSCRIBE)
         val report = awaitText(read = { p.output.text }) { !it.startsWith("Transcribing") }
-        assertTrue(report.startsWith("Failed: FileNotFoundException: /nonexistent/kggml/audio.wav"), report)
+        // The message is the OS's own (Windows: "\\nonexistent\\kggml\\audio.wav (The system cannot find the path...)").
+        assertTrue(report.startsWith("Failed: FileNotFoundException: "), report)
+        assertTrue("audio.wav" in report, report)
     }
 
     /** A 330 Hz tone as a canonical 16 kHz mono 16-bit WAV. */
