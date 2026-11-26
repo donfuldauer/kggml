@@ -179,6 +179,32 @@ else
   fi
 fi
 
+echo "== jars (JVM desktop)"
+# jarof <jar> <entry...>: a jar (zip) holding empty files at the given entry paths.
+jarof() {
+  local jar="$1"; shift
+  local stage; stage="$(mktemp -d "${WORK}/stage.XXXX")"
+  local e
+  for e in "$@"; do mkdir -p "${stage}/$(dirname "${e}")"; : >"${stage}/${e}"; done
+  (cd "${stage}" && zip -q -r "${jar}" .)
+}
+mkdir -p "${WORK}/jars-clean" "${WORK}/jars-llama" "${WORK}/jars-lib" "${WORK}/jars-addon" "${WORK}/jars-nowhisper"
+jarof "${WORK}/jars-clean/app.jar" com/donfuldauer/kggml/samples/whisper/MainKt.class
+jarof "${WORK}/jars-clean/kggml-whisper-jvm.jar" com/donfuldauer/kggml/whisper/WhisperEngine.class
+jarof "${WORK}/jars-clean/kggml-runtime-jvm.jar" com/donfuldauer/kggml/runtime/KggmlRuntime.class kggml/native/linux-x86_64/libggml.so
+expect pass "clean whisper-only desktop classpath passes" 'OK' jars "${WORK}/jars-clean"
+cp "${WORK}"/jars-clean/*.jar "${WORK}/jars-llama/"
+jarof "${WORK}/jars-llama/kggml-llama-jvm.jar" com/donfuldauer/kggml/llama/LlamaEngine.class
+expect fail "llama classes on the desktop classpath fail" 'kggml-llama-jvm.jar contains Kggml llama' jars "${WORK}/jars-llama"
+cp "${WORK}"/jars-clean/*.jar "${WORK}/jars-lib/"
+jarof "${WORK}/jars-lib/natives.jar" kggml/native/linux-x86_64/libkggml_diffusion.so
+expect fail "a diffusion native library in a jar fails" 'forbidden native library .*libkggml_diffusion.so' jars "${WORK}/jars-lib"
+cp "${WORK}"/jars-clean/*.jar "${WORK}/jars-addon/"
+jarof "${WORK}/jars-addon/gpu.jar" kggml/native/linux-x86_64/libggml-vulkan.so
+expect fail "a GPU add-on library in a jar fails" 'forbidden native library .*libggml-vulkan.so' jars "${WORK}/jars-addon"
+jarof "${WORK}/jars-nowhisper/app.jar" com/donfuldauer/kggml/samples/whisper/MainKt.class
+expect fail "a classpath without the whisper engine fails" 'no jar contains com.donfuldauer.kggml.whisper' jars "${WORK}/jars-nowhisper"
+
 echo "== usage"
 expect fail "unknown file fails" 'not found' ios "${WORK}/does-not-exist"
 rc=0; "${AUDIT}" bogus >/dev/null 2>&1 || rc=$?

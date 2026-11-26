@@ -4,6 +4,9 @@
 #
 #   android   Self-tests the audit script, assembles the release APK with the native libraries bundled
 #             (-Pkggml.bundleNative=true; needs ANDROID_NDK_HOME) and audits every ABI in it.
+#   desktop   Audits the JVM desktop app: its jar plus resolved runtime classpath (no llama / diffusion / GPU add-on
+#             classes or native libraries; whisper present), and on Linux the host native libraries it loads
+#             (build/native/lib + build/native-whisper/lib, from the build-host.sh scripts) as one ELF set.
 #   ios       (macOS) Audits WhisperOnlyMinimal.framework (debug, iosArm64 + iosSimulatorArm64; link them first
 #             with :samples:whisper-only-minimal:linkDebugFrameworkIos*) together with the matching slices of
 #             GgmlRuntime.xcframework and KggmlWhisper.xcframework.
@@ -23,6 +26,16 @@ case "${mode}" in
     ./gradlew :samples:whisper-only-minimal:assembleRelease -Pkggml.bundleNative=true --console=plain "$@"
     "${AUDIT}" apk samples/whisper-only-minimal/build/outputs/apk/release/whisper-only-minimal-release-unsigned.apk
     ;;
+  desktop)
+    ./gradlew :samples:whisper-only-minimal:desktopDistribution --console=plain "$@"
+    "${AUDIT}" jars samples/whisper-only-minimal/build/desktop-dist/lib
+    if [[ "$(uname -s)" == Linux ]]; then
+      for dir in build/native/lib build/native-whisper/lib; do
+        [[ -d "${dir}" ]] || { echo "missing ${dir}: run the kggml-runtime / kggml-whisper build-host.sh scripts" >&2; exit 1; }
+      done
+      "${AUDIT}" elf build/native/lib build/native-whisper/lib
+    fi
+    ;;
   ios)
     native="${REPO_ROOT}/build/native-ios"
     for pair in iosArm64:ios-arm64 iosSimulatorArm64:ios-arm64-simulator; do
@@ -35,7 +48,7 @@ case "${mode}" in
     done
     ;;
   *)
-    echo "usage: $0 android [gradle args...] | ios" >&2
+    echo "usage: $0 android [gradle args...] | desktop [gradle args...] | ios" >&2
     exit 2
     ;;
 esac

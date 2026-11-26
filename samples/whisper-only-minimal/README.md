@@ -1,6 +1,6 @@
 # `:samples:whisper-only-minimal`
 
-Minimal Android + iOS app that depends **only** on `com.donfuldauer:kggml-bom` and
+Minimal Android + iOS + JVM desktop app that depends **only** on `com.donfuldauer:kggml-bom` and
 `com.donfuldauer:kggml-whisper` (which brings `:kggml-runtime`). It exists for two reasons:
 
 1. **Binary symbol leakage audits** (AGENTS.md §2.1): its shipped binaries must contain zero `llama.cpp`,
@@ -10,16 +10,16 @@ Minimal Android + iOS app that depends **only** on `com.donfuldauer:kggml-bom` a
 2. **Manual verification** of `WhisperEngine` on devices: PCM file transcription, the runtime
    `ComputeBackend` toggle and the iOS background `CPU_ONLY` path.
 
-The UI uses only platform toolkits (`android.widget`, UIKit), no Compose/AndroidX.
+The UI uses only platform toolkits (`android.widget`, UIKit, Swing), no Compose/AndroidX.
 
-| Feature | Android | iOS |
-| --- | --- | --- |
-| Transcribe a PCM file (16-bit / float WAV, or raw 16 kHz mono s16le `.pcm`) | ✓ | ✓ |
-| Pick a whisper model (`.bin`) already in the app's folder, or a custom path | ✓ (radio list) | ✓ (Model menu) |
-| Backend toggle: CPU only / GPU (Vulkan on Android, Metal on iOS) / Auto | ✓ | ✓ |
-| Backend switch reuses the engine (`WhisperEngine.reinitialize`) | ✓ | ✓ |
-| Engine follows the app lifecycle (GPU → `CPU_ONLY` in the background) | — | ✓ (`observeAppLifecycle`) |
-| Background transcription test mode | — | ✓ |
+| Feature | Android | iOS | Desktop |
+| --- | --- | --- | --- |
+| Transcribe a PCM file (16-bit / float WAV, or raw 16 kHz mono s16le `.pcm`) | ✓ | ✓ | ✓ |
+| Pick a whisper model (`.bin`) already in the app's folder, or a custom path | ✓ (radio list) | ✓ (Model menu) | ✓ (radio list, Rescan folder) |
+| Backend toggle: CPU only / GPU (Vulkan on Android, Metal on iOS / macOS, Vulkan on Linux / Windows builds with it) / Auto | ✓ | ✓ | ✓ |
+| Backend switch reuses the engine (`WhisperEngine.reinitialize`) | ✓ | ✓ | ✓ |
+| Engine follows the app lifecycle (GPU → `CPU_ONLY` in the background) | — | ✓ (`observeAppLifecycle`) | — |
+| Background transcription test mode | — | ✓ | — |
 
 Shared logic (WAV/PCM parsing, the engine session, the background test runner) lives in `commonMain` and is
 covered by `commonTest` with fake engines.
@@ -95,6 +95,18 @@ needs a **physical device** (the simulator does not revoke GPU access).
 Record the device model, iOS version, model file, the summary line and the commit SHA in the Phase 2 gate
 issue / PR.
 
+## Desktop (macOS, Linux, Windows)
+
+A Swing window (`WhisperSamplePanel`) with the same controls; the model folder is `-Dkggml.models.dir`, else
+`KGGML_MODELS_DIR`, else `~/.kggml/models` (where the showcase downloads models, so they appear here too).
+
+```bash
+./kggml-runtime/native/scripts/build-host.sh && ./kggml-whisper/native/scripts/build-host.sh   # native libraries
+./gradlew :samples:whisper-only-minimal:runDesktop
+# Scripted run, like the Android intent extras:
+./gradlew :samples:whisper-only-minimal:runDesktop --args="--model /path/ggml-tiny.en.bin --audio /path/jfk.wav --backend CPU_ONLY --autostart"
+```
+
 ## Binary symbol audit
 
 ```bash
@@ -102,16 +114,19 @@ issue / PR.
 ./scripts/ci/audit-minimal-sample.sh android
 # iOS (macOS CI, after linkDebugFrameworkIos* and both xcframework builds)
 ./scripts/ci/audit-minimal-sample.sh ios
+# Desktop (every CI OS): app jar + runtime classpath; on Linux also the host native libraries it loads
+./scripts/ci/audit-minimal-sample.sh desktop
 # Direct use
 ./scripts/audit-binary-symbols.sh apk <app.apk> [abi ...]
 ./scripts/audit-binary-symbols.sh ios <x.framework | x.xcframework | mach-o> ...
 ./scripts/audit-binary-symbols.sh elf <dir> ...
+./scripts/audit-binary-symbols.sh jars <dir>
 ```
 
 ## Tests
 
 ```bash
-./gradlew :samples:whisper-only-minimal:check                    # commonTest + MainActivityTest (Robolectric) + dependency audit
+./gradlew :samples:whisper-only-minimal:check                    # commonTest + MainActivityTest (Robolectric) + desktopTest + dependency audit
 ./gradlew :samples:whisper-only-minimal:iosSimulatorArm64Test    # macOS, needs both xcframeworks
 ./scripts/ci/run-android-instrumented.sh                         # on a device / emulator, real native libraries
 ./scripts/tests/test-audit-binary-symbols.sh                     # audit script incl. negative (forbidden symbol) cases
@@ -119,7 +134,10 @@ issue / PR.
 
 - `RealWhisperSampleTest` (commonTest) runs `WhisperSampleSession` on the real engine with the synthetic
   `TinyWhisperModel`: CPU-only runs, engine reuse vs. replacement, a 44.1 kHz stereo WAV, typed load errors. It runs on
-  the iOS simulator and Android devices and skips in local unit tests.
+  the iOS simulator, Android devices and desktop (host builds), and skips in Android local unit tests.
 - `MainActivityTest` (`src/androidSharedTest`, Espresso) runs under Robolectric (native runtime unavailable: the
   status and transcription failures are shown, never a crash) and on a device (real transcription from intent extras
   and from edited paths). Test dependencies never reach the audited app APK.
+- `WhisperSamplePanelTest` (`src/desktopTest`) drives the Swing panel headlessly: runtime status, model picker (hint,
+  preselection, choose / type / custom path, rescan), a missing audio file, and a real transcription of a folder model
+  (with `-Pkggml.requireNative=true` the native libraries must load). `RealWhisperSampleTest` runs on desktop too.
