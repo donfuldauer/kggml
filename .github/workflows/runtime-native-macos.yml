@@ -64,8 +64,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: brew install ninja || true
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/macos.sh
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2

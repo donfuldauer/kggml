@@ -84,13 +84,14 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Install Ninja (Linux)
+      - name: Runner setup (Linux; installs missing build tools)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: ./scripts/ci/setup/linux.sh ${{ matrix.platform == 'linux-aarch64' && '--arm64-cross' || '' }}
 
-      - name: Install the aarch64 cross toolchain (linux-aarch64)
-        if: matrix.platform == 'linux-aarch64'
-        run: sudo apt-get install -y g++-aarch64-linux-gnu
+      - name: Runner setup (Windows; installs missing build tools, ARM64 + clang for windows-aarch64)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1 ${{ matrix.platform == 'windows-aarch64' && '-Arm64' || '' }}
 
       - name: Set up MSVC developer environment (Windows)
         if: matrix.platform == 'windows-x86_64'
@@ -104,7 +105,6 @@ jobs:
         shell: cmd
         timeout-minutes: 30
         run: |
-          where ninja >nul 2>&1 || choco install ninja -y --no-progress || exit /b 1
           call kggml-runtime\native\scripts\build-windows-arm64.cmd build\native-release-install
 
       - name: Release runtime build (Windows, MSVC)
@@ -112,7 +112,6 @@ jobs:
         shell: cmd
         timeout-minutes: 30
         run: |
-          where ninja >nul 2>&1 || choco install ninja -y --no-progress || exit /b 1
           cmake -S kggml-runtime/native --preset windows-x64 -B build/native-release -DKGGML_RUNTIME_BUILD_TESTS=OFF || exit /b 1
           cmake --build build/native-release --config Release -j 4 || exit /b 1
           cmake --install build/native-release --config Release --prefix build/native-release-install
@@ -157,8 +156,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: brew install ninja || true
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/macos.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
