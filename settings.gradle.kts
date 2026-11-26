@@ -42,6 +42,7 @@ include(
     ":kggml-bom",
     ":kggml-core-api",
     ":kggml-runtime",
+    ":kggml-runtime-vulkan",
     ":kggml-whisper",
     ":kggml-llama",
     ":kggml-diffusion",

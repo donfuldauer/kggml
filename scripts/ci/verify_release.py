@@ -34,6 +34,7 @@ DEFAULT_GROUP = "com.donfuldauer"
 DEFAULT_LIBRARIES = [
     "kggml-core-api",
     "kggml-runtime",
+    "kggml-runtime-vulkan",
     "kggml-whisper",
     "kggml-llama",
     "kggml-diffusion",

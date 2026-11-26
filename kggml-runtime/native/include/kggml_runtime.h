@@ -129,6 +129,20 @@ KGGML_API kggml_status kggml_runtime_performance_thread_count(int32_t * out_coun
 KGGML_API int32_t kggml_runtime_hardware_thread_count(void);
 
 /* ------------------------------------------------------------------------------------------------------ */
+/* Backend modules                                                                                         */
+/* ------------------------------------------------------------------------------------------------------ */
+
+/**
+ * Loads a ggml backend module (a shared library exporting `ggml_backend_init`, built against this runtime's ggml,
+ * e.g. `libggml-vulkan.so` from the Android `kggml-runtime-vulkan` add-on) and registers it with the ggml backend
+ * registry, so the engines can use its devices. Each path is registered at most once per process (repeat calls return
+ * KGGML_STATUS_OK). Call it before kggml_runtime_init; when the runtime is already initialized the backend list is
+ * refreshed. KGGML_STATUS_BACKEND_UNAVAILABLE when the module cannot be loaded; a module whose backend finds no
+ * usable device still loads and simply reports 0 devices. Does not require init.
+ */
+KGGML_API kggml_status kggml_runtime_load_backend(const char * path);
+
+/* ------------------------------------------------------------------------------------------------------ */
 /* Versions                                                                                                */
 /* ------------------------------------------------------------------------------------------------------ */
 

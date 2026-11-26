@@ -19,6 +19,7 @@ description = "Kggml Bill of Materials: aligns versions of all Kggml SDK artifac
 val kggmlLibraryModules: List<String> = listOf(
     ":kggml-core-api",
     ":kggml-runtime",
+    ":kggml-runtime-vulkan",
     ":kggml-whisper",
     ":kggml-llama",
     ":kggml-diffusion",

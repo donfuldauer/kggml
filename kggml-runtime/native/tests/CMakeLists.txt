@@ -53,6 +53,24 @@ target_compile_definitions(kggml_runtime_tests PRIVATE
     KGGML_TEST_EXPECT_COREML=$<BOOL:${KGGML_ENABLE_COREML}>
     $<$<BOOL:${KGGML_RUNTIME_TEST_HOOKS}>:KGGML_RUNTIME_TEST_HOOKS=1>)
 
+# kggml_runtime_load_backend against fake ggml backend modules (GGML_BACKEND_DL entry point, no devices). Only with a
+# shared libggml: backend modules (the Android GPU add-ons) link it, and the test queries its registry directly.
+if (NOT KGGML_RUNTIME_MONOLITHIC)
+target_sources(kggml_runtime_tests PRIVATE test_backend_modules.cpp)
+foreach(_fake IN ITEMS good bad)
+    add_library(kggml_fake_backend_${_fake} MODULE fake_backend_module.cpp)
+    target_include_directories(kggml_fake_backend_${_fake} PRIVATE
+        ${KGGML_GGML_SOURCE_DIR}/include ${KGGML_GGML_SOURCE_DIR}/src)
+    target_compile_definitions(kggml_fake_backend_${_fake} PRIVATE GGML_BACKEND_DL GGML_BACKEND_SHARED GGML_BACKEND_BUILD)
+    add_dependencies(kggml_runtime_tests kggml_fake_backend_${_fake})
+endforeach()
+target_compile_definitions(kggml_fake_backend_good PRIVATE KGGML_FAKE_BACKEND_NAME="KggmlFake")
+target_compile_definitions(kggml_fake_backend_bad PRIVATE KGGML_FAKE_BACKEND_NAME="KggmlFakeBad" KGGML_FAKE_BAD_API_VERSION=1)
+target_compile_definitions(kggml_runtime_tests PRIVATE
+    KGGML_TEST_BACKEND_MODULE="$<TARGET_FILE:kggml_fake_backend_good>"
+    KGGML_TEST_BAD_BACKEND_MODULE="$<TARGET_FILE:kggml_fake_backend_bad>")
+endif()
+
 gtest_discover_tests(kggml_runtime_tests
     DISCOVERY_MODE PRE_TEST
     PROPERTIES LABELS "kggml-runtime")

@@ -1,7 +1,7 @@
 name: Release (Maven Central)
 
 # Builds, signs, audits and uploads every Kggml coordinate under com.donfuldauer to Maven Central (issue #23):
-#   kggml-bom, kggml-core-api, kggml-runtime, kggml-whisper, kggml-llama, kggml-diffusion, kggml-model-manager
+#   kggml-bom, kggml-core-api, kggml-runtime, kggml-runtime-vulkan, kggml-whisper, kggml-llama, kggml-diffusion, kggml-model-manager
 # (each Kotlin Multiplatform library with its android, jvm, iosArm64 and iosSimulatorArm64 components).
 #
 #   desktop-natives  ubuntu-latest + windows-latest build the release ggml runtime for linux-x86_64 and
