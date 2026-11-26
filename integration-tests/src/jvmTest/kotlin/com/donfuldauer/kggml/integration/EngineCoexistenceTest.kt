@@ -193,22 +193,40 @@ class EngineCoexistenceTest {
             llama.await()
         }
         withTimeout(5.minutes) {
-            repeat(3) { cycle() } // warm-up: allocator pools, ggml backend registry, JIT
-            val before = residentKb(status)
-            repeat(15) { cycle() }
-            val after = residentKb(status)
-            if (before != null && after != null) {
-                // Each cycle maps ~2 MB of models plus contexts; a per-cycle leak would add up far past this bound.
-                assertTrue(after - before < 64 * 1024, "resident set grew by ${(after - before) / 1024} MB over 15 cycles")
+            // Warm-up: allocator pools and malloc arenas, the ggml backend registry, JIT, and the JVM heap growing to its
+            // working size. That one-off growth depends on the host (cores, RAM) and is not a leak, so it is excluded.
+            repeat(WARM_UP_CYCLES) { cycle() }
+            if (residentKb(status) == null) return@withTimeout // not Linux: nothing to measure
+            val samples = List(MEASURED_CYCLES) {
+                cycle()
+                checkNotNull(residentKb(status))
             }
+            // A leak keeps growing every cycle; a plateau does not. Compare the medians of the first and last windows,
+            // WINDOW_GAP cycles apart: leaking even 2 MB per cycle (far less than one engine's model plus contexts)
+            // adds ~30 MB, while plateau noise stays well inside the bound.
+            val growthKb = median(samples.takeLast(WINDOW)) - median(samples.take(WINDOW))
+            assertTrue(
+                growthKb < MAX_TREND_GROWTH_KB,
+                "resident set kept growing after warm-up: ${growthKb / 1024} MB over $WINDOW_GAP cycles (median of the " +
+                    "first vs last $WINDOW of $MEASURED_CYCLES, bound ${MAX_TREND_GROWTH_KB / 1024} MB); VmRSS per cycle in MB: " +
+                    samples.joinToString { (it / 1024).toString() },
+            )
         }
     }
+
+    private fun median(values: List<Long>): Long = values.sorted().let { (it[(it.size - 1) / 2] + it[it.size / 2]) / 2 }
 
     private fun residentKb(status: File): Long? =
         if (!status.isFile) null
         else status.readLines().firstOrNull { it.startsWith("VmRSS:") }?.filter(Char::isDigit)?.toLongOrNull()
 
     private companion object {
+        const val WARM_UP_CYCLES = 5
+        const val MEASURED_CYCLES = 20
+        const val WINDOW = 5
+        const val WINDOW_GAP = MEASURED_CYCLES - WINDOW // cycles between the two windows' medians
+        const val MAX_TREND_GROWTH_KB = 24L * 1024
+
         val CPU = BackendConfig(ComputeBackend.CPU_ONLY, gpuLayers = 0, cpuThreads = 2)
         val SMALL = LlamaContextConfig(contextLength = 256, batchSize = 16, embeddingContextLength = 64)
     }

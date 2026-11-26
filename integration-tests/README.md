@@ -15,7 +15,7 @@ single `:kggml-runtime` ggml build. The tests use the engines' synthetic CC0/MIT
 | `severalInstancesOfBothEnginesShareTheRuntime` | Two `WhisperEngine`s and two `LlamaEngine`s infer concurrently in one process. |
 | `diffusionLoadsAlongsideAndFailsTypedWithoutDisturbingTheOtherEngines` | `stable-diffusion.cpp` loads next to both engines. A missing or non-diffusion model fails with a typed `ModelLoadException` while Llama decodes, and both other engines keep working. |
 | `everyGgmlLibraryIsMappedFromTheSingleRuntimeBuild` | Linux only: `/proc/self/maps` shows every `libggml*` library mapped from exactly one file, inside the `:kggml-runtime` build, and each engine library mapped once. On other hosts the dynamic-linkage audits (`scripts/ci/audit-*-linkage.sh`) cover this. |
-| `repeatedOpenInferCloseCyclesKeepTheResidentSetBounded` | Fifteen concurrent open, infer and close cycles of both engines grow the resident set by less than 64 MB (Linux `VmRSS`), so nothing leaks and nothing runs out of memory. |
+| `repeatedOpenInferCloseCyclesKeepTheResidentSetBounded` | Linux only: after five warm-up cycles, twenty more concurrent open, infer and close cycles of both engines leave the resident set (`VmRSS`) on a plateau. The median of the last five readings is less than 24 MB above the median of the first five, 15 cycles earlier, so nothing leaks per cycle. The one-off warm-up growth depends on the host's cores and RAM, so it is not measured. |
 
 ### Running
 
