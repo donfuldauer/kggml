@@ -37,9 +37,9 @@ Kotlin API on top of the [ggml](https://github.com/ggml-org/ggml) ecosystem:
 
 | Platform | Kotlin targets | Native ABIs | Compute backends |
 | --- | --- | --- | --- |
-| Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). Vulkan when the runtime is built with `KGGML_ENABLE_VULKAN=ON`. |
+| Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU: ARM NEON (`armv8.2-a+dotprod+fp16`) on `arm64-v8a`, SSE4.2 on `x86_64` (emulators). The published runtime is CPU-only on Android; Vulkan needs a runtime built from source with `KGGML_ENABLE_VULKAN=ON` (see the [runtime presets](kggml-runtime/native/README.md#presets)); `build-android.sh` has no switch for it, and CI does not build or test it. |
 | iOS | `iosArm64`, `iosSimulatorArm64` | device and Apple-silicon simulator | CPU (Accelerate / NEON), Metal, Core ML (Whisper encoder) |
-| JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64, Windows x86_64 | CPU on all three; Metal on macOS; Vulkan when built with `KGGML_ENABLE_VULKAN=ON` |
+| JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64, Windows x86_64 | CPU on all three; Metal on macOS; Vulkan when the runtime is built from source with `KGGML_ENABLE_VULKAN=ON` (`build-host.sh --vulkan`), not in the published artifacts |
 
 What each engine can use:
 
@@ -287,8 +287,12 @@ active, or iOS suspends the app anyway.
 ## Memory and quantization
 
 Peak RAM is roughly the size of the model file plus the KV cache and compute buffers. These are typical figures
-for planning; use `ModelInspector.inspectFile(path).estimatedPeakRam` from `kggml-model-manager` to estimate a
-specific file before loading it.
+for planning. The Whisper figures come from whisper.cpp's memory table and the Stable Diffusion figure from
+stable-diffusion.cpp's, both at the pinned commits. The LLM figures are computed for Llama 3.2 1B / 3B, Qwen2.5 3B / 7B,
+Mistral 7B and Llama 3.1 8B. Use `ModelInspector.inspectFile(path).estimatedPeakRam` from `kggml-model-manager` to
+estimate a specific Whisper or LLM file before loading it. Its estimate is deliberately conservative: it counts logits
+for a full batch and, without flash attention, the whole attention-score buffer, so for LLMs it reads a few hundred MB
+above these figures. For diffusion models it counts only the weights plus a fixed overhead.
 
 | Model | File size | Approximate peak RAM |
 | --- | --- | --- |
@@ -296,9 +300,9 @@ specific file before loading it.
 | Whisper `small` (F16, or Q5_1) | 466 MB (190 MB) | 0.9 GB (0.5 GB) |
 | Whisper `medium` / `large-v3` (Q5_0) | 515 MB / 1.1 GB | 1.0 GB / 1.8 GB |
 | LLM, 1 B parameters, Q4_K_M, 4 K context | 0.8 GB | 1.2 GB |
-| LLM, 3 B parameters, Q4_K_M, 4 K context | 2.0 GB | 2.6 GB |
-| LLM, 7–8 B parameters, Q4_K_M, 4 K context | 4.7 GB | 5.5 GB |
-| Stable Diffusion 1.5, Q8_0, 512×512 | 1.6 GB | 2.5 GB |
+| LLM, 3 B parameters, Q4_K_M, 4 K context | 1.9–2.0 GB | 2.4–2.8 GB |
+| LLM, 7–8 B parameters, Q4_K_M, 4 K context | 4.4–4.9 GB | 5.2–5.8 GB |
+| Stable Diffusion 1.5, Q8_0, 512×512 | 1.6 GB | 2.1 GB (1.6 GB with flash attention) |
 
 Guidelines:
 
@@ -387,6 +391,8 @@ Each `native/README.md` ([runtime](kggml-runtime/native/README.md), [whisper](kg
 - Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 - Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Kggml is released under the [MIT License](LICENSE). The bundled upstream libraries are MIT-licensed (darts-clone,
-vendored by stable-diffusion.cpp, is BSD-3-Clause); see [NOTICE](NOTICE) for every third-party component and its
-pinned commit.
+Kggml is released under the [MIT License](LICENSE). The bundled upstream libraries (ggml, whisper.cpp, llama.cpp
+with libmtmd, stable-diffusion.cpp) are MIT-licensed. Some of the code they vendor uses other permissive licenses:
+stb_image (MIT or public domain), miniaudio (MIT-0 or public domain), miniz (MIT, with parts under the Unlicense) and
+darts-clone (BSD-3-Clause). See [NOTICE](NOTICE) for every third-party component, its license and its pinned
+commit.
