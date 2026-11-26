@@ -1,5 +1,8 @@
 package com.donfuldauer.kggml.samples.showcase.llm
 
+import com.donfuldauer.kggml.samples.showcase.models.ModelChoice
+import com.donfuldauer.kggml.samples.showcase.models.ModelPathPicker
+import com.donfuldauer.kggml.samples.showcase.models.ModelSlot
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -98,11 +101,18 @@ object LlmChatTags {
 }
 
 @Composable
-fun LlmChatScreen(controller: LlmChatController, resident: ResidentState) {
+fun LlmChatScreen(
+    controller: LlmChatController,
+    resident: ResidentState,
+    modelChoices: List<ModelChoice> = emptyList(),
+    projectorChoices: List<ModelChoice> = emptyList(),
+) {
     val state by controller.state.collectAsState()
     LlmChatContent(
         state = state,
         residentKeys = resident.entries.map { it.key }.toSet(),
+        modelChoices = modelChoices,
+        projectorChoices = projectorChoices,
         canPickFromGallery = controller.canPickFromGallery,
         canCapture = controller.canCapture,
         actions = controller,
@@ -114,6 +124,9 @@ fun LlmChatScreen(controller: LlmChatController, resident: ResidentState) {
 fun LlmChatContent(
     state: LlmChatState,
     residentKeys: Set<String>,
+    /** Downloaded LLMs (and vision projectors) to offer next to the custom paths. */
+    modelChoices: List<ModelChoice> = emptyList(),
+    projectorChoices: List<ModelChoice> = emptyList(),
     canPickFromGallery: Boolean,
     canCapture: Boolean,
     actions: LlmChatController,
@@ -128,7 +141,7 @@ fun LlmChatContent(
         Text(destination.title, style = MaterialTheme.typography.headlineSmall)
         Text(destination.summary, style = MaterialTheme.typography.bodyMedium)
 
-        ModelControls(state, residentKeys, actions)
+        ModelControls(state, residentKeys, modelChoices, projectorChoices, actions)
 
         Text(state.activity.label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag(LlmChatTags.ACTIVITY))
         OutlinedButton(onClick = actions::cancel, enabled = state.isBusy, modifier = Modifier.testTag(LlmChatTags.CANCEL)) { Text("Cancel") }
@@ -156,23 +169,36 @@ fun LlmChatContent(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ModelControls(state: LlmChatState, residentKeys: Set<String>, actions: LlmChatController) {
+private fun ModelControls(
+    state: LlmChatState,
+    residentKeys: Set<String>,
+    modelChoices: List<ModelChoice>,
+    projectorChoices: List<ModelChoice>,
+    actions: LlmChatController,
+) {
     val editable = !state.isBusy
-    OutlinedTextField(
-        value = state.modelPath,
-        onValueChange = actions::setModelPath,
-        label = { Text("GGUF model") },
-        singleLine = true,
+    ModelPathPicker(
+        title = "Model",
+        fieldLabel = "GGUF model",
+        slot = ModelSlot.LLM,
+        choices = modelChoices,
+        path = state.modelPath,
         enabled = editable,
-        modifier = Modifier.fillMaxWidth().testTag(LlmChatTags.MODEL_PATH),
+        fieldTag = LlmChatTags.MODEL_PATH,
+        onPathChange = actions::setModelPath,
+        // A vision LLM brings its projector along when that is downloaded too.
+        onChoose = { actions.useModel(it.path, it.projectorPath) },
     )
-    OutlinedTextField(
-        value = state.projectorPath,
-        onValueChange = actions::setProjectorPath,
-        label = { Text("Vision projector (mmproj GGUF, optional)") },
-        singleLine = true,
+    ModelPathPicker(
+        title = "Vision projector (optional)",
+        fieldLabel = "Vision projector (mmproj GGUF, optional)",
+        slot = ModelSlot.VISION_PROJECTOR,
+        choices = projectorChoices,
+        path = state.projectorPath,
         enabled = editable,
-        modifier = Modifier.fillMaxWidth().testTag(LlmChatTags.PROJECTOR_PATH),
+        fieldTag = LlmChatTags.PROJECTOR_PATH,
+        onPathChange = actions::setProjectorPath,
+        onChoose = { actions.useProjector(it.path) },
     )
     Text("Prompt template", fontWeight = FontWeight.Bold)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

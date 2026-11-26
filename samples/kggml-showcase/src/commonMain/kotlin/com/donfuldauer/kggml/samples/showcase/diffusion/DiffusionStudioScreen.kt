@@ -1,5 +1,8 @@
 package com.donfuldauer.kggml.samples.showcase.diffusion
 
+import com.donfuldauer.kggml.samples.showcase.models.ModelChoice
+import com.donfuldauer.kggml.samples.showcase.models.ModelPathPicker
+import com.donfuldauer.kggml.samples.showcase.models.ModelSlot
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -67,14 +70,19 @@ object DiffusionStudioTags {
 }
 
 @Composable
-fun DiffusionStudioScreen(controller: DiffusionStudioController) {
+fun DiffusionStudioScreen(controller: DiffusionStudioController, modelChoices: List<ModelChoice> = emptyList()) {
     val state by controller.state.collectAsState()
-    DiffusionStudioContent(state, controller)
+    DiffusionStudioContent(state, controller, modelChoices)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DiffusionStudioContent(state: DiffusionStudioState, actions: DiffusionStudioController) {
+fun DiffusionStudioContent(
+    state: DiffusionStudioState,
+    actions: DiffusionStudioController,
+    /** Downloaded diffusion models to offer next to the custom path. */
+    modelChoices: List<ModelChoice> = emptyList(),
+) {
     val destination = ShowcaseDestination.DIFFUSION_STUDIO
     val editable = !state.isBusy
     Column(
@@ -84,13 +92,16 @@ fun DiffusionStudioContent(state: DiffusionStudioState, actions: DiffusionStudio
         Text(destination.title, style = MaterialTheme.typography.headlineSmall)
         Text(destination.summary, style = MaterialTheme.typography.bodyMedium)
 
-        OutlinedTextField(
-            value = state.modelPath,
-            onValueChange = actions::setModelPath,
-            label = { Text("Diffusion model (.gguf / .safetensors / .ckpt)") },
-            singleLine = true,
+        ModelPathPicker(
+            title = "Model",
+            fieldLabel = "Diffusion model (.gguf / .safetensors / .ckpt)",
+            slot = ModelSlot.DIFFUSION,
+            choices = modelChoices,
+            path = state.modelPath,
             enabled = editable,
-            modifier = Modifier.fillMaxWidth().testTag(DiffusionStudioTags.MODEL_PATH),
+            fieldTag = DiffusionStudioTags.MODEL_PATH,
+            onPathChange = actions::setModelPath,
+            onChoose = { actions.setModelPath(it.path) },
         )
         BackendChips(state.backend, DiffusionStudioTags.BACKEND, editable, actions::setBackend)
         state.loadedBackend?.let {

@@ -90,7 +90,7 @@ class WhisperStudioUiTest : UiTestBase() {
     fun liveStreamingRendersPartialThenCommittedSegments() = runComposeUiTest {
         openStudio()
         onNodeWithTag(WhisperStudioTags.STOP).assertIsNotEnabled()
-        onNodeWithTag(WhisperStudioTags.START).assertIsEnabled().performClick()
+        onNodeWithTag(WhisperStudioTags.START).performScrollTo().assertIsEnabled().performClick()
         waitForText(WhisperStudioTags.ACTIVITY, "Listening")
         onNodeWithTag(WhisperStudioTags.ACTIVITY).assertTextContains("48000 Hz", substring = true)
         onNodeWithTag(WhisperStudioTags.START).assertIsNotEnabled()
@@ -105,7 +105,7 @@ class WhisperStudioUiTest : UiTestBase() {
         onNodeWithTag(WhisperStudioTags.PARTIAL).assertTextContains("lag 0 ms", substring = true)
         onNodeWithTag("committed-0").assertDoesNotExist()
 
-        onNodeWithTag(WhisperStudioTags.STOP).performClick()
+        onNodeWithTag(WhisperStudioTags.STOP).performScrollTo().performClick()
         waitForTag("committed-0")
         onNodeWithTag("committed-0").assertTextContains("word1 word2.")
         onNodeWithTag("committed-0").assertTextContains("0:00.0 → 0:00.2")
@@ -118,11 +118,11 @@ class WhisperStudioUiTest : UiTestBase() {
     @Test
     fun cancelStopsTheStreamWithoutCommitting() = runComposeUiTest {
         openStudio()
-        onNodeWithTag(WhisperStudioTags.START).performClick()
+        onNodeWithTag(WhisperStudioTags.START).performScrollTo().performClick()
         waitForText(WhisperStudioTags.ACTIVITY, "Listening")
         mic.sendMs(100)
         waitForTag(WhisperStudioTags.PARTIAL)
-        onNodeWithTag(WhisperStudioTags.CANCEL).assertIsEnabled().performClick()
+        onNodeWithTag(WhisperStudioTags.CANCEL).performScrollTo().assertIsEnabled().performClick()
         waitForText(WhisperStudioTags.ACTIVITY, "Idle")
         onNodeWithTag(WhisperStudioTags.STATUS).assertTextContains("Cancelled")
         onNodeWithTag(WhisperStudioTags.PARTIAL).assertDoesNotExist()
@@ -136,17 +136,17 @@ class WhisperStudioUiTest : UiTestBase() {
         onNodeWithTag(WhisperStudioTags.ACTIVE_BACKEND).assertTextContains("Model not loaded")
         onNodeWithTag(WhisperStudioTags.backendChip(ComputeBackend.AUTO)).assertIsSelected()
 
-        onNodeWithTag(WhisperStudioTags.backendChip(ComputeBackend.CPU_ONLY)).performClick()
+        onNodeWithTag(WhisperStudioTags.backendChip(ComputeBackend.CPU_ONLY)).performScrollTo().performClick()
         onNodeWithTag(WhisperStudioTags.backendChip(ComputeBackend.CPU_ONLY)).assertIsSelected()
         onNodeWithTag(WhisperStudioTags.backendChip(ComputeBackend.AUTO)).assertIsNotSelected()
-        onNodeWithTag(WhisperStudioTags.START).performClick()
+        onNodeWithTag(WhisperStudioTags.START).performScrollTo().performClick()
         waitForText(WhisperStudioTags.ACTIVE_BACKEND, "Active: CPU (use_gpu=false)")
         assertEquals(BackendConfig.CPU, factory.opened.single().config)
-        onNodeWithTag(WhisperStudioTags.STOP).performClick()
+        onNodeWithTag(WhisperStudioTags.STOP).performScrollTo().performClick()
         waitForText(WhisperStudioTags.ACTIVITY, "Idle")
 
         // An idle loaded model is reloaded right away on the newly selected backend.
-        onNodeWithTag(WhisperStudioTags.backendChip(ComputeBackend.GPU_METAL)).performClick()
+        onNodeWithTag(WhisperStudioTags.backendChip(ComputeBackend.GPU_METAL)).performScrollTo().performClick()
         waitForText(WhisperStudioTags.ACTIVE_BACKEND, "Active: Metal (use_gpu=true)")
         assertEquals(listOf(BackendConfig(backend = ComputeBackend.GPU_METAL)), factory.opened.single().reinitialized)
     }
@@ -154,7 +154,7 @@ class WhisperStudioUiTest : UiTestBase() {
     @Test
     fun streamErrorIsRendered() = runComposeUiTest {
         openStudio(factory = FakeTranscriberFactory { it.streamError = InferenceCancelledException("app entered background") })
-        onNodeWithTag(WhisperStudioTags.START).performClick()
+        onNodeWithTag(WhisperStudioTags.START).performScrollTo().performClick()
         waitForText(WhisperStudioTags.ACTIVITY, "Listening")
         mic.sendMs(100)
         waitForTag(WhisperStudioTags.ERROR)
@@ -164,7 +164,7 @@ class WhisperStudioUiTest : UiTestBase() {
     @Test
     fun modelLoadErrorIsRendered() = runComposeUiTest {
         openStudio(factory = FakeTranscriberFactory(failure = ModelLoadException("not a whisper model")))
-        onNodeWithTag(WhisperStudioTags.START).performClick()
+        onNodeWithTag(WhisperStudioTags.START).performScrollTo().performClick()
         waitForTag(WhisperStudioTags.ERROR)
         onNodeWithTag(WhisperStudioTags.ERROR).assertTextContains("ModelLoadException: not a whisper model")
         waitForText(WhisperStudioTags.ACTIVITY, "Idle")
@@ -200,7 +200,7 @@ class WhisperStudioUiTest : UiTestBase() {
     @Test
     fun backgroundStressToggleIsOfferedOnlyWhereSupported() = runComposeUiTest {
         openStudio(backgroundStressSupported = true)
-        onNodeWithTag(WhisperStudioTags.BACKGROUND_STRESS).assertIsOff().performClick()
+        onNodeWithTag(WhisperStudioTags.BACKGROUND_STRESS).performScrollTo().assertIsOff().performClick()
         onNodeWithTag(WhisperStudioTags.BACKGROUND_STRESS).assertIsOn()
     }
 

@@ -51,7 +51,9 @@ import com.donfuldauer.kggml.samples.showcase.models.DiskModelStore
 import com.donfuldauer.kggml.samples.showcase.models.ModelKind
 import com.donfuldauer.kggml.samples.showcase.models.ModelManagerController
 import com.donfuldauer.kggml.samples.showcase.models.ModelManagerScreen
+import com.donfuldauer.kggml.samples.showcase.models.ModelSlot
 import com.donfuldauer.kggml.samples.showcase.models.ModelStore
+import com.donfuldauer.kggml.samples.showcase.models.choicesFor
 import com.donfuldauer.kggml.samples.showcase.models.ResidentModels
 import com.donfuldauer.kggml.samples.showcase.whisper.AudioCapture
 import com.donfuldauer.kggml.samples.showcase.whisper.TranscriberFactory
@@ -215,6 +217,8 @@ fun ShowcaseApp(
     }
     DisposableEffect(modelManager) { onDispose { modelManager.close() } }
     val resident by residents.state.collectAsState()
+    // Downloaded models the feature screens offer next to a custom path.
+    val models by modelManager.state.collectAsState()
 
     MaterialTheme {
         val selected = ShowcaseDestination.valueOf(selectedName)
@@ -237,9 +241,14 @@ fun ShowcaseApp(
                 when (selected) {
                     ShowcaseDestination.BACKEND_INSPECTOR -> BackendInspectorScreen(inspector, ioDispatcher)
                     ShowcaseDestination.MODEL_MANAGER -> ModelManagerScreen(modelManager)
-                    ShowcaseDestination.WHISPER_STUDIO -> WhisperStudioScreen(whisperStudio)
-                    ShowcaseDestination.LLM_CHAT -> LlmChatScreen(llmChat, resident)
-                    ShowcaseDestination.DIFFUSION_STUDIO -> DiffusionStudioScreen(diffusionStudio)
+                    ShowcaseDestination.WHISPER_STUDIO -> WhisperStudioScreen(whisperStudio, models.choicesFor(ModelSlot.WHISPER))
+                    ShowcaseDestination.LLM_CHAT -> LlmChatScreen(
+                        llmChat,
+                        resident,
+                        modelChoices = models.choicesFor(ModelSlot.LLM),
+                        projectorChoices = models.choicesFor(ModelSlot.VISION_PROJECTOR),
+                    )
+                    ShowcaseDestination.DIFFUSION_STUDIO -> DiffusionStudioScreen(diffusionStudio, models.choicesFor(ModelSlot.DIFFUSION))
                 }
             }
         }

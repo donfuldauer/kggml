@@ -1,5 +1,8 @@
 package com.donfuldauer.kggml.samples.showcase.whisper
 
+import com.donfuldauer.kggml.samples.showcase.models.ModelChoice
+import com.donfuldauer.kggml.samples.showcase.models.ModelPathPicker
+import com.donfuldauer.kggml.samples.showcase.models.ModelSlot
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -58,10 +61,11 @@ object WhisperStudioTags {
 }
 
 @Composable
-fun WhisperStudioScreen(controller: WhisperStudioController) {
+fun WhisperStudioScreen(controller: WhisperStudioController, modelChoices: List<ModelChoice> = emptyList()) {
     val state by controller.state.collectAsState()
     WhisperStudioContent(
         state = state,
+        modelChoices = modelChoices,
         onModelPathChange = controller::setModelPath,
         onFilePathChange = controller::setFilePath,
         onSelectBackend = controller::selectBackend,
@@ -77,6 +81,8 @@ fun WhisperStudioScreen(controller: WhisperStudioController) {
 @Composable
 fun WhisperStudioContent(
     state: WhisperStudioState,
+    /** Downloaded whisper models to offer next to the custom path. */
+    modelChoices: List<ModelChoice> = emptyList(),
     onModelPathChange: (String) -> Unit = {},
     onFilePathChange: (String) -> Unit = {},
     onSelectBackend: (ComputeBackend) -> Unit = {},
@@ -98,13 +104,16 @@ fun WhisperStudioContent(
         Text(destination.title, style = MaterialTheme.typography.headlineSmall)
         Text(destination.summary, style = MaterialTheme.typography.bodyMedium)
 
-        OutlinedTextField(
-            value = state.modelPath,
-            onValueChange = onModelPathChange,
-            label = { Text("Whisper model (.bin)") },
-            singleLine = true,
+        ModelPathPicker(
+            title = "Model",
+            fieldLabel = "Whisper model (.bin)",
+            slot = ModelSlot.WHISPER,
+            choices = modelChoices,
+            path = state.modelPath,
             enabled = !state.isBusy,
-            modifier = Modifier.fillMaxWidth().testTag(WhisperStudioTags.MODEL_PATH),
+            fieldTag = WhisperStudioTags.MODEL_PATH,
+            onPathChange = onModelPathChange,
+            onChoose = { onModelPathChange(it.path) },
         )
 
         Text("Compute backend", fontWeight = FontWeight.Bold)
