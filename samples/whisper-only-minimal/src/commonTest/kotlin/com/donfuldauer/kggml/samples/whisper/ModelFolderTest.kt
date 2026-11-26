@@ -3,6 +3,7 @@ package com.donfuldauer.kggml.samples.whisper
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** The sample's model picker logic: which files in the model folder it offers and what it starts with. */
 class ModelFolderTest {
@@ -24,6 +25,21 @@ class ModelFolderTest {
     fun pathsJoinWithOneSeparatorWhateverTheDirectoryEndsWith() {
         assertEquals("/d/m.bin", whisperModelsIn("/d/", listOf("m.bin")).single().path)
         assertEquals("/d/m.bin", whisperModelsIn("/d", listOf("m.bin")).single().path)
+    }
+
+    @Test
+    fun windowsPathsJoinAndCompareWithTheirOwnSeparator() {
+        val models = whisperModelsIn("C:\\Users\\someone\\.kggml\\models\\", listOf("ggml-tiny.en.bin"))
+        assertEquals("C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin", models.single().path)
+        // java.io.File on Windows gives backslashes; a pasted path may use slashes: both are the same model.
+        assertEquals(0, chosenModelIndex(models, "C:/Users/someone/.kggml/models/ggml-tiny.en.bin"))
+        assertEquals(0, chosenModelIndex(models, "C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin"))
+        assertEquals(
+            "C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin",
+            initialModelPath(null, "C:\\Users\\someone\\.kggml\\models\\ggml-tiny.en.bin", models),
+        )
+        // A directory with forward slashes (macOS, Linux, Android, iOS, or Windows written with /) keeps them.
+        assertEquals("C:/m/a.bin", whisperModelsIn("C:/m", listOf("a.bin")).single().path)
     }
 
     @Test
@@ -56,12 +72,15 @@ class ModelFolderTest {
     @Test
     fun scanListsTheModelFilesOfARealDirectory() {
         val model = NativeTestEnvironment.writeTempFile("ggml-tiny.en.bin", byteArrayOf(1, 2, 3))
-        val folder = model.substringBeforeLast('/')
-        assertEquals(listOf(FolderModel("ggml-tiny.en.bin", model)), scanWhisperModels(folder))
-        assertEquals(listOf(FolderModel("ggml-tiny.en.bin", model)), scanWhisperModels("$folder/"))
+        // Platform paths: "/" everywhere except Windows, whose temp paths use "\\".
+        val folder = model.substring(0, model.lastIndexOfAny(charArrayOf('/', '\\')))
+        val scanned = scanWhisperModels(folder).single()
+        assertEquals("ggml-tiny.en.bin", scanned.fileName)
+        assertEquals(model, scanned.path, "joined with the folder's own separator")
+        assertTrue(samePath(model, scanWhisperModels("$folder/").single().path), "a trailing separator is ignored")
 
-        val audioOnly = NativeTestEnvironment.writeTempFile("jfk.wav", byteArrayOf(1)).substringBeforeLast('/')
-        assertEquals(emptyList(), scanWhisperModels(audioOnly))
+        val audioOnly = NativeTestEnvironment.writeTempFile("jfk.wav", byteArrayOf(1))
+        assertEquals(emptyList(), scanWhisperModels(audioOnly.substring(0, audioOnly.lastIndexOfAny(charArrayOf('/', '\\')))))
         assertEquals(emptyList(), scanWhisperModels("$folder/does-not-exist"))
     }
 }

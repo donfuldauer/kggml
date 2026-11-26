@@ -2,10 +2,11 @@ import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetTree
 
-// Minimal Android + iOS sample used for CI binary symbol leakage audits (AGENTS.md §2.1): it depends ONLY on the
-// `kggml-bom` platform and `:kggml-whisper` (which brings `:kggml-runtime`). It must never depend on
-// `:kggml-llama` or `:kggml-diffusion`, and uses no UI toolkit beyond the platform's own (android.widget /
-// UIKit), so its binaries contain nothing but the app, the runtime and whisper. Never published.
+// Minimal Android + iOS + JVM desktop sample used for CI binary symbol leakage audits (AGENTS.md §2.1): it depends
+// ONLY on the `kggml-bom` platform and `:kggml-whisper` (which brings `:kggml-runtime`). It must never depend on
+// `:kggml-llama`, `:kggml-diffusion` or a GPU add-on, and uses no UI toolkit beyond the platform's own
+// (android.widget / UIKit / Swing), so its binaries contain nothing but the app, the runtime and whisper. Never
+// published. Desktop: ./gradlew :samples:whisper-only-minimal:runDesktop (args: --model, --audio, --backend, --autostart).
 //
 // Binary audit (scripts/audit-binary-symbols.sh, run by CI):
 //   ./gradlew :samples:whisper-only-minimal:assembleRelease -Pkggml.bundleNative=true
@@ -42,6 +43,10 @@ kotlin {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
         instrumentedTestVariant.sourceSetTree.set(KotlinSourceSetTree.test)
     }
+    // Desktop (Swing): the same session logic and model picker on macOS / Linux / Windows.
+    jvm("desktop") {
+        compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
+    }
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "WhisperOnlyMinimal"
@@ -70,6 +75,11 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
+        }
+        val desktopTest by getting {
+            dependencies {
+                implementation(libs.junit4)
+            }
         }
         // MainActivityTest (androidSharedTest) runs under Robolectric locally and on the device when instrumented.
         // Test-only dependencies: they never reach the audited app APK.
@@ -125,7 +135,7 @@ val forbiddenKggmlModules = setOf("kggml-llama", "kggml-diffusion")
 val verifyMinimalDependencies by tasks.registering {
     group = "verification"
     description = "Fails if :samples:whisper-only-minimal resolves :kggml-llama or :kggml-diffusion."
-    val roots = listOf("releaseRuntimeClasspath", "debugRuntimeClasspath")
+    val roots = listOf("releaseRuntimeClasspath", "debugRuntimeClasspath", "desktopRuntimeClasspath")
         .map { configurations.getByName(it).incoming.resolutionResult.rootComponent }
     doLast {
         val offenders = roots.flatMap { root ->
@@ -144,6 +154,55 @@ val verifyMinimalDependencies by tasks.registering {
     }
 }
 tasks.named("check") { dependsOn(verifyMinimalDependencies) }
+
+// ---------------------------------------------------------------------------------------------------------
+// Desktop: the host native builds (kggml-runtime / kggml-whisper build-host.sh) for runDesktop and desktopTest.
+// ---------------------------------------------------------------------------------------------------------
+val hostLibSubdir: String = if (System.getProperty("os.name").lowercase().startsWith("windows")) "bin" else "lib"
+val hostNativeLibDir: File = rootProject.layout.projectDirectory.dir("build/native/$hostLibSubdir").asFile
+val hostWhisperLibDir: File = rootProject.layout.projectDirectory.dir("build/native-whisper/$hostLibSubdir").asFile
+val hostLibs = mapOf(
+    "kggml.native.path" to (hostNativeLibDir to "kggml_runtime_jni"),
+    "kggml.whisper.native.path" to (hostWhisperLibDir to "kggml_whisper_jni"),
+)
+
+val runDesktop by tasks.registering(JavaExec::class) {
+    group = "application"
+    description = "Runs the Swing desktop app of the minimal sample (pass app arguments with --args=\"...\")."
+    val main = kotlin.jvm("desktop").compilations.getByName("main") // the existing target
+    classpath(main.output.allOutputs, main.runtimeDependencyFiles)
+    mainClass.set("com.donfuldauer.kggml.samples.whisper.MainKt")
+    hostLibs.forEach { (property, lib) -> if (lib.first.isDirectory) jvmArgs("-D$property=${lib.first.absolutePath}") }
+    providers.gradleProperty("kggml.models.dir").orNull?.let { jvmArgs("-Dkggml.models.dir=$it") }
+}
+
+// What a desktop app of this sample ships: its jar plus the resolved runtime classpath (audited by
+// scripts/ci/audit-minimal-sample.sh desktop with scripts/audit-binary-symbols.sh jars).
+val desktopDistribution by tasks.registering(Sync::class) {
+    group = "distribution"
+    description = "Collects the desktop app jar and its runtime classpath into build/desktop-dist/lib."
+    val main = kotlin.jvm("desktop").compilations.getByName("main")
+    from(tasks.named("desktopJar"))
+    from(main.runtimeDependencyFiles)
+    into(layout.buildDirectory.dir("desktop-dist/lib"))
+}
+
+tasks.named<Test>("desktopTest") {
+    systemProperty("kggml.test.requireNative", requireNative.toString())
+    systemProperty("java.awt.headless", "true")
+    inputs.property("kggml.requireNative", requireNative)
+    // Real-engine results depend on the native libraries they load: never reuse a result for other native builds.
+    hostLibs.forEach { (property, lib) ->
+        inputs.files(fileTree(lib.first) { include("*.so*", "*.dylib", "*.dll") })
+            .withPropertyName("nativeLibs.$property").withPathSensitivity(PathSensitivity.RELATIVE)
+    }
+    doFirst {
+        hostLibs.forEach { (property, lib) ->
+            val (dir, jni) = lib
+            if (dir.resolve(System.mapLibraryName(jni)).isFile) systemProperty(property, dir.absolutePath)
+        }
+    }
+}
 
 // iOS test executables link against the xcframeworks; skip them (like :kggml-whisper) until they are built.
 tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {

@@ -165,10 +165,12 @@ jobs:
           ./kggml-runtime-vulkan/native/scripts/build-android.sh arm64-v8a x86_64
           ./scripts/ci/audit-vulkan-addon.sh arm64-v8a x86_64
 
-      - name: whisper-only-minimal binary symbol audit (release APK, zero llama / stable-diffusion symbols)
+      - name: whisper-only-minimal binary symbol audit (release APK + desktop app, zero llama / stable-diffusion symbols)
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
           ./scripts/ci/audit-minimal-sample.sh android
+          # Desktop: the app jar + runtime classpath, and the linux-x64 host native libraries it loads (ELF).
+          ./scripts/ci/audit-minimal-sample.sh desktop
 
       - name: Assemble samples (Android APKs, desktop jar) via kggml-bom
         run: >
@@ -310,7 +312,9 @@ jobs:
 
       - name: JVM tests (incl. dual-engine coexistence) against the macOS native runtime
         timeout-minutes: 20
-        run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
+        run: |
+          ./gradlew jvmTest :samples:kggml-showcase:desktopTest :samples:whisper-only-minimal:desktopTest $NATIVE_GRADLE_ARGS
+          ./scripts/ci/audit-minimal-sample.sh desktop $NATIVE_GRADLE_ARGS
 
       # A simulator left booted or wedged (e.g. by the image's own setup) can stall the test run, so start
       # from a clean slate.
@@ -470,7 +474,9 @@ jobs:
           ctest --test-dir build/native-diffusion --build-config Release --output-on-failure -j 4
 
       - name: JVM tests (incl. dual-engine coexistence) against the Windows native runtime
-        run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
+        run: |
+          ./gradlew jvmTest :samples:kggml-showcase:desktopTest :samples:whisper-only-minimal:desktopTest $NATIVE_GRADLE_ARGS
+          ./scripts/ci/audit-minimal-sample.sh desktop $NATIVE_GRADLE_ARGS
 
       - name: Print JVM crash reports on failure
         if: failure()
