@@ -6,6 +6,31 @@ plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.compose.multiplatform) apply false
     alias(libs.plugins.kotlin.compose) apply false
+    // Code coverage of every JVM test task (commonTest + jvmTest / desktopTest, integration tests), merged here.
+    alias(libs.plugins.kover)
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Coverage (Kover). `./gradlew koverHtmlReport koverXmlReport koverLog` measures the JVM test tasks of every
+// module below (commonTest + jvmTest / desktopTest; with the host native builds present, the JNI paths too) and
+// merges them into build/reports/kover. Android-only (androidUnitTest / connected) and iOS code is exercised by
+// its own test tasks but not instrumented by Kover. Per-module reports: `./gradlew :<module>:koverHtmlReport`.
+// ---------------------------------------------------------------------------------------------------------
+val coveredProjects = listOf(
+    ":kggml-core-api",
+    ":kggml-runtime",
+    ":kggml-whisper",
+    ":kggml-llama",
+    ":kggml-diffusion",
+    ":kggml-model-manager",
+    ":integration-tests",
+    ":samples:kggml-showcase",
+)
+subprojects {
+    if (path in coveredProjects) pluginManager.apply("org.jetbrains.kotlinx.kover")
+}
+dependencies {
+    coveredProjects.forEach { kover(project(it)) }
 }
 
 // `iosSimulatorArm64Test` boots Kotlin's default simulator device by name, which may not exist in a given Xcode.
