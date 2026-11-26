@@ -8,7 +8,11 @@ import android.widget.RadioButton
 import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.UiController
+import androidx.test.espresso.ViewAction
+import androidx.test.espresso.matcher.ViewMatchers.isEnabled
 import androidx.test.espresso.NoMatchingViewException
 import androidx.test.espresso.action.ViewActions.click
 import androidx.test.espresso.action.ViewActions.replaceText
@@ -80,7 +84,27 @@ class MainActivityModelPickerTest {
 
     private fun launch(configure: Intent.() -> Unit = {}): ActivityScenario<MainActivity> {
         val intent = Intent(context, MainActivity::class.java).apply(configure)
-        return ActivityScenario.launch<MainActivity>(intent).also { scenario = it }
+        return ActivityScenario.launch<MainActivity>(intent).also {
+            scenario = it
+            // The runtime status above the picker grows from one line to several when it loads in the background;
+            // wait for it, or that reflow can move a row between scrollTo() and click() and the tap hits its neighbour.
+            awaitView(withText(startsWith("Kggml whisper-only minimal sample\n")))
+            closeSoftKeyboard()
+        }
+    }
+
+    /**
+     * Selects a radio button through its own click handling (what a tap ends in), not a tap at screen coordinates: the
+     * emulator's soft keyboard can resize the window at any moment and send a coordinate tap to the row next to it.
+     * These tests are about what the picker does with a selection, not about touch geometry.
+     */
+    private fun select(): ViewAction = object : ViewAction {
+        override fun getConstraints(): Matcher<View> = isEnabled()
+        override fun getDescription() = "select (performClick)"
+        override fun perform(uiController: UiController, view: View) {
+            view.performClick()
+            uiController.loopMainThreadUntilIdle()
+        }
     }
 
     private fun tagged(tag: String): Matcher<View> = withTagValue(`is`(tag as Any))
@@ -147,11 +171,11 @@ class MainActivityModelPickerTest {
         // The intent's path is not in the folder: custom.
         onView(tagged(MainActivityTags.MODEL_CUSTOM)).check(matches(isChecked()))
 
-        onView(choice("ggml-small.bin")).perform(scrollTo(), click())
+        onView(choice("ggml-small.bin")).perform(select())
         assertEquals(File(folder, "ggml-small.bin").path, pathText())
         onView(choice("ggml-small.bin")).check(matches(isChecked()))
 
-        onView(choice("ggml-base.en.bin")).perform(scrollTo(), click())
+        onView(choice("ggml-base.en.bin")).perform(select())
         assertEquals(File(folder, "ggml-base.en.bin").path, pathText())
         onView(choice("ggml-small.bin")).check(matches(isNotChecked()))
 
@@ -163,7 +187,7 @@ class MainActivityModelPickerTest {
         onView(choice("ggml-small.bin")).check(matches(isChecked()))
 
         // "Custom path" from a folder model starts from an empty field.
-        onView(tagged(MainActivityTags.MODEL_CUSTOM)).perform(scrollTo(), click())
+        onView(tagged(MainActivityTags.MODEL_CUSTOM)).perform(select())
         assertEquals("", pathText())
         onView(tagged(MainActivityTags.MODEL_CUSTOM)).check(matches(isChecked()))
     }
@@ -193,7 +217,7 @@ class MainActivityModelPickerTest {
             putExtra("audio", audio)
             putExtra("backend", "CPU_ONLY")
         }
-        onView(choice("ggml-tiny-synthetic.bin")).perform(scrollTo(), click())
+        onView(choice("ggml-tiny-synthetic.bin")).perform(select())
         onView(withText("Transcribe")).perform(scrollTo(), click())
         if (nativeLoads) {
             // The real engine loaded the folder model (the typed path does not exist) and ran the 1 s clip.

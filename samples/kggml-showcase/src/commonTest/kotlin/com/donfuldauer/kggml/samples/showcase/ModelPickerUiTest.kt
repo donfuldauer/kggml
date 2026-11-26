@@ -135,10 +135,14 @@ class ModelPickerUiTest : UiTestBase() {
         assertEquals("/data/models/vlm.gguf", spec.modelPath)
         assertEquals("/data/models/mmproj-other.gguf", spec.projectorPath)
 
-        // A text-only LLM keeps the projector that is set.
+        // A projector belongs to its model: picking another model clears it (libmtmd would reject the pair).
         click(ModelPickerTags.choice(model, "llama.gguf"))
         assertPath(model, "/data/models/llama.gguf")
-        assertPath(projector, "/data/models/mmproj-other.gguf")
+        assertPath(projector, "")
+        assertChosen(projector, null, "mmproj", "mmproj-other.gguf")
+        // Picking the vision LLM again brings its own projector back.
+        click(ModelPickerTags.choice(model, "vlm"))
+        assertPath(projector, "/data/models/mmproj-vlm.gguf")
     }
 
     @Test

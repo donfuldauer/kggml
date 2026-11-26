@@ -57,7 +57,12 @@ class MainActivityTest {
 
     private fun launch(configure: Intent.() -> Unit = {}): ActivityScenario<MainActivity> {
         val intent = Intent(ApplicationProvider.getApplicationContext(), MainActivity::class.java).apply(configure)
-        return ActivityScenario.launch<MainActivity>(intent).also { scenario = it }
+        return ActivityScenario.launch<MainActivity>(intent).also {
+            scenario = it
+            // The runtime status grows from one line to several when it loads in the background; wait for it so that
+            // reflow cannot move a view between scrollTo() and click().
+            awaitView(withText(startsWith("Kggml whisper-only minimal sample\n")))
+        }
     }
 
     /**
