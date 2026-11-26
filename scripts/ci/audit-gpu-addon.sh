@@ -69,7 +69,7 @@ commands, want = sys.argv[1], sys.argv[2]
 ggml = [c for c in json.load(open(commands)) if "/ggml/src/" in c["file"].replace("\\", "/")]
 bad = [c["file"] for c in ggml if f"-DGGML_MAX_NAME={want}" not in c.get("command", " ".join(c.get("arguments", [])))]
 if not ggml or bad:
-    print(f"{len(bad)} of {len(ggml)} ggml sources lack -DGGML_MAX_NAME={want}: {[c.rsplit("/", 1)[-1] for c in bad[:3]]}")
+    print(f"{len(bad)} of {len(ggml)} ggml sources lack -DGGML_MAX_NAME={want}: {[c.rsplit('/', 1)[-1] for c in bad[:3]]}")
     sys.exit(1)
 print(f"{len(ggml)} ggml sources built with GGML_MAX_NAME={want}")
 PY
