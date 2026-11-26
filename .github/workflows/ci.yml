@@ -38,7 +38,9 @@ name: CI (Phase 1 cross-platform matrix)
 on:
   pull_request:
     # `labeled` lets adding `ci:macos` / `ci:windows` start that job without a new push; the Ubuntu job
-    # skips `labeled` events because the PR's head already ran it.
+    # skips `labeled` events because the PR's head already ran it. Every label, including one given when the PR is
+    # created (`gh pr create --label`), fires its own `labeled` event, so the label-gated jobs run only from that
+    # event and from later pushes, never from `opened`: each job runs once per head, in exactly one run.
     types: [opened, synchronize, reopened, ready_for_review, labeled]
     paths-ignore:
       - "**/*.md"
@@ -235,12 +237,14 @@ jobs:
   macos:
     name: macOS (macOS JVM, iOS XCFramework + simulator tests, CTest)
     # Skipped jobs start no runner and are not billed. On a `labeled` event, only the `ci:macos`
-    # label itself starts a run, not unrelated labels added to an already-labelled PR.
+    # label itself starts a run, not unrelated labels added to an already-labelled PR. Not on `opened`: a PR
+    # created with the label also gets that label's `labeled` event, which runs this job (else it ran twice).
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
        contains(github.event.pull_request.labels.*.name, 'ci:macos') &&
-       (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
+       ((github.event.action == 'labeled' && github.event.label.name == 'ci:macos') ||
+        (github.event.action != 'labeled' && github.event.action != 'opened')))
     # The owner's Mac when it is on (free), else hosted (10x).
     runs-on: >-
       ${{ vars.MAC_RUNNER == 'on' && inputs.runner != 'hosted' &&
@@ -417,7 +421,8 @@ jobs:
          github.event.action != 'labeled' && !github.event.pull_request.draft) ||
         (!(vars.WIN_RUNNER == 'on' && github.event.pull_request.head.repo.full_name == github.repository) &&
          contains(github.event.pull_request.labels.*.name, 'ci:windows') &&
-         (github.event.action != 'labeled' || github.event.label.name == 'ci:windows'))))
+         ((github.event.action == 'labeled' && github.event.label.name == 'ci:windows') ||
+          (github.event.action != 'labeled' && github.event.action != 'opened')))))
     runs-on: >-
       ${{ vars.WIN_RUNNER == 'on' && inputs.runner != 'hosted' &&
       (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)

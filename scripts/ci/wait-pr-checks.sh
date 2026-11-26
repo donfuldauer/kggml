@@ -12,7 +12,8 @@
 #
 # Exit codes:
 #   0  every check finished green (pass / skipped)
-#   1  a check failed or was cancelled (with fail-fast, as soon as the first one does)
+#   1  a check failed or was cancelled (with fail-fast, as soon as the first one does); a cancelled copy of a job
+#      that also passed in another run on the same head (a duplicate) does not count
 #   2  deadline hit: a check stayed queued past --queued-deadline after this script started (run it
 #      right after the push) or ran past --running-deadline since it started = infrastructure failure
 #   3  cannot query checks (no `gh`, not authenticated, PR not found): poll the check runs another way
@@ -47,20 +48,82 @@ START_EPOCH="$(date +%s)"
 ERR="$(mktemp)"
 trap 'rm -f "$ERR"' EXIT
 
+# collect_checks: prints the PR head's checks as JSON [{name, bucket, state, startedAt, link}], exit 3 if they cannot
+# be read. GitHub Actions jobs come from the Actions API for every run on the head commit, not from `gh pr checks`:
+# that keeps only the newest check per name, so when two runs share a job name (a `labeled` run next to the push's
+# run, a re-run, a duplicate) a skipped copy in one run can hide the same job still running in the other. A job name
+# is decided by its non-skipped copies: pending while any runs, failed if any failed, and a cancelled copy only counts
+# when no other copy passed (a superseded or hand-cancelled duplicate does not fail the PR). Checks from apps that are
+# not Actions jobs are taken from `gh pr checks` as they are.
+collect_checks() {
+  PR="$PR" python3 - <<'PY'
+import json, os, subprocess, sys
+
+def gh(*args, ok=(0,)):
+    p = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if p.returncode not in ok:
+        if "no checks reported" in p.stderr.lower():
+            return ""
+        sys.stderr.write(p.stderr)
+        sys.exit(3)
+    return p.stdout
+
+pr = json.loads(gh("pr", "view", os.environ["PR"], "--json", "headRefOid,url"))
+sha, url = pr["headRefOid"], pr["url"]
+repo = "/".join(url.split("/")[3:5])
+
+# gh exits 8 while checks are pending.
+other = json.loads(gh("pr", "checks", os.environ["PR"], "--json", "name,bucket,state,startedAt,link", ok=(0, 8)) or "[]")
+checks = [c for c in other if "/actions/runs/" not in (c.get("link") or "")]
+
+runs = []
+for page in range(1, 11):
+    batch = json.loads(gh("api", f"repos/{repo}/actions/runs?head_sha={sha}&per_page=100&page={page}"))["workflow_runs"]
+    runs += batch
+    if len(batch) < 100:
+        break
+
+def bucket(job):
+    if job["status"] != "completed":
+        return "pending"
+    return {"success": "pass", "neutral": "pass", "skipped": "skipping", "cancelled": "cancel"}.get(job["conclusion"], "fail")
+
+copies = {}
+for run in runs:
+    jobs = json.loads(gh("api", f"repos/{repo}/actions/runs/{run['id']}/jobs?per_page=100"))["jobs"]
+    for job in jobs:
+        copies.setdefault((run["name"], job["name"]), []).append({
+            "name": job["name"],
+            "bucket": bucket(job),
+            "state": (job["conclusion"] or job["status"] or "").upper(),
+            "startedAt": job.get("started_at") or "",
+            "link": job.get("html_url") or "",
+        })
+
+for (_, name), cs in sorted(copies.items()):
+    live = [c for c in cs if c["bucket"] != "skipping"] or cs
+    if any(c["bucket"] == "pending" for c in live):
+        pick = [c for c in live if c["bucket"] == "pending"]
+    elif any(c["bucket"] == "fail" for c in live):
+        pick = [c for c in live if c["bucket"] == "fail"]
+    elif any(c["bucket"] == "pass" for c in live):
+        pick = [c for c in live if c["bucket"] == "pass"]
+    else:
+        pick = live
+    checks.append(pick[0])
+print(json.dumps(checks))
+PY
+}
+
 while :; do
   set +e
-  json="$(gh pr checks "$PR" --json name,bucket,state,startedAt,link 2>"$ERR")"
+  json="$(collect_checks 2>"$ERR")"
   rc=$?
   set -e
-  # gh exits 8 while checks are pending; that is not an error.
-  if [[ $rc -ne 0 && $rc -ne 8 ]]; then
-    if grep -qi "no checks reported" "$ERR" 2>/dev/null; then
-      json="[]"
-    else
-      cat "$ERR" >&2 || true
-      echo "wait-pr-checks: cannot query checks for PR $PR (exit 3)" >&2
-      exit 3
-    fi
+  if [[ $rc -ne 0 ]]; then
+    cat "$ERR" >&2 || true
+    echo "wait-pr-checks: cannot query checks for PR $PR (exit 3)" >&2
+    exit 3
   fi
 
   set +e
