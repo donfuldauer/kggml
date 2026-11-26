@@ -44,7 +44,12 @@ if ($Arm64) {
     $components += 'Microsoft.VisualStudio.Component.VC.Tools.ARM64'   # MSVC ARM64 libraries (CRT, STL, link)
     $components += 'Microsoft.VisualStudio.Component.VC.Llvm.Clang'     # clang, which ggml needs for ARM
 }
-$missing = @($components | Where-Object { -not (& $vswhere -path $vsPath -requires $_ -property installationPath) })
+# `vswhere -path` ignores -requires, so ask which instances have the component and compare the path.
+function Test-Component([string]$id) {
+    $paths = @(& $vswhere -products * -requires $id -property installationPath)
+    return $paths -contains $vsPath
+}
+$missing = @($components | Where-Object { -not (Test-Component $_) })
 
 if ($missing.Count -gt 0) {
     $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vs_installer.exe'
@@ -70,7 +75,7 @@ if ($missing.Count -gt 0) {
     if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
         throw "vs_installer exited with $($proc.ExitCode) (is Visual Studio or its installer running?). Command: $manual"
     }
-    $still = @($components | Where-Object { -not (& $vswhere -path $vsPath -requires $_ -property installationPath) })
+    $still = @($components | Where-Object { -not (Test-Component $_) })
     if ($still.Count -gt 0) { throw "Components still missing after the installer ran: $($still -join ', ')" }
 }
 
