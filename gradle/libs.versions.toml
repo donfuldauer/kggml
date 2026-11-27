@@ -9,7 +9,7 @@ compose-multiplatform = "1.8.2"
 androidx-activity = "1.10.1"
 kover = "0.9.11"
 # Test-only: Android local (Robolectric) and instrumented tests of the samples.
-robolectric = "4.14.1"
+robolectric = "4.18.1"
 androidx-test-core = "1.6.1"
 androidx-test-runner = "1.6.2"
 androidx-test-rules = "1.6.1"
