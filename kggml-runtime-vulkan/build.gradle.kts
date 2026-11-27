@@ -3,7 +3,7 @@ plugins {
 }
 
 description = "Kggml GPU add-on: ggml's Vulkan backend for the shared :kggml-runtime on Android and JVM desktop " +
-    "Linux / Windows (no-op on other platforms)."
+    "Linux x86_64 (no-op on other platforms)."
 
 // ---------------------------------------------------------------------------------------------------------
 // Opt-in switch (like the engine modules; `./gradlew check` needs no C/C++ toolchain):

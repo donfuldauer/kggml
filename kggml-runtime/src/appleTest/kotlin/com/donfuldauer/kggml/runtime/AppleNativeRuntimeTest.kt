@@ -57,7 +57,7 @@ class AppleNativeRuntimeTest {
         val hardware = KggmlRuntime.hardwareThreadCount()
         assertTrue(KggmlRuntime.recommendedThreadCount() in 1..hardware)
         val info = KggmlRuntime.info()
-        assertEquals("1.0.0", info.runtimeVersion)
+        assertEquals("0.1.0", info.runtimeVersion)
         assertEquals(40, info.ggmlCommit.length)
         assertTrue(info.ggmlVersion.isNotEmpty())
     }

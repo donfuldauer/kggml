@@ -6,7 +6,7 @@ plugins {
     alias(libs.plugins.kggml.kmp.library)
 }
 
-description = "Kggml shared dynamic ggml runtime (CPU, Metal, Vulkan backends)."
+description = "Kggml shared dynamic ggml runtime (CPU, and Metal on Apple platforms; Vulkan and OpenCL come from add-on modules)."
 
 // ---------------------------------------------------------------------------------------------------------
 // Opt-in switches (Gradle properties; all default to false so `./gradlew check` needs no C/C++ toolchain):
@@ -18,7 +18,7 @@ description = "Kggml shared dynamic ggml runtime (CPU, Metal, Vulkan backends)."
 //   -Pkggml.extraJvmNativeResources=<dir>[,<dir>...]  (with bundleNative) also package desktop runtimes staged on
 //                               other hosts: each <dir> holds kggml/native/<platform>/ as written by
 //                               stageJvmNativeResources there. The release workflow uses this to ship linux-x86_64,
-//                               windows-x86_64 and macos-aarch64 in one jar.
+//                               linux-aarch64, windows-x86_64, windows-aarch64 and macos-aarch64 in one jar.
 //   -Pkggml.nativePlatform=<os>-<arch>  stage (and, for linux-aarch64, cross-compile) the release runtime for that JVM
 //                               platform instead of the host's: linux-aarch64 is built by build-host.sh --target;
 //                               windows-aarch64 is built beforehand with the windows-arm64 preset (needs an MSVC

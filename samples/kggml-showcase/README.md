@@ -1,10 +1,11 @@
 # Kggml Showcase
 
-Compose Multiplatform app (Android, iOS, JVM Desktop) that consumes the SDK only through `kggml-bom`. Screens:
+Compose Multiplatform app (Android, iOS, JVM Desktop) that consumes the SDK only through `kggml-bom`. The Android app
+also depends on the `kggml-runtime-vulkan` and `kggml-runtime-opencl` GPU add-ons. Screens:
 
 | Screen | Phase | What it shows |
 | --- | --- | --- |
-| Hardware Backend Inspector | 1 | Compute backends, thread counts and version metadata from `KggmlRuntime`. |
+| Hardware Backend Inspector | 1 | Compute backends (CPU, Metal, Vulkan, OpenCL, Core ML), thread counts and version metadata from `KggmlRuntime`. |
 | **Model Manager** | 4 | Curated catalog, resumable downloads, SHA-256 status, GGUF / Whisper header metadata with a peak-RAM estimate, and manual / OS low-memory eviction, with `:kggml-model-manager`. |
 | **Live Whisper Dictation & Audio Studio** | 3 | Live microphone dictation and PCM file transcription with `:kggml-whisper`. |
 | **LLM Chat, Structured Output & Vision** | 4 | Multi-turn streaming chat, thread / GPU-layer controls, KV-cache snapshots, JSON-schema extraction with live validation, embeddings, and in-memory VLM image analysis with `:kggml-llama` (llama.cpp + libmtmd). |
@@ -20,10 +21,11 @@ callback.
 ## Model Manager
 
 - **Catalog** (`ModelCatalog.kt`): Whisper tiny.en, Qwen2.5 0.5B Instruct Q4_K_M, SmolVLM 256M Instruct + its
-  `mmproj` projector, and Stable Diffusion v1.5, all public files on Hugging Face. Sizes are approximate and for display
-  only. No SHA-256 is published in the catalog yet, so those downloads are labelled **Unverified (no published
-  SHA-256)**: the transfer is still size-checked, the digest is computed and shown, and an entry with a `sha256` is
-  verified and rejected on mismatch. No model is ever committed to the repository.
+  `mmproj` projector, SD-Turbo Q8_0 and Stable Diffusion v1.5, all public files on Hugging Face. Sizes are approximate
+  and for display only. Only SD-Turbo has a SHA-256 in the catalog (pinned to one upstream revision); the other
+  downloads are labelled **Unverified (no published SHA-256)**: the transfer is still size-checked and the digest is
+  computed and shown. An entry with a `sha256` is verified and rejected on mismatch. No model is ever committed to the
+  repository.
 - **Downloads** use `ModelDownloader` (HTTP `Range` chunks into `<file>.part`). The row shows bytes, percent and a
   progress bar; **Pause** cancels the collection and keeps the `.part` file, **Resume** continues from it. Phases:
   Downloading → Verifying SHA-256 → Installed (or Failed with the reason; a SHA-256 mismatch deletes the partial file).
@@ -104,9 +106,9 @@ callback.
   locked, timestamped line (`m:ss.s → m:ss.s`). **Stop** ends capture and commits the last turn; **Cancel**
   abandons the stream.
 - **Waveform visualizer:** a scrolling bar chart of the RMS level of the most recent chunks.
-- **Backend switcher:** `Auto`, `CPU`, `Metal`, `Vulkan`, `Core ML`. Selecting a backend while a model is loaded and
+- **Backend switcher:** `Auto`, `CPU`, `Metal`, `Vulkan`, `OpenCL`, `Core ML`. Selecting a backend while a model is loaded and
   idle reloads it right away (`WhisperEngine.reinitialize`); the line below shows the backend actually in use and
-  `use_gpu`. Unavailable backends fall back (Core ML → Metal → CPU, Vulkan → CPU).
+  `use_gpu`. Unavailable backends fall back (Core ML → Metal → CPU, Vulkan → CPU, OpenCL → CPU).
 - **iOS background stress toggle:** by default the studio installs `WhisperEngine.observeAppLifecycle`, which moves
   the engine to `CPU_ONLY` while the app is in the background. With **Background stress test** on, that fallback is
   removed so the selected backend keeps running in the background: `CPU` keeps transcribing, while `Metal` runs into

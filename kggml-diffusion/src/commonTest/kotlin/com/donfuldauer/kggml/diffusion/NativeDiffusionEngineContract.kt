@@ -58,7 +58,7 @@ abstract class NativeDiffusionEngineContract {
     @Test
     fun nativeInfoMatchesThePinnedUpstream() {
         val info = DiffusionEngine.nativeInfo()
-        assertEquals("1.0.0", info.moduleVersion)
+        assertEquals("0.1.0", info.moduleVersion)
         assertEquals("master-612-d7ecbe1-2-g3b4d26f", info.stableDiffusionCppVersion)
         assertEquals("3b4d26f3d92c8db0199d7326f66260f4c18f4b41", info.stableDiffusionCppCommit)
         assertTrue(info.systemInfo.isNotEmpty())

@@ -1,6 +1,6 @@
 # Kggml Engineering & Agent Guidelines
 
-This is the canonical repository instruction file for **Kggml** (`com.donfuldauer.kggml`), a modular on-device AI SDK for Kotlin Multiplatform wrapping `ggml` (`whisper.cpp`, `llama.cpp`, `libmtmd`, and `stable-diffusion.cpp`) across **Android**, **iOS**, and **JVM Desktop**.
+This is the canonical repository instruction file for **Kggml** (`com.donfuldauer.kggml`), a modular on-device AI SDK for Kotlin Multiplatform wrapping `ggml` (`whisper.cpp`, `llama.cpp`, `libmtmd`, and `stable-diffusion.cpp`) across **Android**, **iOS**, and **JVM Desktop** (plus Kotlin/Native `macosArm64` for `:kggml-core-api` and `:kggml-runtime` so far, #93).
 
 > **Multi-Harness Sync:** `AGENTS.md`, `.agents/agents/`, and `.agents/skills/` are the canonical sources of truth. After editing any of them, run `./scripts/sync-agent-mirrors.sh` and verify parity with `./scripts/verify-agent-parity.sh`. CI enforces strict parity across `CLAUDE.md`, `GEMINI.md`, `.gemini/`, `.claude/`, `.antigravity/`, and `.codex/`.
 
@@ -8,14 +8,14 @@ This is the canonical repository instruction file for **Kggml** (`com.donfuldaue
 
 ## 1. Module Topology & Package Rules
 
-Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.0`
+Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:0.1.0` (`VERSION_NAME` in `gradle.properties`; nothing is published to Maven Central yet)
 
 | Module | Root Package | Kind | Responsibility |
 | --- | --- | --- | --- |
 | `:kggml-bom` | — | `java-platform` | Version constraints across all KMP root coordinates |
 | `:kggml-core-api` | `com.donfuldauer.kggml.core` | Pure Kotlin | `InferenceEngine` (`AutoCloseable`), `ComputeBackend`, `BackendConfig`, `TranscriptionEvent`, `TokenEvent`, `InferenceException` hierarchy, `MemoryPressureObserver`. **Zero native code.** |
-| `:kggml-runtime` | `com.donfuldauer.kggml.runtime` | KMP Native | Shared dynamic `ggml` runtime (`ggml-base`, `ggml-cpu`, `ggml-metal` w/ embedded `.metallib`, `ggml-vulkan` on desktop with `KGGML_ENABLE_VULKAN`). Ships `GgmlRuntime.xcframework` (iOS), `libggml.so` (Android), and desktop native libs (`macosArm64`, `linuxX64`, `windowsX64`). Registers Android GPU add-ons found in the app (`kggml_runtime_load_backend`). |
-| `:kggml-runtime-vulkan` | `com.donfuldauer.kggml.runtime.vulkan` | KMP (Android native) | Optional Android GPU add-on: ggml's Vulkan backend as a `GGML_BACKEND_DL` module (`libggml-vulkan.so`, API 28+) linking `:kggml-runtime`'s `libggml-base.so`; pinned Khronos `Vulkan-Headers`. No-op on JVM / iOS. Never a dependency of `whisper-only-minimal` (its audit forbids it). |
+| `:kggml-runtime` | `com.donfuldauer.kggml.runtime` | KMP Native | Shared dynamic `ggml` runtime (`ggml-base`, `ggml-cpu`, `ggml-metal` w/ embedded `.metallib`, `ggml-vulkan` on desktop with `KGGML_ENABLE_VULKAN`). Ships `GgmlRuntime.xcframework` (iOS + `macosArm64` Kotlin/Native), `libggml.so` (Android), and JVM desktop native libs (`macos-aarch64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64`). Registers the GPU add-ons found in the app (Android `.so`, desktop add-on jar; `kggml_runtime_load_backend`). |
+| `:kggml-runtime-vulkan` | `com.donfuldauer.kggml.runtime.vulkan` | KMP (Android + JVM desktop native) | Optional GPU add-on: ggml's Vulkan backend as a `GGML_BACKEND_DL` module linking `:kggml-runtime`'s `libggml-base`: `libggml-vulkan.so` on Android (API 28+) and, in the `-jvm` jar, desktop Linux x86_64 (#92); pinned Khronos `Vulkan-Headers`. No-op on Windows, macOS and iOS. Never a dependency of `whisper-only-minimal` (its audit forbids it). |
 | `:kggml-runtime-opencl` | `com.donfuldauer.kggml.runtime.opencl` | KMP (Android native) | Optional Android OpenCL add-on (`ComputeBackend.GPU_OPENCL`, preferred by `AUTO` over Vulkan): ggml's OpenCL backend (Adreno kernels) as a `GGML_BACKEND_DL` module (`libggml-opencl.so`, API 28+) linking `:kggml-runtime`'s `libggml-base.so` and the vendor's `libOpenCL.so` (`uses-native-library`, optional); pinned Khronos `OpenCL-Headers`, link-only `OpenCL-ICD-Loader`. Forbidden in `whisper-only-minimal`. |
 | `:kggml-whisper` | `com.donfuldauer.kggml.whisper` | KMP Native | `whisper.cpp` dynamically linked against `:kggml-runtime`, native PCM resampler/downmixer, ring-buffer VAD gate, `Flow<TranscriptionEvent>` streaming. |
 | `:kggml-llama` | `com.donfuldauer.kggml.llama` | KMP Native | `llama.cpp` + `libmtmd` (VLM) dynamically linked against `:kggml-runtime`, `Flow<TokenEvent>`, KV-cache snapshots, GBNF/JSON constraints, embeddings. |
@@ -31,7 +31,7 @@ Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.
 ## 2. Non-Negotiable Architecture & Safety Rules
 
 1. **Strict Binary Modularity & Single-Symbol `ggml` Linkage:**
-   - All `ggml-*` targets live exclusively in `:kggml-runtime`.
+   - All core `ggml-*` targets live exclusively in `:kggml-runtime`; the only exceptions are the optional GPU backend modules (`ggml-vulkan`, `ggml-opencl`) built as `GGML_BACKEND_DL` add-ons in `:kggml-runtime-vulkan` / `:kggml-runtime-opencl`, which link `:kggml-runtime`'s `libggml-base` and ship no ggml copy of their own.
    - Engine modules (`:kggml-whisper`, `:kggml-llama`, `:kggml-diffusion`) must link **dynamically** against `:kggml-runtime` and never statically embed duplicate `ggml` symbols.
    - `:samples:whisper-only-minimal` artifacts must contain **zero** `llama` or `stable-diffusion` symbols.
 2. **Explicit Runtime Compute Backend Control:**
@@ -51,7 +51,7 @@ Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.
 6. **Secret & Attribution Hygiene:**
    - Never commit secrets, signing keys, local machine paths, or large/unlicensed model binaries.
    - Record every pinned upstream C/C++ commit hash and every bundled CC0/MIT test fixture in `NOTICE`. `scripts/ci/verify-licenses.sh` (every PR, `repo-hygiene.yml`) fails on an unrecorded or stale pin, a tracked binary/model/audio/image file missing from `NOTICE`, or a fixture that is not MIT/CC0.
-   - `scripts/ci/audit-history.sh` (every PR, `repo-hygiene.yml` `secret-scan`; `ci-local.sh` step `history`) audits the full history of every branch (every PR head on a manual dispatch): gitleaks, blobs over 1 MiB, credential/key/`local.properties` files, private-key blocks and developer-machine paths (files and commit messages), and binaries missing from `NOTICE`. A finding can only be removed by an owner-run `git filter-repo` rewrite (`docs/OSS_LAUNCH.md`); report it instead of rewriting history.
+   - `scripts/ci/audit-history.sh` (every PR, `repo-hygiene.yml` `secret-scan`; `ci-local.sh` step `gitleaks`) audits the full history of every branch (every PR head on a manual dispatch): gitleaks, blobs over 1 MiB, credential/key/`local.properties` files, private-key blocks and developer-machine paths (files and commit messages), and binaries missing from `NOTICE`. A finding can only be removed by an owner-run `git filter-repo` rewrite (`docs/OSS_LAUNCH.md`); report it instead of rewriting history.
 7. **Verified Public Documentation:**
    - Every public declaration in a library module's main source sets has KDoc (its own `/** */` or an `@property`/`@param` line in its class KDoc).
    - Every Kotlin/Gradle block in the root `README.md` is preceded by `<!-- snippet: <name> -->` and is identical to that region in `docs-snippets/`; change both together. `scripts/ci/verify-docs.sh` (every PR, `repo-hygiene.yml`) enforces this plus Markdown links/anchors, published Maven coordinates/BOM version, and no local paths, session links or TODOs in user-facing docs.
@@ -60,7 +60,7 @@ Maven Group: `com.donfuldauer` | BOM Coordinate: `com.donfuldauer:kggml-bom:1.0.
 
 ## 3. Build, Test & Verification Commands
 
-**Before every push, run `./scripts/ci-local.sh`.** It runs the same checks as the Linux PR CI jobs (agent parity, license/NOTICE/fixture audit, gitleaks, ggml pin, host native build + CTest, dynamic-linkage audit, `:kggml-runtime:jvmTest`, Android cross-compile + audit). Native steps run only when native paths changed versus `origin/main`; tools it cannot find (gitleaks, Android NDK) are reported as `SKIPPED`. Paste its summary block into the PR's Verification section. Fix every `FAIL` locally before pushing rather than using CI to find failures.
+**Before every push, run `./scripts/ci-local.sh`.** It runs the same checks as the Linux PR CI jobs (agent parity, license/NOTICE/fixture and docs audits, gitleaks + full-history audit, ggml/whisper/llama/diffusion pins, host native builds + CTest, dynamic-linkage audits, engine + `:integration-tests` `jvmTest`, Android cross-compile incl. the GPU add-ons + audits, `whisper-only-minimal` check + symbol audit, `:docs-snippets` compile, release dry-run). Native steps run only when native paths changed versus `origin/main`; tools it cannot find (gitleaks, Android NDK) are reported as `SKIPPED`. Paste its summary block into the PR's Verification section. Fix every `FAIL` locally before pushing rather than using CI to find failures.
 
 Also run whichever of these apply to the modules your change touches:
 
@@ -72,7 +72,7 @@ Also run whichever of these apply to the modules your change touches:
 ./scripts/ci/verify-docs.sh
 ./gradlew :docs-snippets:build
 
-# Pure Kotlin & JVM/Android tests (once Gradle is initialized in Issue #1)
+# Pure Kotlin & JVM/Android tests
 ./gradlew check
 ./gradlew :kggml-core-api:allTests
 ./gradlew jvmTest androidUnitTest
@@ -80,7 +80,8 @@ Also run whichever of these apply to the modules your change touches:
 # iOS simulator tests (macOS runners / hosts)
 ./gradlew iosSimulatorArm64Test
 
-# Native C++ CTest suites (when native code is added)
+# Native C++ CTest suites (after a host build, e.g. ./kggml-runtime/native/scripts/build-host.sh; engines use
+# build/native-whisper, build/native-llama, build/native-diffusion)
 ctest --test-dir build/native --output-on-failure
 
 # Android instrumented tests on a connected device / emulator (every library + both samples, real native libraries
@@ -98,7 +99,7 @@ ctest --test-dir build/native --output-on-failure
 ./scripts/ios/build-sample-apps.sh all
 ```
 
-### Mandatory Testing & Coverage Policy (Section 9.4)
+### Mandatory Testing & Coverage Policy
 - **Pure Kotlin Logic (`:kggml-core-api`, ring buffer, VAD, GGUF/Whisper header parser, `BackendConfig`):** Thorough `commonTest` unit tests with deterministic fakes and high statement/branch coverage.
 - **Native C++ & Bridge Layers (`:kggml-runtime`, `:kggml-whisper`, `:kggml-llama`, `:kggml-diffusion`):** CTest/GoogleTest suites (resampling, short-buffer padding, abort callbacks, exception handling) + platform integration tests (`androidUnitTest`, `iosSimulatorArm64Test`, `jvmTest`) using tiny CC0/MIT synthetic fixtures and PCM arrays.
 - **Modularity & UI:** CI binary symbol audit on `:samples:whisper-only-minimal` (`nm`/`otool` on iOS, `apkanalyzer`/`readelf` on Android) and Compose UI tests on `:samples:kggml-showcase`.
@@ -113,10 +114,10 @@ Agent sessions never wait on a person to test anything by hand. Manual and physi
 
 ### CI Minutes Policy (private repository)
 Included Actions minutes are limited, and hosted Windows and macOS runners are billed at 2× and 10× Linux minutes, so CI is split by cost and nothing is billed twice:
-- **Every ready PR (Linux, 1×):** `repo-hygiene.yml` (parity, gitleaks) and the Ubuntu job of `ci.yml` (ggml/whisper pins, Linux host build + CTest + linkage audits, `./gradlew check` incl. `jvmTest`/`androidUnitTest`, Android cross-compile + audits, sample builds + `whisper-only-minimal` symbol audit). Draft PRs and PRs that only touch Markdown, `docs/` or agent-instruction mirrors skip `ci.yml`, and a new push cancels the previous run. `runtime-native.yml` duplicates the native part of the Ubuntu job and is manual-dispatch only.
+- **Every ready PR (Linux, 1×):** `repo-hygiene.yml` (parity, hosted-runner audit, license/NOTICE and docs audits, gitleaks + full-history audit) and the Ubuntu job of `ci.yml` (ggml/whisper/llama/diffusion pins, Linux x86_64 host build + CTest + linkage audits, linux-aarch64 cross build + CTest under qemu, `./gradlew check` incl. `jvmTest`/`androidUnitTest`, release dry-run, Android cross-compile incl. the Vulkan/OpenCL add-ons + audits, desktop Vulkan add-on test on Mesa lavapipe, sample builds + `whisper-only-minimal` symbol audit). Draft PRs and PRs that only touch Markdown, `docs/` or agent-instruction mirrors skip `ci.yml`, and a new push cancels the previous run. `runtime-native.yml` duplicates the native part of the Ubuntu job and is manual-dispatch only.
 - **Release dry-run on every PR:** the Ubuntu job runs `scripts/ci/stage-release.sh --dry-run --skip-targets ios,macos` (every publication signed with a throwaway key, then the `verify_release.py` audit of POMs, `.module` files, BOM constraints, sources/javadoc jars, checksums and signatures); the `ci:macos` job runs it with the iOS and macOS components too. `release.yml` itself runs only on a `v<VERSION_NAME>` tag or a manual dispatch (see `docs/RELEASING.md`); agents never push release tags.
 - **No re-runs on `main`:** pushes to `main` (i.e. merges) run no workflow; PRs merge with a merge commit after their head passed.
-- **Windows on demand only:** on hosted runners, the Windows job in `ci.yml` runs only on PRs labelled `ci:windows` or a manual dispatch (while the owner's Windows runner is on it runs on every ready PR instead; see "Runner order"). Add `ci:windows` to **phase-final PRs** and to PRs that change Windows-specific code (MSVC flags, `windows-x64` presets, `_WIN32` `#ifdef`s, DLL loading).
+- **Windows on demand only:** on hosted runners, the Windows job in `ci.yml` runs only on PRs labelled `ci:windows` or a manual dispatch (while the owner's Windows runner is on it runs on every ready PR instead; see "Runner order"). Add `ci:windows` to **phase-final PRs** and to PRs that change Windows-specific code (MSVC flags, `windows-x64` / `windows-arm64` presets, `_WIN32` `#ifdef`s, DLL loading).
 - **macOS on demand only:** the macOS job in `ci.yml` runs only when a PR has the `ci:macos` label or on a manual dispatch (from the label's `labeled` event, also for a label given at `gh pr create --label`, and on later pushes; never from `opened`, so it runs once per head, in its own run next to the Ubuntu/Windows one) (on the owner's Mac while it is on, else hosted; see "Runner order"); `runtime-native-macos.yml` runs only on manual dispatch or weekly (Mondays) if `main` changed runtime paths that week. Add `ci:macos` to **phase-final PRs** and to PRs that change macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Do not add either label to other PRs.
 - New CI jobs must put shared logic in `scripts/ci/` and call it from both the workflow and `./scripts/ci-local.sh`, so every Linux CI check can be reproduced locally. Any new macOS/iOS job goes in the label-gated macOS workflow, not the per-PR one.
 - Batch fixes into one push where possible: every push to an open PR starts the Linux jobs again. Open PRs as drafts while iterating and mark them ready once `./scripts/ci-local.sh` passes.
@@ -124,7 +125,7 @@ Included Actions minutes are limited, and hosted Windows and macOS runners are b
 #### Runner order
 While the repository is private, the owner's own machines run jobs at no billed minutes (#62). Each runner sets its repository variable to `on` when it starts and `off` when it stops, and a job uses it only while that variable is `on` and the PR comes from this repository (fork PRs never reach a private runner):
 1. **Linux (`local-linux`, `LINUX_RUNNER`)**: the Ubuntu job of `ci.yml` and every `repo-hygiene.yml` job.
-2. **Mac (`local-mac`, `MAC_RUNNER`)**: the `ci:macos` job; and, when no Linux runner is on, `Mac (full local gate)` (`ci-local.sh --full --strict` on macOS arm64) replaces the Ubuntu job. That does not build linux-x64: for PRs that change Linux-specific code (`__linux__` `#ifdef`s, `linux-x64` presets, ELF packaging) with only the Mac on, also run `gh workflow run ci.yml --ref <branch> -f runner=hosted`.
+2. **Mac (`local-mac`, `MAC_RUNNER`)**: the `ci:macos` job; and, when no Linux runner is on, `Mac (full local gate)` (`ci-local.sh --full --strict` on macOS arm64) replaces the Ubuntu job. That does not build linux-x64: for PRs that change Linux-specific code (`__linux__` `#ifdef`s, `linux-x64` / `linux-aarch64` presets, ELF packaging) with only the Mac on, also run `gh workflow run ci.yml --ref <branch> -f runner=hosted`.
 3. **Windows (`local-win`, `WIN_RUNNER`)**: the Windows job on **every** ready PR, not only `ci:windows` ones.
 4. **GitHub-hosted runners** for everything else, exactly as in "CI Minutes Policy" above; `runner: hosted` on a manual dispatch forces them.
 5. **Local gate** when hosted jobs are refused (next sections).
@@ -167,7 +168,7 @@ GitHub stops starting hosted jobs once the included minutes (and any spending li
 - **Phase:** `phase-1`, `phase-2`, `phase-3`, `phase-4`, `phase-oss`
 - **Module:** `mod:bom`, `mod:core-api`, `mod:runtime`, `mod:whisper`, `mod:llama`, `mod:diffusion`, `mod:model-manager`, `mod:samples`, `infra:ci`
 - **Status Lifecycle:** `status:ready`, `status:blocked`, `status:in-progress`, `status:in-review`
-- **CI (PRs only):** `ci:macos` — runs the 10×-billed macOS workflow; see Section 3 "CI Minutes Policy"
+- **CI (PRs only):** `ci:macos` — runs the 10×-billed macOS job of `ci.yml`; `ci:windows` — runs the 2×-billed Windows job; see Section 3 "CI Minutes Policy"
 
 ### Branch & PR Conventions
 - Branch name: `feat/issue-<N>-<slug>` cut from `main`.
@@ -181,7 +182,7 @@ GitHub stops starting hosted jobs once the included minutes (and any spending li
 2. **`orchestrator`** — Claims issues, manages branch/labels, delegates to `implementer` and `tester`, enforces quality gates, handles PR creation/merge and downstream unblocking.
 3. **`implementer`** — Writes KMP, C++/CMake, JNI, `cinterop`, and Compose Multiplatform production code.
 4. **`tester`** — Writes unit, CTest, memory-safety, binary-audit, integration, and Compose UI tests; validates coverage.
-5. **`phase-reviewer`** — Invoked **exclusively** on the final issue of each Phase/Milestone (never on routine mid-phase PRs) to audit cumulative phase changes against Section 5 Exit Criteria before unblocking the next phase.
+5. **`phase-reviewer`** — Invoked **exclusively** on the final issue of each Phase/Milestone (never on routine mid-phase PRs) to audit cumulative phase changes against the Phase Exit Criteria in its checklist before unblocking the next phase.
 
 ### Autonomous Skill
 - Use `.agents/skills/work-on-issue/SKILL.md` for `"work on next issue"` or `"work on issue #X"` workflows using standard `gh`, `git`, `./gradlew`, and `ctest` commands.

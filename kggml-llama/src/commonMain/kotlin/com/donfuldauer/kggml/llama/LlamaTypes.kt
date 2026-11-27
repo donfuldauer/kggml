@@ -307,7 +307,7 @@ public data class GenerationResult(
 /**
  * Version information of the native llama library.
  *
- * @property moduleVersion Kggml llama module version, e.g. `"1.0.0"`.
+ * @property moduleVersion Kggml llama module version, e.g. `"0.1.0"`.
  * @property llamaCppVersion pinned upstream llama.cpp release tag, e.g. `"b8598"`.
  * @property llamaCppCommit full upstream llama.cpp commit SHA (see `NOTICE`).
  * @property systemInfo `llama_print_system_info()` (CPU features of this build).

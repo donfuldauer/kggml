@@ -54,7 +54,7 @@ extern "C" {
 /* Versions & capabilities                                                                                 */
 /* ------------------------------------------------------------------------------------------------------ */
 
-/** Kggml whisper module version, e.g. "1.0.0". Static string. */
+/** Kggml whisper module version, e.g. "0.1.0". Static string. */
 KGGML_WHISPER_API const char * kggml_whisper_version(void);
 
 /** Upstream whisper.cpp release this build was pinned to, e.g. "1.8.4". Static string. */

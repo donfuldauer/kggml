@@ -53,7 +53,7 @@ With an installed runtime, point CMake at its package: `-Dkggml-runtime_DIR=<pre
 | Backend | `use_gpu` | CoreML encoder | Notes |
 | --- | --- | --- | --- |
 | `KGGML_BACKEND_CPU` | `false` | never loaded | Accelerate / NEON / AVX only. Safe for iOS background work (no Metal command buffers). |
-| `KGGML_BACKEND_METAL`, `KGGML_BACKEND_VULKAN` | `true` | never loaded | `BACKEND_UNAVAILABLE` if the runtime has no such device. |
+| `KGGML_BACKEND_METAL`, `KGGML_BACKEND_VULKAN`, `KGGML_BACKEND_OPENCL` | `true` | never loaded | `BACKEND_UNAVAILABLE` if the runtime has no such device. |
 | `KGGML_BACKEND_COREML` | `true` | loaded if `<model>-encoder.mlmodelc` exists | `BACKEND_UNAVAILABLE` if the build has no CoreML. A missing bundle falls back to Metal, then CPU. |
 
 On iOS, whisper.cpp is built with `WHISPER_COREML` and `WHISPER_COREML_ALLOW_FALLBACK`. Upstream always tries to

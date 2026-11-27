@@ -147,7 +147,7 @@ KGGML_API kggml_status kggml_runtime_load_backend(const char * path);
 /* Versions                                                                                                */
 /* ------------------------------------------------------------------------------------------------------ */
 
-/** Kggml runtime version, e.g. "1.0.0". Static string. */
+/** Kggml runtime version, e.g. "0.1.0". Static string. */
 KGGML_API const char * kggml_runtime_version(void);
 
 /** Version reported by the linked ggml (ggml_version()), e.g. "0.9.9". Static string. */

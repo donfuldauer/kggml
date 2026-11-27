@@ -18,7 +18,7 @@ description = "Delegation and workflow coordinator. Claims ready GitHub issues, 
 config_file = "agents/orchestrator.toml"
 
 [agents."phase-reviewer"]
-description = "Milestone gate auditor invoked exclusively upon completion of the final issue of a Phase/Milestone. Audits cumulative phase changes against Section 5 Exit Criteria, architecture compliance, cross-platform parity, memory safety, and binary isolation before unblocking the next phase."
+description = "Milestone gate auditor invoked exclusively upon completion of the final issue of a Phase/Milestone. Audits cumulative phase changes against the Phase Exit Criteria, architecture compliance, cross-platform parity, memory safety, and binary isolation before unblocking the next phase."
 config_file = "agents/phase-reviewer.toml"
 
 [agents."tester"]

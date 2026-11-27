@@ -36,7 +36,7 @@ import kotlinx.coroutines.job
  * - [ComputeBackend.NPU_COREML] is not supported by llama.cpp; with [LlamaEngineOptions.allowBackendFallback] it
  *   falls back to Metal / CPU, otherwise loading fails with
  *   [com.donfuldauer.kggml.core.BackendUnavailableException].
- * - [ComputeBackend.AUTO] picks the first available of Metal, Vulkan, CPU.
+ * - [ComputeBackend.AUTO] picks the first available of Metal, OpenCL, Vulkan, CPU.
  *
  * [BackendConfig.cpuThreads] sets the generation and prompt threads ([BackendConfig.AUTO_THREADS] = performance
  * cores), [BackendConfig.useFlashAttention] llama.cpp's flash attention, and [BackendConfig.useMmap] whether the

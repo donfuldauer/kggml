@@ -1,58 +1,119 @@
 # Kggml
 
-**On-device AI for Kotlin Multiplatform.** Kggml runs speech-to-text, text generation (including vision-language
-models and embeddings) and text-to-image generation locally on **Android**, **iOS** and **JVM Desktop**, with one
-Kotlin API on top of the [ggml](https://github.com/ggml-org/ggml) ecosystem:
-[whisper.cpp](https://github.com/ggml-org/whisper.cpp), [llama.cpp](https://github.com/ggml-org/llama.cpp) (with
-`libmtmd` for images) and [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp).
+Kggml is a Kotlin Multiplatform SDK for running AI models locally on **Android**, **iOS**, **macOS** and **JVM
+desktop** (Linux, Windows, macOS). It wraps three C/C++ inference libraries from the
+[ggml](https://github.com/ggml-org/ggml) ecosystem behind one Kotlin API:
 
-- **Pay only for the engines you use.** Every engine is its own Gradle module. All of them link dynamically against
-  one shared ggml runtime, so an app that depends only on `kggml-whisper` contains no llama.cpp or
-  stable-diffusion.cpp code, and an app that uses all three loads ggml once.
-- **You choose where inference runs.** Every engine takes a `BackendConfig` (`CPU_ONLY`, `GPU_METAL`, `GPU_VULKAN`,
-  `NPU_COREML` or `AUTO`) when it is created and reports the backend it actually got. `CPU_ONLY` never creates a GPU
-  backend, which keeps Whisper safe to run while an iOS app is in the background.
-- **Streaming without temporary files.** Microphone PCM goes straight into a `Flow<TranscriptionEvent>`, tokens come
-  out as a `Flow<TokenEvent>`, and images for vision models stay in memory. Audio and image buffers are passed to
-  native code without copies where the format allows it.
-- **Ordinary Kotlin objects.** Engines are `AutoCloseable` classes, not singletons. Any number of them can run at the
-  same time; each one serializes its own native calls on a dedicated thread, and cancelling a coroutine aborts the
-  native computation.
+| Task | Upstream library | Kggml module |
+| --- | --- | --- |
+| Speech-to-text, one-shot and live streaming | [whisper.cpp](https://github.com/ggml-org/whisper.cpp) | `kggml-whisper` |
+| Text generation, structured output, embeddings, image understanding | [llama.cpp](https://github.com/ggml-org/llama.cpp) (with `libmtmd` for images) | `kggml-llama` |
+| Text-to-image generation | [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp) | `kggml-diffusion` |
+
+Models run on the device's CPU or GPU (Metal, Vulkan, OpenCL) and, for Whisper on iOS, the Neural Engine through
+Core ML. Nothing is sent to a server. Model files are not bundled: your app downloads them (the optional
+`kggml-model-manager` module does this) or ships them itself.
+
+> **Status: 0.1.0, pre-1.0.** The API may still change between minor versions. What has to happen before a stable
+> 1.0.0 is tracked in issue #104.
 
 ## Contents
 
+- [Project structure](#project-structure)
 - [Platform support](#platform-support)
 - [Installation](#installation)
 - [Usage](#usage): [Whisper](#speech-to-text-kggml-whisper), [Llama](#text-generation-kggml-llama),
   [Diffusion](#image-generation-kggml-diffusion), [Model manager](#downloads-and-memory-kggml-model-manager)
 - [Compute backends](#compute-backends)
+- [Native libraries](#native-libraries)
 - [iOS background audio](#ios-background-audio)
 - [Memory and quantization](#memory-and-quantization)
 - [Threading, cancellation and errors](#threading-cancellation-and-errors)
-- [Architecture](#architecture)
+- [Samples](#samples)
 - [Building from source](#building-from-source)
 - [Contributing, security and license](#contributing-security-and-license)
+
+## Project structure
+
+Kggml is split into small Gradle modules so an app includes only the native code it uses.
+
+```text
+                         your app
+                            │  com.donfuldauer:kggml-bom (one version for everything)
+   ┌──────────────┬─────────┴─────┬──────────────────┐
+   ▼              ▼               ▼                  ▼
+kggml-whisper  kggml-llama     kggml-diffusion    kggml-model-manager
+whisper.cpp    llama.cpp       stable-diffusion   (pure Kotlin)
+               + libmtmd       .cpp
+   │              │               │                  │
+   └──────────────┴───────┬───────┘                  │
+                          ▼                          │
+                    kggml-runtime  ◄── optional GPU add-ons:
+        the one shared copy of ggml     kggml-runtime-vulkan
+        (CPU everywhere, Metal on       kggml-runtime-opencl
+         Apple platforms)                            │
+                          │                          │
+                          ▼                          ▼
+                    kggml-core-api  (pure Kotlin API types)
+```
+
+| Module | What it contains |
+| --- | --- |
+| `kggml-core-api` | The types every module shares: `InferenceEngine`, `BackendConfig`, `ComputeBackend`, event types, the `InferenceException` hierarchy and memory-pressure observers. Pure Kotlin. |
+| `kggml-runtime` | The shared ggml native runtime (CPU backends, plus Metal on iOS and macOS), its loaders for each platform, and `KggmlRuntime` for querying versions, available backends and CPU threads. |
+| `kggml-runtime-vulkan` | Optional GPU add-on: ggml's Vulkan backend for Android and desktop Linux x86_64. The runtime finds and registers it at load; no code is needed. |
+| `kggml-runtime-opencl` | Optional Android GPU add-on: ggml's OpenCL backend (kernels tuned for Qualcomm Adreno), used through the device vendor's `libOpenCL.so`. |
+| `kggml-whisper` | `WhisperEngine`: whisper.cpp transcription, live streaming with voice activity detection, Core ML encoder support. |
+| `kggml-llama` | `LlamaEngine`: llama.cpp generation, sampling controls, grammars and JSON Schema output, KV-cache sessions, embeddings, vision-language models. |
+| `kggml-diffusion` | `DiffusionEngine`: stable-diffusion.cpp image generation with progress and cancellation. |
+| `kggml-model-manager` | Optional. Resumable, SHA-256-checked downloads, model header inspection, peak-RAM estimates, disk and memory caches. Pure Kotlin. |
+| `kggml-bom` | Bill of materials that aligns the versions of all the modules above. |
+
+How the pieces fit together:
+
+- **One copy of ggml.** Each engine module contains only its upstream library and a thin C wrapper, linked
+  dynamically against `kggml-runtime`. An app that uses only `kggml-whisper` contains no llama.cpp or
+  stable-diffusion.cpp code, and an app that uses all three engines loads ggml once. CI checks the linkage with
+  `readelf` / `nm` / `otool`.
+- **Native bridges.** Android and the JVM call native code through JNI; iOS and macOS use Kotlin/Native cinterop.
+  Every native entry point catches C++ exceptions and returns an error code that Kotlin turns into an
+  `InferenceException`.
+- **Pinned upstreams.** ggml, whisper.cpp, llama.cpp and stable-diffusion.cpp are git submodules under each module's
+  `native/third_party/`, pinned to the commits listed in [`NOTICE`](NOTICE). CI checks that each submodule matches
+  its pin.
+
+The rest of the repository:
+
+| Path | Contents |
+| --- | --- |
+| `kggml-*/native/` | CMake projects, presets and build scripts for each module's native code, with CTest suites |
+| `samples/` | The [showcase app](samples/kggml-showcase/README.md) and the [Whisper-only sample](samples/whisper-only-minimal/README.md) |
+| `integration-tests/` | Tests that load several engines into one process against the single shared runtime (not published) |
+| `docs-snippets/` | Compiles every Kotlin snippet in this README through the BOM, the way an app would (not published) |
+| `build-logic/` | Gradle convention plugins (Kotlin Multiplatform setup, publishing, signing) |
+| `scripts/` | Local and CI scripts: builds, linkage and license audits, release staging |
+| `docs/` | [Releasing](docs/RELEASING.md), [manual verification](docs/MANUAL_VERIFICATION.md) and design notes |
 
 ## Platform support
 
 | Platform | Kotlin targets | Native ABIs | Compute backends |
 | --- | --- | --- | --- |
-| Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). GPU with the optional add-ons on Android 9+: Vulkan (`kggml-runtime-vulkan`, any Vulkan 1.1 driver) and OpenCL (`kggml-runtime-opencl`, devices whose vendor ships OpenCL, e.g. Adreno); CPU otherwise. |
+| Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). GPU on Android 9+ with the optional add-ons: Vulkan (`kggml-runtime-vulkan`, any Vulkan 1.1 driver) and OpenCL (`kggml-runtime-opencl`, devices whose vendor ships OpenCL, e.g. Adreno). |
 | iOS | `iosArm64`, `iosSimulatorArm64` | device and Apple-silicon simulator | CPU (Accelerate / NEON), Metal, Core ML (Whisper encoder) |
-| macOS 13.3+ (Kotlin/Native) | `macosArm64` (`kggml-core-api` and `kggml-runtime` so far; the engines follow, issue #93) | Apple silicon | CPU (Accelerate / NEON), Metal. Link the `macos-arm64` slice of `GgmlRuntime.xcframework` |
-| JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64 and arm64, Windows x86_64 and arm64 | CPU everywhere (arm64 builds need ARMv8.2 with dotprod: Raspberry Pi 5, Graviton 2+, Snapdragon X; not Raspberry Pi 4); Metal on macOS; Vulkan on Linux x86_64 with the optional `kggml-runtime-vulkan` add-on (any installed Vulkan driver) |
+| macOS 13.3+ (Kotlin/Native) | `macosArm64` (`kggml-core-api` and `kggml-runtime` so far; the engines follow in issue #93) | Apple silicon | CPU (Accelerate / NEON), Metal. Link the `macos-arm64` slice of `GgmlRuntime.xcframework`. |
+| JVM desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64 and arm64, Windows x86_64 and arm64 | CPU everywhere (arm64 builds need ARMv8.2 with dotprod: Raspberry Pi 5, Graviton 2+, Snapdragon X; not Raspberry Pi 4). Metal on macOS. Vulkan on Linux x86_64 with the optional `kggml-runtime-vulkan` add-on; Windows Vulkan is issue #92. |
 
 What each engine can use:
 
-| Engine | CPU | Metal | Vulkan | Core ML |
-| --- | --- | --- | --- | --- |
-| `kggml-whisper` | yes | yes | yes | Encoder only, with a `<model>-encoder.mlmodelc` next to the model |
-| `kggml-llama` | yes | yes | yes | No (falls back to Metal / CPU) |
-| `kggml-diffusion` | yes | yes | yes | No (falls back to Metal / CPU) |
+| Engine | CPU | Metal | Vulkan | OpenCL | Core ML |
+| --- | --- | --- | --- | --- | --- |
+| `kggml-whisper` | yes | yes | yes | yes | Encoder only, with a `<model>-encoder.mlmodelc` next to the model |
+| `kggml-llama` | yes | yes | yes | yes | No (falls back to Metal, then CPU) |
+| `kggml-diffusion` | yes | yes | yes | yes | No (falls back to Metal, then CPU) |
 
 ## Installation
 
-Kggml is published under the `com.donfuldauer` group. Import the BOM once, then add only the engines you need,
+Kggml is published under the `com.donfuldauer` group. Import the BOM once, then add only the modules you need,
 without versions. In a Kotlin Multiplatform module:
 
 <!-- snippet: gradle-dependencies -->
@@ -60,7 +121,7 @@ without versions. In a Kotlin Multiplatform module:
 sourceSets {
     commonMain.dependencies {
         // One version for every Kggml module.
-        implementation(project.dependencies.platform("com.donfuldauer:kggml-bom:1.0.0"))
+        implementation(project.dependencies.platform("com.donfuldauer:kggml-bom:0.1.0"))
 
         // Pick only the engines you ship; unused engines add no native code to your app.
         implementation("com.donfuldauer:kggml-whisper")        // speech-to-text
@@ -74,53 +135,8 @@ sourceSets {
 ```
 
 The same coordinates work in an Android-only or JVM-only module (`dependencies { implementation(platform(...)) }`);
-Gradle picks the right platform variant. Every engine depends on `kggml-core-api` (the shared API types) and
-`kggml-runtime` (the shared ggml), so you never declare those yourself.
-
-| Artifact | Contents |
-| --- | --- |
-| `com.donfuldauer:kggml-bom` | Version alignment for every artifact below |
-| `com.donfuldauer:kggml-core-api` | `InferenceEngine`, `BackendConfig`, `ComputeBackend`, events, `InferenceException`s, memory-pressure observers. Pure Kotlin. |
-| `com.donfuldauer:kggml-runtime` | The shared ggml native runtime (CPU, Metal, Vulkan backends) |
-| `com.donfuldauer:kggml-runtime-vulkan` | Optional GPU add-on: ggml's Vulkan backend for Android and desktop Linux x86_64, found and registered by the runtime at load (no code needed); no-op on Windows, macOS and iOS. |
-| `com.donfuldauer:kggml-runtime-opencl` | Optional Android GPU add-on: ggml's OpenCL backend (Adreno-tuned) through the vendor's `libOpenCL.so`; `ComputeBackend.GPU_OPENCL`. No-op on JVM and iOS. |
-| `com.donfuldauer:kggml-whisper` | `WhisperEngine`: whisper.cpp transcription and live streaming |
-| `com.donfuldauer:kggml-llama` | `LlamaEngine`: llama.cpp generation, grammars, sessions, embeddings, vision |
-| `com.donfuldauer:kggml-diffusion` | `DiffusionEngine`: stable-diffusion.cpp image generation |
-| `com.donfuldauer:kggml-model-manager` | Optional. Resumable downloads, SHA-256, model header inspection, RAM estimates, cache eviction. Pure Kotlin. |
-
-### GPU backends: built in or add-on
-
-A backend ships inside `kggml-runtime` when nearly every app wants it and it costs little; it is a separate add-on
-when it is heavy, depends on the device's drivers, or many apps would rather skip it.
-
-- **Metal (iOS, macOS)** is built in: every supported Apple device has it, the driver is Apple's, and its shaders add
-  about 0.6 MB (compiled on the device). `ComputeBackend.CPU_ONLY` never creates it.
-- **Vulkan on Android** is the add-on `kggml-runtime-vulkan`: ggml's Vulkan backend carries tens of MB of precompiled
-  shaders per ABI, and phone GPU drivers vary. Add the dependency and the runtime registers it when it loads; on
-  devices without a usable Vulkan 1.1 driver (or Android 8.x) the engines keep running on the CPU. Emulators expose only
-  software Vulkan, which ggml ignores, so there `AUTO` stays on the CPU. Imagination PowerVR GPUs (Pixel 10 and later)
-  are excluded too: their Vulkan driver computes ggml's shaders incorrectly and can hang a model load, so those phones
-  use the CPU unless `KGGML_VULKAN_ALLOW_POWERVR=1` is set.
-- **OpenCL on Android** is the add-on `kggml-runtime-opencl` (`ComputeBackend.GPU_OPENCL`): ggml's OpenCL backend with
-  the matmul kernels Qualcomm tuned for Adreno, through the device vendor's `libOpenCL.so` (declared optional in the
-  add-on's manifest). It loads only where the vendor ships OpenCL (in practice Adreno phones; not Pixel or emulators),
-  and `AUTO` prefers it over Vulkan there. Elsewhere the engines use Vulkan (with that add-on) or the CPU.
-- **Vulkan on desktop Linux** is the same add-on: its jar carries the module for `linux-x86_64`, which the runtime
-  registers at load; it needs the user's Vulkan loader and driver (any Mesa, NVIDIA or AMD install has them), otherwise
-  the engines stay on the CPU. Windows is not packaged yet. Your own runtime build can instead link Vulkan in
-  (`KGGML_ENABLE_VULKAN=ON`); the add-on is then skipped.
-
-### Native libraries
-
-| Platform | How the native code is shipped |
-| --- | --- |
-| Android | Release AARs are built with `-Pkggml.bundleNative=true` and carry their `.so` files for `arm64-v8a` and `x86_64` (`libggml*.so` and `libkggml_runtime*.so` in `kggml-runtime`, `libkggml_whisper*.so` in `kggml-whisper`, `libggml-vulkan.so` / `libggml-opencl.so` in the GPU add-ons, and so on). Nothing to configure. |
-| JVM Desktop | The released `kggml-runtime` jar carries the ggml runtime for `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64` and `macos-aarch64` under `/kggml/native/<os>-<arch>/` and extracts it on first use; `-Dkggml.native.path=<dir>` (or `KGGML_NATIVE_PATH`) points it at your own build instead. Each engine loads its JNI library from `-Dkggml.whisper.native.path` / `kggml.llama.native.path` / `kggml.diffusion.native.path` (or the matching `KGGML_*_NATIVE_PATH` variable), then from the `kggml.native.path` directory, then from `java.library.path`. The engines' `build-host.sh` scripts build these libraries. |
-| iOS | The Kotlin frameworks link against `GgmlRuntime.xcframework` plus one xcframework per engine (`KggmlWhisper`, `KggmlLlama`, `KggmlDiffusion`). Embed the ones you use in your Xcode app target. Each release attaches them to its GitHub release (with a `SHA256SUMS` file); the `build-ios-xcframework.sh` scripts build them from source (see [Building from source](#building-from-source)). |
-
-Model weights are never bundled. Download them at runtime (see
-[`kggml-model-manager`](#downloads-and-memory-kggml-model-manager)) or ship them with your app.
+Gradle picks the right platform variant. Every engine depends on `kggml-core-api` and `kggml-runtime`, so you never
+declare those yourself. On iOS, also embed the xcframeworks described under [Native libraries](#native-libraries).
 
 ## Usage
 
@@ -194,6 +210,7 @@ val vector: FloatArray = engine.embed("on-device inference")  // L2-normalized b
 engine.close()
 ```
 
+The engine passes the prompt to the model as given, so format it with the chat template your model expects.
 `kggml-llama` also provides:
 
 - sampling controls in `GenerationOptions` (temperature, top-k, top-p, min-p, repetition penalty, seed, stop
@@ -269,22 +286,53 @@ restart, and the size and SHA-256 are checked before the file is renamed into pl
 
 ## Compute backends
 
-`BackendConfig(backend, gpuLayers, cpuThreads, useFlashAttention, useMmap)` is applied when an engine loads its
+Every engine takes a `BackendConfig` when it is created and reports the backend it actually got.
+`BackendConfig(backend, gpuLayers, cpuThreads, useFlashAttention, useMmap)` is applied when the engine loads its
 model:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `backend` | `AUTO` | `AUTO` picks the first available of Core ML, Metal, Vulkan, CPU. `CPU_ONLY` never creates a GPU backend. |
+| `backend` | `AUTO` | A `ComputeBackend`: `AUTO`, `CPU_ONLY`, `GPU_METAL`, `GPU_VULKAN`, `GPU_OPENCL` or `NPU_COREML`. `AUTO` picks the first available of Core ML, Metal, OpenCL, Vulkan, CPU. `CPU_ONLY` never creates a GPU backend. |
 | `gpuLayers` | `ALL_GPU_LAYERS` (`-1`) | Layers to offload to the GPU (llama.cpp). Must be `0` or `-1` with `CPU_ONLY`. |
 | `cpuThreads` | `AUTO_THREADS` (`-1`) | CPU threads. `AUTO_THREADS` uses the number of processors, capped at 8. |
 | `useFlashAttention` | `false` | Flash-attention kernels where the backend supports them. |
 | `useMmap` | `true` | Memory-map the weights instead of reading them into memory. |
 
 `BackendConfig.CPU` and `BackendConfig.DEFAULT` are ready-made configurations. If the requested backend is not
-available, the engine falls back along `ComputeBackend.fallback` (Core ML → Metal → CPU, Vulkan → CPU). Set
+available, the engine falls back along `ComputeBackend.fallback` (Core ML → Metal → CPU; Vulkan, OpenCL → CPU). Set
 `allowBackendFallback = false` in the engine options to get a `BackendUnavailableException` instead. After loading,
 `engine.activeBackend` tells you what was chosen, and `KggmlRuntime.availableBackends()` lists what this device and
 build support.
+
+### Built-in backends and GPU add-ons
+
+A backend is built into `kggml-runtime` when nearly every app wants it and it costs little. It is a separate add-on
+module when it is large, depends on the device's drivers, or many apps would rather leave it out.
+
+- **Metal (iOS, macOS)** is built in: every supported Apple device has it, the driver is Apple's, and its shaders add
+  about 0.6 MB (compiled on the device). `ComputeBackend.CPU_ONLY` never creates it.
+- **Vulkan on Android** is the add-on `kggml-runtime-vulkan`: ggml's Vulkan backend carries tens of MB of precompiled
+  shaders per ABI, and phone GPU drivers vary. Add the dependency and the runtime registers it when it loads. On
+  devices without a usable Vulkan 1.1 driver (or Android 8.x) the engines keep running on the CPU. Emulators expose
+  only software Vulkan, which ggml ignores, so there `AUTO` stays on the CPU. Imagination PowerVR GPUs (Pixel 10 and
+  later) are excluded as well: their Vulkan driver computes ggml's shaders incorrectly and can hang a model load, so
+  those phones use the CPU unless the `KGGML_VULKAN_ALLOW_POWERVR=1` environment variable is set.
+- **OpenCL on Android** is the add-on `kggml-runtime-opencl` (`ComputeBackend.GPU_OPENCL`): ggml's OpenCL backend with
+  the matrix-multiplication kernels Qualcomm tuned for Adreno, used through the device vendor's `libOpenCL.so`
+  (declared optional in the add-on's manifest). It loads only where the vendor ships OpenCL (in practice Adreno
+  phones; not Pixel phones or emulators), and `AUTO` prefers it over Vulkan there.
+- **Vulkan on desktop Linux** is the same `kggml-runtime-vulkan` add-on: its jar carries the module for
+  `linux-x86_64`, which the runtime registers at load. It needs the user's Vulkan loader and driver (any Mesa, NVIDIA
+  or AMD install has them); without them the engines stay on the CPU. Windows is not packaged yet (issue #92). A
+  runtime you build yourself can link Vulkan in instead (`KGGML_ENABLE_VULKAN=ON`); the add-on is then skipped.
+
+## Native libraries
+
+| Platform | How the native code is shipped |
+| --- | --- |
+| Android | The AARs carry their `.so` files for `arm64-v8a` and `x86_64`: `libggml*.so` and `libkggml_runtime*.so` in `kggml-runtime`, `libkggml_whisper*.so` in `kggml-whisper`, `libggml-vulkan.so` / `libggml-opencl.so` in the GPU add-ons, and so on. Nothing to configure. |
+| JVM desktop | The `kggml-runtime` jar carries the ggml runtime for `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64` and `macos-aarch64` under `/kggml/native/<os>-<arch>/` and extracts it on first use; `-Dkggml.native.path=<dir>` (or `KGGML_NATIVE_PATH`) points it at your own build instead. Each engine loads its JNI library from `-Dkggml.whisper.native.path` / `kggml.llama.native.path` / `kggml.diffusion.native.path` (or the matching `KGGML_*_NATIVE_PATH` variable), then from the `kggml.native.path` directory, then from `java.library.path`. The engines' `build-host.sh` scripts build these libraries. |
+| iOS and macOS | The Kotlin frameworks link against `GgmlRuntime.xcframework` plus one xcframework per engine (`KggmlWhisper`, `KggmlLlama`, `KggmlDiffusion`). Embed the ones you use in your Xcode app target. Each release attaches them to its GitHub release with a `SHA256SUMS` file; the `build-ios-xcframework.sh` scripts build them from source. |
 
 ## iOS background audio
 
@@ -308,8 +356,9 @@ fallback.onEnterForeground()  // restores the previous BackendConfig
 ```
 
 With `ComputeBackend.CPU_ONLY`, `whisper_context_params.use_gpu` is `false` before the model loads, so whisper.cpp
-runs on Apple Accelerate and ARM NEON only. Smaller models (`tiny`, `base`) keep CPU transcription fast. Also enable the `audio` background mode in your app's `Info.plist` and keep an `AVAudioSession`
-active, or iOS suspends the app anyway.
+runs on Apple Accelerate and ARM NEON only. Smaller models (`tiny`, `base`) keep CPU transcription fast. Also enable
+the `audio` background mode in your app's `Info.plist` and keep an `AVAudioSession` active, or iOS suspends the app
+anyway.
 
 ## Memory and quantization
 
@@ -341,48 +390,32 @@ Guidelines:
 
 ## Threading, cancellation and errors
 
-- Each engine owns one thread. Loading, inference and `close()` run on it one at a time, because ggml contexts are
-  not thread-safe. Different engines run in parallel.
+- Engines are ordinary `AutoCloseable` objects, not singletons; any number can be open at once. Each engine owns one
+  thread, and loading, inference and `close()` run on it one at a time because ggml contexts are not thread-safe.
+  Different engines run in parallel.
 - Cancelling the coroutine that collects a flow (or calls `transcribe` / `generateText`) sets the native abort flag.
   Whisper and llama stop within one ggml graph step; diffusion stops after the denoising step in progress. The
   engine stays usable.
 - `abortActiveTranscription()` / `abortActiveGeneration()` and `close()` can be called from any thread. They end the
   running call with `InferenceCancelledException`.
+- Audio and image buffers are passed to native code without copies where the format allows it; nothing is written to
+  temporary files.
 - Native failures surface as subclasses of `InferenceException`: `ModelLoadException`, `InvalidInputException`,
   `BackendUnavailableException`, `OutOfMemoryException`, `InferenceCancelledException` and
   `NativeFailureException`. C++ exceptions never cross into Kotlin.
 
-## Architecture
+## Samples
 
-```text
-            your app
-               │  com.donfuldauer:kggml-bom (versions)
-   ┌───────────┼──────────────┬──────────────────┐
-   ▼           ▼              ▼                  ▼
-kggml-whisper  kggml-llama    kggml-diffusion    kggml-model-manager
-whisper.cpp    llama.cpp      stable-diffusion   (pure Kotlin)
-               + libmtmd      .cpp
-   │           │              │                  │
-   └───────────┴───────┬──────┘                  │
-                       ▼                         │
-                 kggml-runtime                   │
-     one shared ggml: CPU, Metal, Vulkan         │
-                       │                         │
-                       ▼                         ▼
-                 kggml-core-api  (pure Kotlin API types)
-```
-
-- Engine modules contain only their upstream library and a thin C wrapper. They link dynamically against
-  `kggml-runtime`, which holds the only copy of ggml. CI checks the linkage with `readelf` / `nm` / `otool`, and
-  checks that the Whisper-only sample app contains no llama.cpp or stable-diffusion.cpp symbols.
-- Android and JVM use JNI; iOS uses Kotlin/Native cinterop. Every native entry point catches C++ exceptions and
-  returns an error code that Kotlin maps to an `InferenceException`.
-- The exact upstream commits are listed in [`NOTICE`](NOTICE).
+- The [showcase app](samples/kggml-showcase/README.md) is a Compose Multiplatform app for Android, iOS and desktop
+  that uses every module: a backend inspector, a model manager with downloads, live Whisper dictation, LLM chat with
+  structured output and vision, and an image generation studio.
+- The [Whisper-only sample](samples/whisper-only-minimal/README.md) is the smallest integration. CI uses it to check
+  that an app depending on one engine contains no code from the others.
 
 ## Building from source
 
-You need JDK 17, CMake 3.24+ and a C++17 compiler. Android builds also need the Android SDK and NDK; iOS builds
-need macOS with Xcode.
+You need JDK 17, CMake 3.24+ and a C++17 compiler. Android builds also need the Android SDK and NDK; iOS and macOS
+builds need macOS with Xcode.
 
 ```bash
 git clone --recurse-submodules https://github.com/donfuldauer/kggml.git
@@ -403,9 +436,10 @@ kggml-diffusion/native/scripts/build-host.sh
 
 Each `native/README.md` ([runtime](kggml-runtime/native/README.md), [whisper](kggml-whisper/native/README.md),
 [llama](kggml-llama/native/README.md), [diffusion](kggml-diffusion/native/README.md)) covers the Android
-(`build-android.sh`) and iOS (`build-ios-xcframework.sh`) builds. The
-[showcase app](samples/kggml-showcase/README.md) runs all three engines on Android, iOS and desktop, and the
-[Whisper-only sample](samples/whisper-only-minimal/README.md) shows the smallest possible integration.
+(`build-android.sh`), iOS (`build-ios-xcframework.sh`) and cross-compiled builds. The GPU add-ons are described in
+[`kggml-runtime-vulkan/README.md`](kggml-runtime-vulkan/README.md) and
+[`kggml-runtime-opencl/README.md`](kggml-runtime-opencl/README.md). [`docs/RELEASING.md`](docs/RELEASING.md) explains
+how releases are built, signed and published to Maven Central.
 
 ## Contributing, security and license
 
