@@ -68,13 +68,9 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#20] Whisper live dictation and LLM Chat streaming at the same time in `:samples:kggml-showcase` on a physical
   Android phone, an iPhone and desktop (both keep producing output, no crash or OOM, one mapping per `libggml*` library
   on Android) — procedure in `integration-tests/README.md` ("Whisper and Llama together on devices").
-- [ ] [#20] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC runtime / whisper /
-  llama / diffusion build + CTest and root `jvmTest` incl. `:integration-tests` dual-engine coexistence) —
-  https://github.com/donfuldauer/kggml/pull/54
-- [ ] [#22] External links in the Markdown docs once the repository is public (GitHub issue-template, advisory and
-  upstream links answer 404/403 to unauthenticated requests while it is private, and CI has no network rule for
-  them): `./scripts/ci/verify-docs.sh --online --only links` reports no failures — procedure in `CONTRIBUTING.md`
-  ("Documentation").
+- [ ] [#22] External links in the Markdown docs (CI has no network rule for them, and GitHub links only resolve for
+  unauthenticated readers once the repository is public): `./scripts/ci/verify-docs.sh --online --only links`
+  reports no failures — procedure in `CONTRIBUTING.md` ("Documentation").
 - [ ] [#22] README quickstart on real hardware: the `README.md` Whisper, Llama, Diffusion and model-manager snippets
   (compiled by `:docs-snippets`) produce sensible output with real models on desktop, a physical Android phone and an
   iPhone, and the iOS background guidance (`BackendConfig.CPU` / `observeAppLifecycle`) keeps transcription running
@@ -82,32 +78,12 @@ when it has been run; a failed check becomes a new issue.
 
 ## Phase OSS
 
-- [ ] [#63] Owner, before the repository is made public: unregister the Mac, Windows and Linux self-hosted runners
-  (added back in #62), delete `MAC_RUNNER`, `WIN_RUNNER` and `LINUX_RUNNER`, and merge the PR that removes the
-  self-hosted routes; `scripts/ci/verify-hosted-runners.sh` fails while public until then — procedure in
-  `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip", step 1).
+- [ ] Android instrumented suites on an emulator or phone before each release (CI runs no Android emulator):
+  `./scripts/ci-local.sh --only instrumented` (or `./scripts/ci/run-android-instrumented.sh`) with an arm64 or x86_64 AVD passes, with the real native libraries
+  bundled and required.
 - [ ] [#23] Owner: Central Portal namespace `com.donfuldauer` verified, release secrets added, public signing key on a
   keyserver, then a `release.yml` dry-run dispatch from `main` is green and its bundle validates in the portal —
   procedure in `docs/RELEASING.md` ("Before the first release" and "Dry run").
-- [ ] [#23] Full `ci.yml` matrix (Ubuntu, macOS, Windows) green on GitHub-hosted runners from `main` after merge
-  (`Actions → CI → Run workflow`) — procedure in `docs/RELEASING.md` ("Dry run").
-- [ ] [#23] CI re-run on macOS/Windows once Actions minutes reset (billing / spending-limit refusal, every hosted job
-  failed in ~2 s with no logs: macOS release dry-run with the iOS klibs, `release.yml` iOS/xcframework path, Windows
-  MSVC build + `jvmTest`) — https://github.com/donfuldauer/kggml/pull/57
-- [ ] [#24] Owner, before the visibility flip: no runner registered to the repository (`gh api repos/donfuldauer/kggml/actions/runners
-  --jq .total_count` prints `0`, `gh variable list` shows no runner variable) — procedure in `docs/OSS_LAUNCH.md`
-  ("Owner steps before the visibility flip", step 1).
-- [ ] [#24] Owner: GitHub secret scanning and push protection enabled (Settings → Code security), and no secret
-  scanning alerts after the flip — procedure in `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip",
-  step 2).
-- [ ] [#24] Owner decision: keep or rewrite the personal commit e-mail on 12 early/merge commits
-  (`./scripts/ci/audit-history.sh` lists them without the address) — procedure in `docs/OSS_LAUNCH.md` ("Commit
-  e-mail addresses").
-- [ ] [#24] Owner: `./scripts/ci/audit-history.sh` passes on a fresh full clone right before the visibility flip, then
-  flip to public — procedure in `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip", steps 4–5).
-- [ ] [#24] CI re-run once Actions minutes reset (billing / spending-limit refusal: every hosted job, including
-  repo-hygiene's `secret-scan` full-history audit with the pinned gitleaks download, the Ubuntu job and the labelled
-  macOS/Windows jobs, failed in 1–3 s with no logs) — https://github.com/donfuldauer/kggml/pull/58
 - [ ] [#83] Android GPU add-on on a physical phone with a Vulkan 1.1+ GPU (owner's Pixel; ideally also one Adreno and
   one Mali device): the showcase Backends screen lists Vulkan as available; whisper, llama (SmolVLM / Qwen) and
   diffusion (SD-Turbo, 4 steps, 512x512) produce correct output on `GPU_VULKAN` and `AUTO`, and diffusion is faster than

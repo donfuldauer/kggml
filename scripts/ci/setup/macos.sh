@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Installs what CI needs on a macOS runner (hosted macos-* or the owner's self-hosted local-mac), only when missing.
+# Installs what CI needs on a macOS machine (the hosted macos-* runner, or a contributor's Mac), only when missing.
 # Idempotent; a no-op on a prepared machine.
 #
-# Command-line tools come from Homebrew, which must NOT run as root (Homebrew refuses), so this runs as the runner
-# user. Xcode itself cannot be installed unattended (App Store / Apple ID), so it is only checked: a missing Xcode
-# or iOS simulator runtime fails here with the fix instead of deep inside a build.
+# Command-line tools come from Homebrew, which must NOT run as root (Homebrew refuses), so this runs as the current
+# user. Xcode itself cannot be installed unattended (App Store / Apple ID), so it is only checked: a missing Xcode or
+# iOS simulator runtime fails here with the fix instead of deep inside a build.
 #
 # Usage: scripts/ci/setup/macos.sh
 set -euo pipefail

@@ -6,7 +6,7 @@
 #   :kggml-runtime-opencl          the OpenCL add-on is packaged; registered only on devices with OpenCL
 #   :samples:kggml-showcase        Compose UI tests (fakes) + real-engine end-to-end UI tests
 #   :samples:whisper-only-minimal  real WhisperEngine session tests + MainActivity Espresso tests
-# Shared by ./scripts/ci-local.sh (step `instrumented`) and CI. Works on macOS, Linux and Windows (Git Bash) hosts.
+# Used by ./scripts/ci-local.sh (step `instrumented`) and by hand. Works on macOS, Linux and Windows (Git Bash) hosts.
 #
 # Usage: scripts/ci/run-android-instrumented.sh [extra Gradle args...]
 #   A device must be connected (adb devices), or set KGGML_AVD=<avd name> to boot that emulator headless first

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Verifies the ggml submodule HEAD matches KGGML_GGML_PINNED_COMMIT in CMakeLists.txt and NOTICE.
-# Shared by CI (.github/workflows/runtime-native*.yml) and ./scripts/ci-local.sh.
+# Shared by CI (.github/workflows/ci.yml) and ./scripts/ci-local.sh.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

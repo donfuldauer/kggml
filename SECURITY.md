@@ -43,6 +43,6 @@ Model files are code-like inputs: only load models and sessions from sources you
 - `gitleaks` scans every pull request for secrets, and `.gitignore` excludes signing keys, credentials and
   environment files.
 - Every pull request also audits the full git history of every branch for secrets, credential files, private keys,
-  unattributed binaries and developer-machine paths ([docs/OSS_LAUNCH.md](docs/OSS_LAUNCH.md)).
+  unattributed binaries and developer-machine paths ([docs/HISTORY_AUDIT.md](docs/HISTORY_AUDIT.md)).
 - Every C/C++ entry point catches exceptions and returns error codes, so no C++ exception crosses into Kotlin.
 - Upstream libraries are pinned to exact commits, recorded in [NOTICE](NOTICE) and checked by CI.
