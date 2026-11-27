@@ -7,7 +7,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 
 /**
- * Locates and loads the Kggml native runtime on JVM Desktop (macOS arm64, Linux x86_64, Windows x86_64).
+ * Locates and loads the Kggml native runtime on JVM Desktop (macOS arm64, Linux and Windows on x86_64 and arm64).
  *
  * Lookup order:
  * 1. **Explicit directory** — the `kggml.native.path` system property (or `KGGML_NATIVE_PATH` environment

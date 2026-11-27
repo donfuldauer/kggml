@@ -7,7 +7,7 @@ One release publishes all seven coordinates at the `VERSION_NAME` in [`gradle.pr
 | --- | --- |
 | `com.donfuldauer:kggml-bom` | BOM (`pom` packaging) constraining the six libraries below |
 | `com.donfuldauer:kggml-core-api` | Kotlin Multiplatform library: root + `-android`, `-jvm`, `-iosarm64`, `-iossimulatorarm64` |
-| `com.donfuldauer:kggml-runtime` | same; the `-jvm` jar carries the runtime for `linux-x86_64`, `windows-x86_64`, `macos-aarch64`; the AAR carries `arm64-v8a` and `x86_64` |
+| `com.donfuldauer:kggml-runtime` | same; the `-jvm` jar carries the runtime for `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64`, `macos-aarch64`; the AAR carries `arm64-v8a` and `x86_64` |
 | `com.donfuldauer:kggml-whisper` | same; the AAR carries the whisper JNI libraries |
 | `com.donfuldauer:kggml-llama` | same; the AAR carries the llama JNI libraries |
 | `com.donfuldauer:kggml-diffusion` | same; the AAR carries the diffusion JNI libraries |
@@ -21,7 +21,9 @@ signature (`.asc`) on every file. The iOS xcframeworks (`GgmlRuntime`, `KggmlWhi
 ## How it works
 
 1. **`desktop-natives`** (`ubuntu-latest`, `windows-latest`): builds the release runtime for `linux-x86_64` and
-   `windows-x86_64` and stages it as JVM resources.
+   `windows-x86_64`, cross-compiles it for `linux-aarch64` (GNU aarch64 toolchain) and `windows-aarch64` (LLVM clang,
+   MSVC ABI), stages each as JVM resources and checks every library's machine type
+   ([`check_native_arch.py`](../scripts/ci/check_native_arch.py)).
 2. **`publish`** (`macos-latest`, the only host that builds every Kotlin target): builds the iOS xcframeworks, then
    runs [`scripts/ci/stage-release.sh`](../scripts/ci/stage-release.sh), which
    - publishes every publication with `-Pkggml.release=true -Pkggml.bundleNative=true` into
@@ -38,7 +40,7 @@ The same staging and audit run on pull requests as a dry run with a throwaway ke
 (JVM, Android and metadata components) and the `ci:macos` job (every component, including iOS). Locally:
 
 ```bash
-./scripts/ci/stage-release.sh --dry-run --skip-targets ios   # Linux; on macOS drop --skip-targets
+./scripts/ci/stage-release.sh --dry-run --skip-targets ios,macos   # Linux; on macOS drop --skip-targets
 ```
 
 ## Before the first release

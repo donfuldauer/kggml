@@ -61,6 +61,9 @@ How it is propagated:
 | Preset | Notes |
 | --- | --- |
 | `linux-x64`, `macos-arm64`, `windows-x64` | Host builds with tests into `<repo>/build/native`. Portable CPU flags: AVX2 on x86; the compiler default on Apple arm64 (Metal + Accelerate + BLAS) |
+| `linux-arm64` | Host build with tests on an aarch64 Linux machine, `-march=armv8.2-a+dotprod+fp16` |
+| `linux-arm64-cross` | The same, cross-compiled on x86_64 Linux into `<repo>/build/native-linux-aarch64` (`g++-aarch64-linux-gnu`; CTest runs under `qemu-aarch64` from `qemu-user`). `build-host.sh --target linux-aarch64` picks it |
+| `windows-arm64` | Windows on ARM, built with LLVM clang for the MSVC ABI (ggml rejects `cl.exe` for ARM), no tests. Run [`scripts/build-windows-arm64.cmd`](scripts/build-windows-arm64.cmd), which sets up the MSVC arm64 environment |
 | `android-arm64-v8a` | `-march=armv8.2-a+dotprod+fp16`. Needs `ANDROID_NDK_HOME` |
 | `android-x86_64` | SSE4.2 baseline (the x86_64 Android ABI guarantees nothing higher) |
 | `ios-device`, `ios-simulator-arm64` | Xcode generator, monolithic `GgmlRuntime.framework`, Metal (embedded library) + Accelerate |

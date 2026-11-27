@@ -30,8 +30,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/linux.sh
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -108,8 +108,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/linux.sh
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2

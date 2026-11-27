@@ -19,10 +19,15 @@ description = "Kggml shared dynamic ggml runtime (CPU, Metal, Vulkan backends)."
 //                               other hosts: each <dir> holds kggml/native/<platform>/ as written by
 //                               stageJvmNativeResources there. The release workflow uses this to ship linux-x86_64,
 //                               windows-x86_64 and macos-aarch64 in one jar.
+//   -Pkggml.nativePlatform=<os>-<arch>  stage (and, for linux-aarch64, cross-compile) the release runtime for that JVM
+//                               platform instead of the host's: linux-aarch64 is built by build-host.sh --target;
+//                               windows-aarch64 is built beforehand with the windows-arm64 preset (needs an MSVC
+//                               arm64 environment) and only staged here, like windows-x86_64 in the release.
 // ---------------------------------------------------------------------------------------------------------
 
 val requireNative = providers.gradleProperty("kggml.requireNative").map(String::toBoolean).getOrElse(false)
 val bundleNative = providers.gradleProperty("kggml.bundleNative").map(String::toBoolean).getOrElse(false)
+val nativePlatform: String? = providers.gradleProperty("kggml.nativePlatform").orNull?.trim()?.takeIf { it.isNotEmpty() }
 
 val nativeDir = layout.projectDirectory.dir("native")
 val rootBuildDir = rootProject.layout.projectDirectory.dir("build")
@@ -46,7 +51,10 @@ val ggmlPinnedVersion = cmakePin("KGGML_GGML_PINNED_VERSION")
 val ggmlPinnedCommit = cmakePin("KGGML_GGML_PINNED_COMMIT")
 
 kotlin {
-    // `jniMain` is shared by androidMain + jvmMain (the JNI bridge); iosMain uses cinterop instead.
+    // Kotlin/Native macOS (issue #93): links the macos-arm64 slice of GgmlRuntime.xcframework (Metal + Accelerate).
+    macosArm64()
+
+    // `jniMain` is shared by androidMain + jvmMain (the JNI bridge); appleMain (iOS + macOS) uses cinterop instead.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
         common {
@@ -70,6 +78,7 @@ kotlin {
     targets.withType<KotlinNativeTarget>().configureEach {
         val slice = when (konanTarget) {
             KonanTarget.IOS_SIMULATOR_ARM64 -> "ios-arm64-simulator"
+            KonanTarget.MACOS_ARM64 -> "macos-arm64"
             else -> "ios-arm64"
         }
         compilations.getByName("main").cinterops.create("kggmlRuntime") {
@@ -114,9 +123,11 @@ val buildNativeHostRelease by tasks.registering(Exec::class) {
     description = "Builds and installs a release (no tests, no test hooks) host runtime into <root>/build/native-release-install."
     workingDir(rootProject.layout.projectDirectory)
     commandLine(
-        "bash", buildHostScript, "--no-tests",
-        "--build-dir", nativeReleaseBuildDir.asFile.absolutePath,
-        "--install", nativeReleaseInstallDir.asFile.absolutePath,
+        listOf(
+            "bash", buildHostScript, "--no-tests",
+            "--build-dir", nativeReleaseBuildDir.asFile.absolutePath,
+            "--install", nativeReleaseInstallDir.asFile.absolutePath,
+        ) + listOfNotNull(nativePlatform?.let { "--target" }, nativePlatform),
     )
 }
 
@@ -158,7 +169,7 @@ val stageJvmNativeResources by tasks.registering {
     val outRoot = jvmNativeResourcesDir
     outputs.dir(outRoot)
     doLast {
-        val platform = hostPlatformId()
+        val platform = nativePlatform ?: hostPlatformId()
         val out = outRoot.get().asFile.resolve("kggml/native/$platform")
         out.deleteRecursively()
         out.mkdirs()
@@ -232,9 +243,12 @@ tasks.named<Test>("jvmTest") {
     }
 }
 
-// iOS test executables link against GgmlRuntime.xcframework (build-ios-xcframework.sh, macOS only).
+// Apple test executables link against GgmlRuntime.xcframework (build-ios-xcframework.sh, macOS only).
 val iosFrameworkPresent = iosXcframeworkDir.asFile.isDirectory
-tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
+tasks.matching {
+    it.name.startsWith("linkDebugTestIos") || it.name.startsWith("linkDebugTestMacos") ||
+        it.name.matches(Regex("(ios|macos).*Test"))
+}.configureEach {
     onlyIf("GgmlRuntime.xcframework is built (kggml-runtime/native/scripts/build-ios-xcframework.sh)") {
         if (!iosFrameworkPresent && requireNative) {
             throw GradleException("-Pkggml.requireNative=true but ${iosXcframeworkDir.asFile} does not exist")

@@ -39,7 +39,8 @@ Kotlin API on top of the [ggml](https://github.com/ggml-org/ggml) ecosystem:
 | --- | --- | --- | --- |
 | Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). GPU with the optional add-ons on Android 9+: Vulkan (`kggml-runtime-vulkan`, any Vulkan 1.1 driver) and OpenCL (`kggml-runtime-opencl`, devices whose vendor ships OpenCL, e.g. Adreno); CPU otherwise. |
 | iOS | `iosArm64`, `iosSimulatorArm64` | device and Apple-silicon simulator | CPU (Accelerate / NEON), Metal, Core ML (Whisper encoder) |
-| JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64, Windows x86_64 | CPU on all three; Metal on macOS; Vulkan on Linux x86_64 with the optional `kggml-runtime-vulkan` add-on (any installed Vulkan driver) |
+| macOS 13.3+ (Kotlin/Native) | `macosArm64` (`kggml-core-api` and `kggml-runtime` so far; the engines follow, issue #93) | Apple silicon | CPU (Accelerate / NEON), Metal. Link the `macos-arm64` slice of `GgmlRuntime.xcframework` |
+| JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64 and arm64, Windows x86_64 and arm64 | CPU everywhere (arm64 builds need ARMv8.2 with dotprod: Raspberry Pi 5, Graviton 2+, Snapdragon X; not Raspberry Pi 4); Metal on macOS; Vulkan on Linux x86_64 with the optional `kggml-runtime-vulkan` add-on (any installed Vulkan driver) |
 
 What each engine can use:
 
@@ -113,7 +114,7 @@ when it is heavy, depends on the device's drivers, or many apps would rather ski
 | Platform | How the native code is shipped |
 | --- | --- |
 | Android | Release AARs are built with `-Pkggml.bundleNative=true` and carry their `.so` files for `arm64-v8a` and `x86_64` (`libggml*.so` and `libkggml_runtime*.so` in `kggml-runtime`, `libkggml_whisper*.so` in `kggml-whisper`, `libggml-vulkan.so` / `libggml-opencl.so` in the GPU add-ons, and so on). Nothing to configure. |
-| JVM Desktop | The released `kggml-runtime` jar carries the ggml runtime for `linux-x86_64`, `windows-x86_64` and `macos-aarch64` under `/kggml/native/<os>-<arch>/` and extracts it on first use; `-Dkggml.native.path=<dir>` (or `KGGML_NATIVE_PATH`) points it at your own build instead. Each engine loads its JNI library from `-Dkggml.whisper.native.path` / `kggml.llama.native.path` / `kggml.diffusion.native.path` (or the matching `KGGML_*_NATIVE_PATH` variable), then from the `kggml.native.path` directory, then from `java.library.path`. The engines' `build-host.sh` scripts build these libraries. |
+| JVM Desktop | The released `kggml-runtime` jar carries the ggml runtime for `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64` and `macos-aarch64` under `/kggml/native/<os>-<arch>/` and extracts it on first use; `-Dkggml.native.path=<dir>` (or `KGGML_NATIVE_PATH`) points it at your own build instead. Each engine loads its JNI library from `-Dkggml.whisper.native.path` / `kggml.llama.native.path` / `kggml.diffusion.native.path` (or the matching `KGGML_*_NATIVE_PATH` variable), then from the `kggml.native.path` directory, then from `java.library.path`. The engines' `build-host.sh` scripts build these libraries. |
 | iOS | The Kotlin frameworks link against `GgmlRuntime.xcframework` plus one xcframework per engine (`KggmlWhisper`, `KggmlLlama`, `KggmlDiffusion`). Embed the ones you use in your Xcode app target. Each release attaches them to its GitHub release (with a `SHA256SUMS` file); the `build-ios-xcframework.sh` scripts build them from source (see [Building from source](#building-from-source)). |
 
 Model weights are never bundled. Download them at runtime (see
