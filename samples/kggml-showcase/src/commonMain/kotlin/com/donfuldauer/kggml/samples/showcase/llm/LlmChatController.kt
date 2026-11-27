@@ -90,6 +90,12 @@ data class LlmChatState(
     val error: String? = null,
 ) {
     val isBusy: Boolean get() = activity != ChatActivity.IDLE
+
+    /** The template [modelPath] was trained on, when its name tells ([PromptTemplate.forModel]). */
+    val suggestedTemplate: PromptTemplate? get() = PromptTemplate.forModel(modelPath.trim())
+
+    /** The chosen [template] is not the one the model expects: replies may never stop. */
+    val templateMismatch: Boolean get() = suggestedTemplate.let { it != null && it != template }
     val hasModel: Boolean get() = modelPath.isNotBlank()
     val canSend: Boolean get() = !isBusy && hasModel && draft.isNotBlank()
     val canExtract: Boolean get() = !isBusy && hasModel && schema.isNotBlank() && extractionInput.isNotBlank()
@@ -143,7 +149,7 @@ class LlmChatController(
     /** Sampler seed of chat replies; `null` (the app) draws a random one per reply, tests pin it. */
     private val chatSeed: Long? = null,
 ) : AutoCloseable {
-    private val mutableState = MutableStateFlow(LlmChatState(modelPath = initialModelPath))
+    private val mutableState = MutableStateFlow(LlmChatState().withModel(initialModelPath))
     val state: StateFlow<LlmChatState> = mutableState.asStateFlow()
 
     val canPickFromGallery: Boolean get() = imageSource.canPickFromGallery
@@ -153,7 +159,7 @@ class LlmChatController(
     private var nextSnapshotId = 1
     private var closed = false
 
-    fun setModelPath(path: String) = mutableState.update { it.copy(modelPath = path) }
+    fun setModelPath(path: String) = mutableState.update { it.withModel(path) }
     fun setProjectorPath(path: String) = mutableState.update { it.copy(projectorPath = path) }
     fun setTemplate(template: PromptTemplate) = mutableState.update { it.copy(template = template) }
     fun setSystemPrompt(text: String) = mutableState.update { it.copy(systemPrompt = text) }
@@ -189,7 +195,7 @@ class LlmChatController(
      * carried over: without [projectorPath] the projector is cleared.
      */
     fun useModel(path: String, projectorPath: String? = null) = mutableState.update {
-        it.copy(modelPath = path, projectorPath = projectorPath.orEmpty())
+        it.withModel(path).copy(projectorPath = projectorPath.orEmpty())
     }
 
     fun useProjector(path: String) = mutableState.update { it.copy(projectorPath = path) }
@@ -401,6 +407,8 @@ class LlmChatController(
     private fun chatOptions(state: LlmChatState) = GenerationOptions(
         maxTokens = state.maxTokens,
         temperature = 0.7f,
+        // A light penalty keeps a small model from looping on one phrase (the usual llama.cpp chat setting).
+        repeatPenalty = CHAT_REPEAT_PENALTY,
         seed = chatSeed,
         stopSequences = state.template.stopSequences,
     )
@@ -536,3 +544,10 @@ internal fun projectorHint(failure: Throwable, projectorPath: String): String =
     } else {
         ""
     }
+
+/** Repetition penalty of chat and vision replies; structured extraction runs without one (JSON repeats quotes). */
+internal const val CHAT_REPEAT_PENALTY = 1.1f
+
+/** Selects [path] and, when its name tells, the template that model expects (the user can still change it). */
+private fun LlmChatState.withModel(path: String): LlmChatState =
+    copy(modelPath = path, template = PromptTemplate.forModel(path.trim()) ?: template)

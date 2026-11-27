@@ -467,6 +467,32 @@ class LlmChatControllerTest {
     }
 
     @Test
+    fun choosingAModelSelectsItsTemplateAndWarnsAboutAMismatchedChoice() = runTest {
+        val h = Harness(this, modelPath = "/models/SmolVLM-256M-Instruct-Q8_0.gguf")
+        assertEquals(PromptTemplate.USER_ASSISTANT, h.state.template, "the initial model picks its template too")
+        h.controller.useModel("/models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf")
+        assertEquals(PromptTemplate.CHATML, h.state.template)
+        assertFalse(h.state.templateMismatch)
+        h.controller.setTemplate(PromptTemplate.USER_ASSISTANT)
+        assertTrue(h.state.templateMismatch, "Qwen with the SmolVLM format never stops")
+        assertEquals(PromptTemplate.CHATML, h.state.suggestedTemplate)
+        h.controller.setModelPath("/models/Llama-3.2-1B-Instruct.gguf")
+        assertEquals(PromptTemplate.USER_ASSISTANT, h.state.template, "an unknown family keeps the user's choice")
+        assertFalse(h.state.templateMismatch)
+    }
+
+    @Test
+    fun chatUsesARepetitionPenaltyButStructuredExtractionDoesNot() = runTest {
+        val h = Harness(this)
+        h.say("hi")
+        advanceUntilIdle()
+        assertEquals(CHAT_REPEAT_PENALTY, h.model.calls.single().options.repeatPenalty)
+        h.controller.extract()
+        advanceUntilIdle()
+        assertEquals(1.0f, h.model.calls.last().options.repeatPenalty, "a penalty would fight JSON's repeated quotes")
+    }
+
+    @Test
     fun editedExtractionInputAndVisionQuestionAreSentToTheModel() = runTest {
         val h = Harness(this)
         h.controller.setExtractionInput("Bob is 40 and lives in Oslo.")

@@ -54,6 +54,7 @@ object LlmChatTags {
     const val MODEL_PATH = "llm-model-path"
     const val PROJECTOR_PATH = "llm-projector-path"
     const val SYSTEM_PROMPT = "llm-system-prompt"
+    const val TEMPLATE_WARNING = "llm-template-warning"
     const val BACKEND = "llm-backend"
     const val THREADS = "llm-threads"
     const val GPU_LAYERS = "llm-gpu-layers"
@@ -211,6 +212,14 @@ private fun ModelControls(
                 modifier = Modifier.testTag(LlmChatTags.template(template)),
             )
         }
+    }
+    val expected = state.suggestedTemplate
+    if (state.templateMismatch && expected != null) {
+        Text(
+            "This model expects the ${expected.label} template; with ${state.template.label} its replies may never stop.",
+            color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.testTag(LlmChatTags.TEMPLATE_WARNING),
+        )
     }
     OutlinedTextField(
         value = state.systemPrompt,
