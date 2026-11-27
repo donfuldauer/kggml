@@ -3,7 +3,8 @@
 #
 # Run from an MSVC developer environment for arm64 libraries: `vcvarsall.bat amd64_arm64` on an x64 host
 # (`vcvarsall.bat arm64` on an arm64 host), so link.exe / lld-link find the arm64 CRT, STL and SDK libraries.
-# clang comes from LLVM (C:\Program Files\LLVM) or Visual Studio's "C++ Clang tools" component.
+# clang is Visual Studio's "C++ Clang tools" component, which build-windows-arm64.cmd puts first on PATH: the MSVC STL
+# headers require a clang at least as new as the Visual Studio release (STL1000), which a standalone LLVM may not be.
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR ARM64)
 

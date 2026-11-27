@@ -4,8 +4,10 @@ rem
 rem Usage (from the repository root, in cmd): kggml-runtime\native\scripts\build-windows-arm64.cmd <install-prefix>
 rem
 rem ggml's CPU backend rejects cl.exe for ARM, so this compiles with LLVM clang for the MSVC ABI and links with the
-rem MSVC arm64 libraries. Needs Visual Studio 2022 (or Build Tools) with the "MSVC v143 ARM64 build tools" component,
-rem plus clang from either the "C++ Clang tools for Windows" component or LLVM (C:\Program Files\LLVM).
+rem MSVC arm64 libraries. Needs Visual Studio 2022 or later (or Build Tools) with the MSVC ARM64 build tools and the
+rem "C++ Clang tools for Windows" component. Visual Studio's own clang is preferred: its STL headers check the clang
+rem version (STL1000), so a standalone LLVM (C:\Program Files\LLVM, also on GitHub's Windows images) that is older
+rem than the Visual Studio release fails to compile. A standalone LLVM is used only when Visual Studio has no clang.
 rem On an x64 host the result cannot run there; scripts/ci/check_native_arch.py checks it after staging.
 setlocal EnableExtensions
 set "PREFIX=%~1"
@@ -23,9 +25,11 @@ set "VCVARS_ARCH=amd64_arm64"
 if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "VCVARS_ARCH=arm64"
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" %VCVARS_ARCH% >nul || (echo vcvarsall %VCVARS_ARCH% failed & exit /b 1)
 
-where clang >nul 2>&1 || if exist "%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang.exe" set "PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin;%PATH%"
+if exist "%VSINSTALL%\VC\Tools\Llvm\x64\bin\clang.exe" set "PATH=%VSINSTALL%\VC\Tools\Llvm\x64\bin;%PATH%"
 where clang >nul 2>&1 || if exist "%ProgramFiles%\LLVM\bin\clang.exe" set "PATH=%ProgramFiles%\LLVM\bin;%PATH%"
 where clang >nul 2>&1 || (echo clang not found: install LLVM or the Visual Studio "C++ Clang tools for Windows" component & exit /b 1)
+for /f "delims=" %%c in ('where clang') do (echo clang: %%c & goto :clang_found)
+:clang_found
 clang --version | findstr /i "version"
 where ninja >nul 2>&1 || (echo ninja not found & exit /b 1)
 
