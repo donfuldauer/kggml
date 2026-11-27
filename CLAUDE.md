@@ -131,6 +131,8 @@ While the repository is private, the owner's own machines run jobs at no billed 
 
 If a self-hosted job is still queued after 10 minutes while that machine is not busy with another job, its flag is stale (the machine slept or lost power without switching it off): run `gh variable set <MAC|WIN|LINUX>_RUNNER --body off`, cancel the run, then close and reopen the PR to start it on hosted runners. A self-hosted job that fails with build or test output is a real failure: fix it, do not fall back.
 
+**Runner setup:** every job that builds starts with `scripts/ci/setup/linux.sh` / `macos.sh` / `windows.ps1`, which install what the job needs only when missing (Linux: apt as root via passwordless `sudo`; macOS: Homebrew as the runner user, Xcode only checked; Windows: Visual Studio components through the Visual Studio Installer, which needs an elevated job: a runner service under an administrator account, otherwise it fails and prints the one-time command). A new build dependency goes into these scripts, never into a one-off `apt-get` / `brew` / `choco` line in a workflow, so hosted and self-hosted runners stay reproducible.
+
 `scripts/ci/verify-hosted-runners.sh` (every PR) allows only these three label sets, requires the same-repository guard on every job that can reach one, and **fails while the repository is public**: every runner and runner variable must be removed before the visibility flip (#63, `docs/OSS_LAUNCH.md`).
 
 #### Waiting for CI

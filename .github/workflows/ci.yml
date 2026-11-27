@@ -101,9 +101,9 @@ jobs:
         with:
           submodules: true
 
-      # Preinstalled on the self-hosted Linux runner.
-      - name: Install Ninja
-        run: command -v ninja >/dev/null || (sudo apt-get update && sudo apt-get install -y ninja-build)
+      # Everything the job needs (Ninja, CMake, the aarch64 cross toolchain, qemu-user), installed when missing.
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/linux.sh --arm64-cross
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -124,6 +124,16 @@ jobs:
           ./scripts/ci/verify-ggml-pin.sh
           ./kggml-runtime/native/scripts/build-host.sh
           ./scripts/ci/audit-host-linkage.sh
+
+      # Issue #91: the JVM jar also ships linux-aarch64. Cross-compiled here (no arm64 Linux runner); CTest runs the
+      # aarch64 test binaries under qemu-user, and the release staging path is checked for the right ELF machine.
+      - name: Native runtime (linux-aarch64 cross, CTest under qemu-aarch64) + linkage audit + staged arch check
+        run: |
+          ./kggml-runtime/native/scripts/build-host.sh --target linux-aarch64
+          READELF=aarch64-linux-gnu-readelf NM=aarch64-linux-gnu-nm \
+            ./scripts/ci/audit-host-linkage.sh build/native-linux-aarch64/lib
+          ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=linux-aarch64 --console=plain
+          python3 scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm linux-aarch64
 
       - name: Native whisper (linux-x64) build + CTest + dynamic ggml linkage audit
         run: |
@@ -229,6 +239,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/macos.sh
+
       # Also covers repo-hygiene.yml (agent parity, gitleaks). --strict: a missing tool is a failure.
       - name: Full local gate
         timeout-minutes: 100
@@ -260,8 +273,9 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: brew install ninja || true
+      # Ninja and CMake when missing (Homebrew, as the runner user); checks Xcode and an iOS simulator runtime.
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/macos.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -448,6 +462,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Everything the job needs (Visual Studio C++ x64 + ARM64 tools, clang, Ninja), installed when missing; adding
+      # Visual Studio components needs administrator rights (see the script for a non-admin runner service).
+      - name: Runner setup (installs missing build tools)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1 -Arm64
+
       - name: Set up MSVC developer environment (x64)
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -460,7 +480,6 @@ jobs:
       - name: Native runtime (windows-x64, MSVC) build + CTest
         shell: cmd
         run: |
-          where ninja >nul 2>&1 || choco install ninja -y --no-progress || exit /b 1
           cmake -S kggml-runtime/native --preset windows-x64 -B build/native || exit /b 1
           cmake --build build/native --config Release -j 4 || exit /b 1
           ctest --test-dir build/native --build-config Release --output-on-failure -j 4
@@ -490,6 +509,20 @@ jobs:
         run: |
           ./gradlew jvmTest :samples:kggml-showcase:desktopTest :samples:whisper-only-minimal:desktopTest $NATIVE_GRADLE_ARGS
           ./scripts/ci/audit-minimal-sample.sh desktop $NATIVE_GRADLE_ARGS
+
+      # Issue #91: the JVM jar also ships windows-aarch64 (Windows on ARM). Cross-compiled with LLVM clang for the
+      # MSVC ABI (ggml rejects cl.exe for ARM); there is no arm64 Windows runner to run it, so the staged DLLs are
+      # checked for the ARM64 PE machine type instead.
+      - name: Native runtime (windows-arm64 cross, LLVM clang) build
+        shell: cmd
+        run: call kggml-runtime\native\scripts\build-windows-arm64.cmd build\native-release-install
+
+      - name: Stage the windows-aarch64 runtime + staged arch check
+        run: |
+          ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=windows-aarch64 \
+            -x :kggml-runtime:buildNativeHostRelease --console=plain
+          source scripts/ci/python.sh && kggml_require_python 3.9
+          kggml_python scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm windows-aarch64
 
       - name: Print JVM crash reports on failure
         if: failure()

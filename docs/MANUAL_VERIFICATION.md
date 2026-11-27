@@ -116,3 +116,7 @@ when it has been run; a failed check becomes a new issue.
   available and `AUTO` resolves to it; whisper, llama and diffusion (SD-Turbo) produce correct output on `GPU_OPENCL`
   (diffusion op coverage of ggml-opencl is the open question). On a phone without OpenCL (Pixel) the logcat
   warning appears and Vulkan / the CPU are used.
+- [ ] [#91] JVM desktop on arm64 hardware, with the released (or `-Pkggml.bundleNative=true`) jar: on a Windows on ARM
+  laptop (Snapdragon X) and on an arm64 Linux machine (Raspberry Pi 5, Graviton, Jetson), the whisper-only-minimal
+  desktop app transcribes the sample, and `./gradlew jvmTest -Pkggml.requireNative=true` passes. CI only cross-compiles
+  these: linux-aarch64 CTest runs under qemu, windows-aarch64 is checked for the ARM64 machine type only.
