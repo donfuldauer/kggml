@@ -1,0 +1,75 @@
+# Dependabot version updates (security updates are enabled in the repository settings and use the same groups).
+#
+# Covered:
+#   - gradle: every version in gradle/libs.versions.toml (shared by the root build and build-logic) and the Gradle
+#     wrapper. A wrapper update must also update the "Gradle Wrapper" row of NOTICE.
+#   - github-actions: the actions used by .github/workflows/.
+# Not covered, on purpose:
+#   - The upstream C/C++ libraries (ggml, whisper.cpp, llama.cpp, stable-diffusion.cpp) are git submodules pinned in
+#     CMakeLists.txt and NOTICE and checked by scripts/ci/verify-*-pin.sh. They have to move together (every engine
+#     builds against the runtime's ggml), so they are updated by hand, not by a bot.
+#
+# Updates that must move together are grouped, so one PR builds and tests them as a set: the Kotlin compiler, the
+# Compose compiler plugin and Compose Multiplatform are released for specific Kotlin versions, and Compose
+# Multiplatform fixes the Jetpack Compose (androidx.compose) version used on Android.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    labels:
+      - dependencies
+      - infra:ci
+    groups:
+      kotlin-and-compose:
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "org.jetbrains.kotlinx:kotlinx-coroutines*"
+          - "org.jetbrains.kotlinx.kover*"
+          - "org.jetbrains.kotlinx:kover*"
+          - "org.jetbrains.compose*"
+          - "androidx.compose*"
+      android-gradle-plugin:
+        patterns:
+          - "com.android.tools.build*"
+          - "com.android.application"
+          - "com.android.library"
+      androidx-and-test:
+        patterns:
+          - "androidx.*"
+          - "org.robolectric*"
+          - "junit:junit"
+    ignore:
+      # Android Gradle Plugin 9 changes how Kotlin Multiplatform Android targets are configured (the new KMP Android
+      # library plugin); that migration is planned work, not a dependency bump.
+      - dependency-name: "com.android.tools.build:gradle"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "com.android.application"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "com.android.library"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    labels:
+      - dependencies
+      - infra:ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
