@@ -54,7 +54,7 @@ fun BackendChips(selected: ComputeBackend, tagPrefix: String, enabled: Boolean, 
 
 /** Backends llama.cpp / stable-diffusion.cpp can be asked for (Core ML falls back to Metal / CPU in both). */
 val ENGINE_BACKENDS: List<ComputeBackend> =
-    listOf(ComputeBackend.AUTO, ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN)
+    listOf(ComputeBackend.AUTO, ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.GPU_OPENCL)
 
 @Composable
 fun ErrorCard(message: String, tag: String) {

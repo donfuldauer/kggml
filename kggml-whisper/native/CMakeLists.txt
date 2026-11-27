@@ -14,10 +14,17 @@
 
 cmake_minimum_required(VERSION 3.24)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../kggml-runtime/native/cmake/kggml-version.cmake") # KGGML_VERSION
+
 project(kggml_whisper
-    VERSION 1.0.0
+    VERSION ${KGGML_VERSION}
     DESCRIPTION "Kggml whisper.cpp engine"
     LANGUAGES C CXX)
+
+# Host processes may load msvcp140 < 14.40 (e.g. a JVM's bundled copy); see kggml-runtime/native (issue #65).
+if (MSVC)
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
 
 # Exact upstream whisper.cpp pin (tag v1.8.4). Keep in sync with the submodule gitlink and NOTICE.
 set(KGGML_WHISPER_UPSTREAM_COMMIT "9386f239401074690479731c1e41683fbbeac557")
@@ -100,7 +107,7 @@ endif()
 # ---------------------------------------------------------------------------------------------------------
 
 find_package(Threads REQUIRED)
-find_package(kggml-runtime 1.0 CONFIG REQUIRED)
+find_package(kggml-runtime ${KGGML_VERSION} CONFIG REQUIRED)
 
 if (NOT TARGET kggml::runtime OR NOT TARGET kggml::ggml)
     message(FATAL_ERROR "kggml-runtime package does not provide kggml::runtime / kggml::ggml")

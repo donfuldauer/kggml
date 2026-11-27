@@ -17,7 +17,7 @@ Execute a Kggml GitHub issue from selection through implementation, verification
 Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
 
 Stop and report to the user instead of merging **only** when:
-- a required CI check (or, on a `ci:macos`/`ci:windows`-labelled PR, that check) is failing and cannot be fixed within the issue's scope (checks that never started because the Actions quota is exhausted, and runners that fail, hang or time out, are not failures to escalate: follow AGENTS.md "When the Actions quota is exhausted" and "When a runner fails or hangs");
+- a required CI check is failing and cannot be fixed within the issue's scope (runners that fail, hang or time out are not failures to escalate: follow AGENTS.md "When a runner fails or hangs");
 - the PR has a merge conflict that cannot be resolved cleanly;
 - a phase-final PR lacks `APPROVED` from `phase-reviewer`; or
 - a human reviewer has requested changes that are still unresolved.
@@ -79,15 +79,16 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
 
 1. **Run verification gates locally (mandatory before every push, including auto-fix pushes):**
    ```bash
-   # Runs the same checks as the Linux PR CI jobs (parity, gitleaks, ggml pin, host build + CTest,
-   # linkage audit, jvmTest, Android cross-compile + audit). Must end with no FAIL lines.
+   # Runs the same checks as the Linux PR CI jobs (parity, license/docs audits, gitleaks, upstream pins,
+   # host builds + CTest, linkage audits, jvmTest, Android cross-compile + audits, sample audit,
+   # README snippets, release dry-run). Must end with no FAIL lines.
    ./scripts/ci-local.sh
    # Plus any module-specific commands from AGENTS.md Section 3 that apply, e.g.:
    # ./gradlew check
-   # ./gradlew iosSimulatorArm64Test   # macOS hosts only; otherwise covered by the ci:macos run
+   # ./gradlew iosSimulatorArm64Test   # macOS hosts only; otherwise covered by the ci.yml macOS job
    ```
    Include `ci-local.sh`'s summary block in the PR's Verification section.
-   If any acceptance criterion needs a person or a physical device, write its procedure (module or sample `README.md`) and add a `- [ ] [#<N>] <check> — <procedure link>` line to `docs/MANUAL_VERIFICATION.md` in this PR; in the PR body mark that item **Deferred to final acceptance**, not as a pending blocker. Do not push to see whether CI passes: CI minutes are limited, so fix failures locally first.
+   If any acceptance criterion needs a person or a physical device, write its procedure (module or sample `README.md`) and add a `- [ ] [#<N>] <check> — <procedure link>` line to `docs/MANUAL_VERIFICATION.md` in this PR; in the PR body mark that item **Deferred to final acceptance**, not as a pending blocker. Do not push to see whether CI passes: fix failures locally first.
 2. **Commit, push, and open PR:**
    ```bash
    git status
@@ -103,24 +104,18 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
      --title "<concise PR title> (#<N>)" \
      --body "Closes #<N>\n\n## Summary\n...\n\n## Verification\n..."
    ```
-3. **Request the macOS / Windows runs only when needed (AGENTS.md "CI Minutes Policy"):**
-   Add the `ci:macos` label if the PR is phase-final (see Step 4) or changes macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Add `ci:windows` if the PR is phase-final or changes Windows-specific code (MSVC flags, `windows-x64` presets, `_WIN32` `#ifdef`s). Otherwise leave them off.
-   ```bash
-   gh pr edit <PR_NUMBER> --add-label "ci:macos"
-   gh pr edit <PR_NUMBER> --add-label "ci:windows"
-   ```
-4. **Enable auto-fix on the PR immediately (mandatory, do not ask first):**
+3. **Enable auto-fix on the PR immediately (mandatory, do not ask first):**
    As soon as the PR exists, subscribe to its activity so CI failures, review comments, and review requests are delivered back to the agent and fixed autonomously on `feat/issue-<N>-<slug>`.
    - **Claude Code:** call the `subscribe_pr_activity` tool with `owner`, `repo`, and `pullNumber=<PR_NUMBER>` right after `gh pr create` (or the GitHub MCP `create_pull_request`) returns. This is part of opening the PR, not an optional follow-up.
    - **Other harnesses:** use the harness's equivalent PR watch / auto-fix mechanism.
-   - **Wait for CI in the turn; never end a turn with a check pending** (AGENTS.md "Waiting for CI"). Subscriptions wake you only for failures, comments, reviews and the merge, and **not** when a check turns green. Right after every push or label change, start `scripts/ci/wait-pr-checks.sh <PR_NUMBER>` (Claude Code: Bash `run_in_background: true`, which re-invokes you when it exits) and act on its exit code:
+   - **Wait for CI in the turn; never end a turn with a check pending** (AGENTS.md "Waiting for CI"). Subscriptions wake you only for failures, comments, reviews and the merge, and **not** when a check turns green. Right after every push, start `scripts/ci/wait-pr-checks.sh <PR_NUMBER>` (Claude Code: Bash `run_in_background: true`, which re-invokes you when it exits) and act on its exit code:
      - `0` green: Step 5.
      - `1` failed: fix it, or apply the infrastructure rules.
      - `2` deadline: infrastructure failure.
      - `3` no `gh`: poll the GitHub MCP `get_check_runs` every 1–2 min, paced by a background `sleep 90`.
      Do not use 30-minute safety-net check-ins. If a turn has to end with checks pending, schedule one check-in at most 10 minutes out and confirm it exists (`CronList`).
    - Auto-fix pushes only to the PR's own feature branch; it never skips or disables tests to get green, and never force-pushes. Re-run `./scripts/ci-local.sh` before each auto-fix push and batch related fixes into a single push. Auto-fix only makes the PR mergeable; the merge itself happens in Step 5. Unsubscribe (`unsubscribe_pr_activity`) once the PR is merged or closed.
-5. **Transition issue status to `status:in-review`:**
+4. **Transition issue status to `status:in-review`:**
    ```bash
    gh issue edit <N> --remove-label "status:in-progress" --add-label "status:in-review"
    gh issue comment <N> --body "Opened PR #<PR_NUMBER> with implementation and verification results."
@@ -138,21 +133,19 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 - **Mid-phase PR (other issues in the phase remain open):** Proceed directly to Step 5 once CI checks pass. Do **not** invoke `phase-reviewer`.
 - **Phase-final PR (only `#N` remains open in the phase):**
-  1. Make sure the PR has the `ci:macos` and `ci:windows` labels so the macOS and Windows jobs run, then invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against Section 5 Exit Criteria.
+  1. Invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against its Phase Exit Criteria.
   2. Fix any blocking findings, push updates, re-run verification, and obtain `APPROVED` from `phase-reviewer` before merging.
 
 ---
 
 ## Step 5: PR Merge & Downstream DAG Unblocking
 
-Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it with `scripts/ci/wait-pr-checks.sh <PR_NUMBER>` (or the MCP poll fallback) as in Step 3.4, up to the deadlines in AGENTS.md "When a runner fails or hangs". A missing event is never a reason to stop waiting; do not end the workflow with an open, green PR. Manual/physical checks recorded in `docs/MANUAL_VERIFICATION.md` are not merge gates.
+Perform this step autonomously (see **Standing Authorization**): once the gates below pass, merge without asking the user. If CI is still running, wait for it with `scripts/ci/wait-pr-checks.sh <PR_NUMBER>` (or the MCP poll fallback) as in Step 3.3, up to the deadlines in AGENTS.md "When a runner fails or hangs". A missing event is never a reason to stop waiting; do not end the workflow with an open, green PR. Manual/physical checks recorded in `docs/MANUAL_VERIFICATION.md` are not merge gates.
 
-1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes).** If the PR has the `ci:macos` / `ci:windows` label, the `ci.yml` macOS / Windows check must also be green:
+1. **Verify CI checks pass and the PR is mergeable (no conflicts, no outstanding requested changes).** This includes the `ci.yml` Ubuntu, macOS and Windows checks:
    ```bash
    gh pr checks <PR_NUMBER>
    ```
-   If checks never started because the Actions quota is exhausted (queued indefinitely, or failed instantly with a billing / spending-limit annotation and no logs), do not wait or re-push: follow AGENTS.md "When the Actions quota is exhausted" (`./scripts/ci-local.sh --full`, summary in the PR body, deferred macOS/Windows re-runs in `docs/MANUAL_VERIFICATION.md`) and merge on that local gate.
-
    If a check is queued past its deadline, lost its runner, was cancelled or timed out, or fails only on macOS/iOS or Windows after two fix pushes, follow AGENTS.md "When a runner fails or hangs": merge on `./scripts/ci-local.sh --full` with the deferred re-run (and, for a platform-only code failure, a follow-up issue) recorded. Never leave the PR waiting on a runner.
 2. **Merge with a merge commit** (squash merges are disabled on the repository). Do not delete the remote branch or pass `--delete-branch`: the repository deletes head branches automatically on merge.
    ```bash

@@ -96,6 +96,9 @@ val buildNativeHost by tasks.registering(Exec::class) {
     description = "Builds kggml-whisper/native (whisper.cpp + kggml_whisper + JNI + tests) into <root>/build/native-whisper."
     workingDir(rootProject.layout.projectDirectory)
     commandLine("bash", buildHostScript, "--skip-ctest")
+    // The engine script builds the shared runtime first when it is missing; run the runtime task before it so
+    // parallel Gradle workers never configure the same runtime build directory at once.
+    dependsOn(":kggml-runtime:buildNativeHost")
 }
 
 val nativeCtest by tasks.registering(Exec::class) {
@@ -111,6 +114,9 @@ val buildNativeAndroid by tasks.registering(Exec::class) {
     description = "Cross-compiles whisper for Android (arm64-v8a, x86_64) into <root>/build/native-android-whisper-jniLibs."
     workingDir(rootProject.layout.projectDirectory)
     commandLine("bash", buildAndroidScript, "arm64-v8a", "x86_64")
+    // The engine script builds the shared runtime first when it is missing; run the runtime task before it so
+    // parallel Gradle workers never configure the same runtime build directory at once.
+    dependsOn(":kggml-runtime:buildNativeAndroid")
 }
 
 if (bundleNative) {
@@ -130,6 +136,10 @@ tasks.named<Test>("jvmTest") {
     val whisperJni = System.mapLibraryName("kggml_whisper_jni")
     systemProperty("kggml.test.requireNative", requireNative.toString())
     inputs.property("kggml.requireNative", requireNative)
+    // The native-backed tests' results depend on the host libraries they load: track them, so a native-only
+    // rebuild reruns the tests and a cached result is never reused for different (or missing) native builds.
+    inputs.files(fileTree(runtimeDir)).withPropertyName("nativeLibs.runtimeDir").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.files(fileTree(whisperDir)).withPropertyName("nativeLibs.whisperDir").withPathSensitivity(PathSensitivity.RELATIVE)
     doFirst {
         // Point the loaders at the host build trees only when they contain the JNI bridges; otherwise
         // native-backed tests are skipped (or fail when -Pkggml.requireNative=true).

@@ -38,6 +38,10 @@ TEST_F(BackendsTest, EnumeratesEveryKindInOrderWithCpuAlwaysPresent) {
     EXPECT_STREQ(infos[KGGML_BACKEND_METAL].name, "Metal");
     EXPECT_STREQ(infos[KGGML_BACKEND_VULKAN].name, "Vulkan");
     EXPECT_STREQ(infos[KGGML_BACKEND_COREML].name, "CoreML");
+    EXPECT_STREQ(infos[KGGML_BACKEND_OPENCL].name, "OpenCL");
+    // OpenCL only exists as a registered add-on module (Android); a plain runtime build never has it.
+    EXPECT_EQ(infos[KGGML_BACKEND_OPENCL].compiled, 0);
+    EXPECT_EQ(infos[KGGML_BACKEND_OPENCL].available, 0);
 }
 
 TEST_F(BackendsTest, CompiledFlagsMatchBuildConfiguration) {

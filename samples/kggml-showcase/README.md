@@ -1,10 +1,11 @@
 # Kggml Showcase
 
-Compose Multiplatform app (Android, iOS, JVM Desktop) that consumes the SDK only through `kggml-bom`. Screens:
+Compose Multiplatform app (Android, iOS, JVM Desktop) that consumes the SDK only through `kggml-bom`. The Android app
+also depends on the `kggml-runtime-vulkan` and `kggml-runtime-opencl` GPU add-ons. Screens:
 
 | Screen | Phase | What it shows |
 | --- | --- | --- |
-| Hardware Backend Inspector | 1 | Compute backends, thread counts and version metadata from `KggmlRuntime`. |
+| Hardware Backend Inspector | 1 | Compute backends (CPU, Metal, Vulkan, OpenCL, Core ML), thread counts and version metadata from `KggmlRuntime`. |
 | **Model Manager** | 4 | Curated catalog, resumable downloads, SHA-256 status, GGUF / Whisper header metadata with a peak-RAM estimate, and manual / OS low-memory eviction, with `:kggml-model-manager`. |
 | **Live Whisper Dictation & Audio Studio** | 3 | Live microphone dictation and PCM file transcription with `:kggml-whisper`. |
 | **LLM Chat, Structured Output & Vision** | 4 | Multi-turn streaming chat, thread / GPU-layer controls, KV-cache snapshots, JSON-schema extraction with live validation, embeddings, and in-memory VLM image analysis with `:kggml-llama` (llama.cpp + libmtmd). |
@@ -20,10 +21,11 @@ callback.
 ## Model Manager
 
 - **Catalog** (`ModelCatalog.kt`): Whisper tiny.en, Qwen2.5 0.5B Instruct Q4_K_M, SmolVLM 256M Instruct + its
-  `mmproj` projector, and Stable Diffusion v1.5, all public files on Hugging Face. Sizes are approximate and for display
-  only. No SHA-256 is published in the catalog yet, so those downloads are labelled **Unverified (no published
-  SHA-256)**: the transfer is still size-checked, the digest is computed and shown, and an entry with a `sha256` is
-  verified and rejected on mismatch. No model is ever committed to the repository.
+  `mmproj` projector, SD-Turbo Q8_0 and Stable Diffusion v1.5, all public files on Hugging Face. Sizes are approximate
+  and for display only. Only SD-Turbo has a SHA-256 in the catalog (pinned to one upstream revision); the other
+  downloads are labelled **Unverified (no published SHA-256)**: the transfer is still size-checked and the digest is
+  computed and shown. An entry with a `sha256` is verified and rejected on mismatch. No model is ever committed to the
+  repository.
 - **Downloads** use `ModelDownloader` (HTTP `Range` chunks into `<file>.part`). The row shows bytes, percent and a
   progress bar; **Pause** cancels the collection and keeps the `.part` file, **Resume** continues from it. Phases:
   Downloading → Verifying SHA-256 → Installed (or Failed with the reason; a SHA-256 mismatch deletes the partial file).
@@ -36,6 +38,11 @@ callback.
   **Inspect a model file** does the same for any path.
 - **Use in Chat / Whisper / Diffusion** hands the installed path to the matching screen (a vision LLM also gets its
   installed projector).
+- **Model picker on every feature screen:** the Whisper, Chat (model and vision projector) and Diffusion screens list
+  the downloaded models that fit them (installed catalog models, then other files in the model folder matched by
+  extension: `.bin` for Whisper, `.gguf` for Chat with `mmproj…` files offered as projectors, `.safetensors` / `.ckpt`
+  for Diffusion) next to a **Custom path** field. Picking a vision LLM also fills in its projector when that is
+  downloaded; the list follows downloads and deletions in the Model Manager.
 - **Loaded engines & low-memory eviction:** the Chat and Diffusion engines live in a `ResidentModelCache` (budget:
   half the physical RAM) subscribed to the platform's memory-pressure observer — `AndroidMemoryPressureObserver`
   (`onTrimMemory`), `IosMemoryPressureObserver` (memory warnings), or a manual observer on desktop. `MODERATE` trims
@@ -48,7 +55,8 @@ callback.
 
 ## LLM Chat, Structured Output & Vision
 
-- **Model controls:** GGUF model path, optional vision projector (`mmproj`), prompt template (ChatML, Gemma,
+- **Model controls:** GGUF model and optional vision projector (`mmproj`), each picked from the downloaded models or
+  given as a custom path, prompt template (ChatML, Gemma,
   User / Assistant for SmolVLM), system prompt, compute backend, **CPU threads** (Auto or 1…), **GPU layers** (All,
   or a count; always 0 on CPU) and max tokens. **Load model / Reload with these settings** applies them right away;
   otherwise a changed setting reloads the engine on next use (the old one is closed). The card shows the backend in
@@ -71,7 +79,12 @@ callback.
 
 ## Diffusion Image Studio
 
-- Model path (`.gguf`, `.safetensors`, `.ckpt`), compute backend, prompt and negative prompt, **sampling steps**
+- **Models:** the catalog offers **SD-Turbo Q8_0** (2.0 GB, Stability AI Community License; powered by Stability AI), a
+  distilled model that makes a 512x512 image in 1–4 steps without classifier-free guidance, and Stable Diffusion v1.5
+  (4.3 GB, ~20 steps with CFG, i.e. about ten times the work per image: slow on phones, which run diffusion on the
+  CPU). Choosing a model with settings of its own (SD-Turbo: 4 steps, CFG 1, 512x512) applies them; for a quick check
+  of SD 1.5 use 256x256 and 4–8 steps.
+- Model (a downloaded one, or a custom path to a `.gguf` / `.safetensors` / `.ckpt`), compute backend, prompt and negative prompt, **sampling steps**
   slider (1–50), **CFG scale** slider (1–20 in 0.5 steps), size (256 / 384 / 512), **seed** field with **Randomize**
   and a "new random seed for every image" switch (the chosen seed is always shown, so an image can be reproduced).
 - **Generate** streams `DiffusionEvent.Progress` into a progress bar (`Denoising step n / N`, seconds per step) and
@@ -93,9 +106,9 @@ callback.
   locked, timestamped line (`m:ss.s → m:ss.s`). **Stop** ends capture and commits the last turn; **Cancel**
   abandons the stream.
 - **Waveform visualizer:** a scrolling bar chart of the RMS level of the most recent chunks.
-- **Backend switcher:** `Auto`, `CPU`, `Metal`, `Vulkan`, `Core ML`. Selecting a backend while a model is loaded and
+- **Backend switcher:** `Auto`, `CPU`, `Metal`, `Vulkan`, `OpenCL`, `Core ML`. Selecting a backend while a model is loaded and
   idle reloads it right away (`WhisperEngine.reinitialize`); the line below shows the backend actually in use and
-  `use_gpu`. Unavailable backends fall back (Core ML → Metal → CPU, Vulkan → CPU).
+  `use_gpu`. Unavailable backends fall back (Core ML → Metal → CPU, Vulkan → CPU, OpenCL → CPU).
 - **iOS background stress toggle:** by default the studio installs `WhisperEngine.observeAppLifecycle`, which moves
   the engine to `CPU_ONLY` while the app is in the background. With **Background stress test** on, that fallback is
   removed so the selected backend keeps running in the background: `CPU` keeps transcribing, while `Metal` runs into
@@ -116,7 +129,8 @@ callback.
 # (default ~/.kggml/models, or set KGGML_MODELS_DIR)
 ./gradlew :samples:kggml-showcase:run -Pkggml.whisper.model=/path/to/ggml-tiny.en.bin -Pkggml.models.dir=/path/to/models
 
-# Android (grant the microphone permission when asked; push a model with adb and type its path)
+# Android (grant the microphone permission when asked; download models in the Models tab, or push one with adb and
+# type its path)
 ./gradlew :samples:kggml-showcase:installDebug -Pkggml.bundleNative=true
 ```
 
@@ -124,30 +138,48 @@ The desktop app passes `-Dkggml.{native,whisper.native,llama.native,diffusion.na
 that exists. Android needs the `INTERNET` permission (declared) for downloads; the camera uses the system camera app
 through `TakePicturePreview`, so no `CAMERA` permission is declared.
 
-iOS: embed `KggmlShowcase.framework` together with `GgmlRuntime.xcframework`, `KggmlWhisper.xcframework`,
-`KggmlLlama.xcframework` and `KggmlDiffusion.xcframework` in an Xcode host app whose `Info.plist` contains
-`NSMicrophoneUsageDescription`, `NSCameraUsageDescription` (VLM camera) and, for background dictation,
-`UIBackgroundModes` = `audio`. A `ggml-tiny.en.bin` bundled as an app resource is pre-filled as the Whisper model path.
+iOS: `iosApp/iosApp.xcodeproj` is the Xcode host app (UIKit app delegate hosting the Compose UI, product
+`KggmlShowcaseApp`). Its first build phase compiles the static `KggmlShowcase.framework` with Gradle
+(`scripts/ios/xcode-kotlin-framework.sh`, which finds JDK 17 on its own); it embeds the `GgmlRuntime`, `KggmlWhisper`,
+`KggmlLlama` and `KggmlDiffusion` xcframeworks from `build/native-ios`, built once first:
+
+```bash
+./scripts/ios/build-xcframeworks.sh            # build/native-ios: the four xcframeworks
+open samples/kggml-showcase/iosApp/iosApp.xcodeproj
+```
+
+Pick a simulator, or your iPhone after choosing your team under *Signing & Capabilities* (`DEVELOPMENT_TEAM` is left
+empty), and run; `./scripts/ios/build-sample-apps.sh all kggml-showcase` builds it unsigned from the command line, as
+CI does. `Info.plist` declares `NSMicrophoneUsageDescription`, `NSCameraUsageDescription` (VLM camera) and
+`UIBackgroundModes` = `audio` (background dictation). Models are downloaded in the Models tab (stored in Application
+Support/kggml/models); a `ggml-tiny.en.bin` added to the app target as a resource is pre-filled as the Whisper model.
 
 ## Automated tests
 
 ```bash
-./gradlew :samples:kggml-showcase:desktopTest        # controller state tests + Compose UI tests
-./gradlew :samples:kggml-showcase:testDebugUnitTest  # controller state tests on Android
+./gradlew :samples:kggml-showcase:desktopTest -Pkggml.requireNative=true   # everything below on the desktop JVM
+./gradlew :samples:kggml-showcase:testDebugUnitTest                        # the same commonTest on Android (Robolectric)
+./gradlew :samples:kggml-showcase:iosSimulatorArm64Test                    # macOS, needs the four xcframeworks
+./scripts/ci/run-android-instrumented.sh                                   # on a device / emulator, real native libraries
 ```
 
-All tests use deterministic fakes: no native libraries, no network, no model files. The one exception,
-`KggmlRuntimeInspectorDesktopTest`, runs the Hardware Backend Inspector against the host runtime when
-`kggml-runtime/native/scripts/build-host.sh` has been run, and otherwise checks the "runtime unavailable" state
-(`-Pkggml.requireNative=true` makes the host runtime mandatory).
+The controller and Compose UI tests use deterministic fakes (no native libraries, network or model files) and live
+in `commonTest`, so they run on desktop, the iOS simulator, Android local unit tests (Robolectric) and Android devices
+(every UI test extends `UiTestBase`, which carries `@RunWith(AndroidJUnit4)` on Android).
+`RealEngineEndToEndUiTest` drives the same UI through the production engine factories, runtime inspector and disk
+store with the engines' synthetic model fixtures (`TinyWhisperModel`, `TinyLlamaModel`): it skips where the native
+libraries do not load (Robolectric, desktop without host builds) and fails with `-Pkggml.requireNative=true`.
 
-- **commonTest** (desktop and Android unit tests):
+- **commonTest** (desktop, iOS simulator, Android local and instrumented):
   - `WhisperStudioControllerTest` (`WhisperFakes.kt`): start / stop / cancel, backend switching and reload, partial
     vs. committed rendering, file transcription, model-load / microphone / in-band stream errors, background stress.
   - `ModelManagerControllerTest` (`ModelFakes.kt`, an in-memory `ModelStore` with scripted `DownloadEvent`s): scan of
     installed / partial files, progress → verify → install → inspect, pause and resume from the `.part` file,
     SHA-256 mismatch, network failure, re-verification, delete / clear partials, "use", path inspection, manual and
     simulated-OS eviction (leased engines survive).
+  - `ModelChoicesTest`: which downloaded files each screen's model picker offers (kinds, other files by extension,
+    projector pairing). `ModelPickerUiTest`: the pickers on the Whisper, Chat and Diffusion screens (choose, custom
+    path, vision LLM + projector reaching the engine, nothing downloaded, live update after a download / delete).
   - `LlmChatControllerTest` (`LlmFakes.kt`): multi-turn streaming and prefix-preserving prompts, cancel mid-stream,
     in-band and load errors, thread / GPU-layer / backend reloads, snapshot save / restore, clear, eviction and
     reload, JSON-schema extraction (grammar, greedy, live validation, schema violations, invalid schema), embedding
@@ -156,10 +188,14 @@ All tests use deterministic fakes: no native libraries, no network, no model fil
     cancel mid-generation, in-band / load / parameter errors, backend reload, eviction, PNG export and its failure.
   - `JsonValidationTest`, `PromptTemplateTest`, `PngEncoderTest` (decodes the PNG and checks every CRC / Adler-32),
     `FormatTest`.
-- **desktopTest** (Compose UI, `runComposeUiTest` with `UiTestSupport.kt`'s `FakeShowcase`):
-  `ModelManagerUiTest`, `LlmChatUiTest`, `DiffusionStudioUiTest`, `WhisperStudioUiTest`, `ShowcaseAppUiTest` (every
-  screen reachable, work continues across navigation); plus `DiskModelStoreDesktopTest` (real file system, synthetic
-  GGUF header) and the exported PNG decoded by `javax.imageio`.
+  - Compose UI (`runComposeUiTest` with `UiTestSupport.kt`'s `FakeShowcase`): `ModelManagerUiTest`, `LlmChatUiTest`,
+    `DiffusionStudioUiTest`, `WhisperStudioUiTest`, `ShowcaseAppUiTest` (every screen reachable, work continues
+    across navigation).
+  - `RealEngineEndToEndUiTest` (real SDK): runtime inspector, WAV file and live (48 kHz stereo) transcription, LLM
+    load / streamed reply / KV snapshot, embeddings and grammar-constrained extraction, GGUF header inspection, and a
+    typed diffusion load error, all on `CPU_ONLY`.
+- **desktopTest**: `DiskModelStoreDesktopTest` (real file system, synthetic GGUF header), `PngExportImageIoDesktopTest`
+  (the PNG encoder read back by `javax.imageio`) and `KggmlRuntimeInspectorDesktopTest`.
 
 ## Manual verification (deferred to the final acceptance pass)
 

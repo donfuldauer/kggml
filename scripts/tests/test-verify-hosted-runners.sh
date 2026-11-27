@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Tests for scripts/ci/verify-hosted-runners.sh against small throwaway git repositories.
 #
-# Asserts the audit passes for workflows that only use GitHub-hosted images (plain and matrix) and for this
-# repository, and FAILS for: a runner label array, a runs-on expression, a non-hosted matrix entry, and the former
-# private-runner label / variable / keyword mentioned anywhere in a tracked file.
+# Passes: hosted images (plain, quoted and matrix); this repository.
+# Fails: any self-hosted label array, a runs-on expression (even one that falls back to a hosted image), a runner
+# group, and a non-hosted matrix entry.
 #
 # Usage: scripts/tests/test-verify-hosted-runners.sh
 set -euo pipefail
@@ -46,44 +46,45 @@ YML
   git -C "${dir}" add -A
 }
 
+# add_job <dir> <yaml lines...>: appends a job to the workflow.
+add_job() {
+  local dir="$1"; shift
+  printf '%s\n' "$@" >>"${dir}/.github/workflows/ci.yml"
+  git -C "${dir}" add -A
+}
+
+# expect_pass/expect_fail <name> <dir>
 expect_pass() {
-  local name="$1" dir="$2"
-  if "${AUDIT}" "${dir}" >/dev/null 2>&1; then ok "${name}"; else ko "${name} (expected pass)"; fi
+  if "${AUDIT}" "$2" >/dev/null 2>&1; then ok "$1"; else ko "$1 (expected pass)"; fi
 }
 expect_fail() {
-  local name="$1" dir="$2"
-  if "${AUDIT}" "${dir}" >/dev/null 2>&1; then ko "${name} (expected failure)"; else ok "${name}"; fi
+  if "${AUDIT}" "$2" >/dev/null 2>&1; then ko "$1 (expected failure)"; else ok "$1"; fi
 }
 
 make_repo "${WORK}/clean"
 expect_pass "clean repository" "${WORK}/clean"
 
-# Untracked files are not part of the repository and are ignored.
-make_repo "${WORK}/untracked"
-echo "self""-hosted" >"${WORK}/untracked/scratch.txt"
-expect_pass "untracked file ignored" "${WORK}/untracked"
-
 make_repo "${WORK}/labels"
-printf '  e:\n    runs-on: [linux, x64]\n' >>"${WORK}/labels/.github/workflows/ci.yml"
-git -C "${WORK}/labels" add -A
-expect_fail "runner label array" "${WORK}/labels"
+add_job "${WORK}/labels" "  e:" "    runs-on: [self-hosted, macOS, ARM64]"
+expect_fail "self-hosted label array" "${WORK}/labels"
+
+make_repo "${WORK}/plain-label"
+add_job "${WORK}/plain-label" "  e:" "    runs-on: self-hosted"
+expect_fail "plain self-hosted label" "${WORK}/plain-label"
 
 make_repo "${WORK}/expr"
-printf '  e:\n    runs-on: >-\n      ${{ vars.X == 1 && fromJSON(1) || 2 }}\n' >>"${WORK}/expr/.github/workflows/ci.yml"
-git -C "${WORK}/expr" add -A
-expect_fail "runs-on expression" "${WORK}/expr"
+add_job "${WORK}/expr" "  e:" "    runs-on: >-" \
+  "      \${{ vars.R == 'on' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\"]') || 'ubuntu-latest' }}"
+expect_fail "runs-on expression with a hosted fallback" "${WORK}/expr"
+
+make_repo "${WORK}/group"
+add_job "${WORK}/group" "  e:" "    runs-on:" "      group: my-runners"
+expect_fail "runner group" "${WORK}/group"
 
 make_repo "${WORK}/matrix"
 sed -i.bak 's/- os: ubuntu-24.04/- os: my-box/' "${WORK}/matrix/.github/workflows/ci.yml" && rm -f "${WORK}/matrix/.github/workflows/ci.yml.bak"
 git -C "${WORK}/matrix" add -A
 expect_fail "non-hosted matrix entry" "${WORK}/matrix"
-
-for token in "self""-hosted" "local""-mac" "MAC""_RUNNER"; do
-  make_repo "${WORK}/tok-${token}"
-  echo "See the ${token} runner." >>"${WORK}/tok-${token}/README.md"
-  git -C "${WORK}/tok-${token}" add -A
-  expect_fail "mention of ${token}" "${WORK}/tok-${token}"
-done
 
 expect_pass "this repository" "${REPO_ROOT}"
 

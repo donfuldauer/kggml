@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- The vendor's OpenCL library (Qualcomm Adreno and others) is not part of the NDK: apps targeting Android 12+
+             must declare it to load it. Optional: on devices without it the OpenCL add-on simply does not load. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+    </application>
+</manifest>

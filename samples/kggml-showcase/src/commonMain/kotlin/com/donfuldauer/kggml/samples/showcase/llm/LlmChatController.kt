@@ -1,5 +1,7 @@
 package com.donfuldauer.kggml.samples.showcase.llm
 
+import com.donfuldauer.kggml.core.InvalidInputException
+import com.donfuldauer.kggml.core.ModelLoadException
 import com.donfuldauer.kggml.core.BackendConfig
 import com.donfuldauer.kggml.core.ComputeBackend
 import com.donfuldauer.kggml.core.StopReason
@@ -88,6 +90,12 @@ data class LlmChatState(
     val error: String? = null,
 ) {
     val isBusy: Boolean get() = activity != ChatActivity.IDLE
+
+    /** The template [modelPath] was trained on, when its name tells ([PromptTemplate.forModel]). */
+    val suggestedTemplate: PromptTemplate? get() = PromptTemplate.forModel(modelPath.trim())
+
+    /** The chosen [template] is not the one the model expects: replies may never stop. */
+    val templateMismatch: Boolean get() = suggestedTemplate.let { it != null && it != template }
     val hasModel: Boolean get() = modelPath.isNotBlank()
     val canSend: Boolean get() = !isBusy && hasModel && draft.isNotBlank()
     val canExtract: Boolean get() = !isBusy && hasModel && schema.isNotBlank() && extractionInput.isNotBlank()
@@ -138,8 +146,10 @@ class LlmChatController(
     private val imageSource: ImageSource = NoImageSource,
     private val readFile: (String) -> ByteArray = { error("file access unavailable") },
     initialModelPath: String = "",
+    /** Sampler seed of chat replies; `null` (the app) draws a random one per reply, tests pin it. */
+    private val chatSeed: Long? = null,
 ) : AutoCloseable {
-    private val mutableState = MutableStateFlow(LlmChatState(modelPath = initialModelPath))
+    private val mutableState = MutableStateFlow(LlmChatState().withModel(initialModelPath))
     val state: StateFlow<LlmChatState> = mutableState.asStateFlow()
 
     val canPickFromGallery: Boolean get() = imageSource.canPickFromGallery
@@ -149,7 +159,7 @@ class LlmChatController(
     private var nextSnapshotId = 1
     private var closed = false
 
-    fun setModelPath(path: String) = mutableState.update { it.copy(modelPath = path) }
+    fun setModelPath(path: String) = mutableState.update { it.withModel(path) }
     fun setProjectorPath(path: String) = mutableState.update { it.copy(projectorPath = path) }
     fun setTemplate(template: PromptTemplate) = mutableState.update { it.copy(template = template) }
     fun setSystemPrompt(text: String) = mutableState.update { it.copy(systemPrompt = text) }
@@ -179,9 +189,13 @@ class LlmChatController(
     fun setImagePath(path: String) = mutableState.update { it.copy(imagePath = path) }
     fun setVisionQuestion(text: String) = mutableState.update { it.copy(visionQuestion = text) }
 
-    /** Selects a model file (from the Model Manager). */
+    /**
+     * Selects a model file (from the Model Manager or the model picker) with its own vision projector, if it has one.
+     * A projector only works with the model it was made for (libmtmd rejects any other), so the previous one is never
+     * carried over: without [projectorPath] the projector is cleared.
+     */
     fun useModel(path: String, projectorPath: String? = null) = mutableState.update {
-        it.copy(modelPath = path, projectorPath = projectorPath ?: it.projectorPath)
+        it.withModel(path).copy(projectorPath = projectorPath.orEmpty())
     }
 
     fun useProjector(path: String) = mutableState.update { it.copy(projectorPath = path) }
@@ -272,6 +286,10 @@ class LlmChatController(
         val grammar = try {
             LlamaGrammar.jsonSchema(current.schema)
         } catch (e: IllegalArgumentException) {
+            mutableState.update { it.copy(error = "Unsupported schema: ${e.message}") }
+            return
+        } catch (e: InvalidInputException) {
+            // The schema-to-GBNF converter rejects valid JSON it cannot express (e.g. `pattern`) with this type.
             mutableState.update { it.copy(error = "Unsupported schema: ${e.message}") }
             return
         }
@@ -389,6 +407,9 @@ class LlmChatController(
     private fun chatOptions(state: LlmChatState) = GenerationOptions(
         maxTokens = state.maxTokens,
         temperature = 0.7f,
+        // A light penalty keeps a small model from looping on one phrase (the usual llama.cpp chat setting).
+        repeatPenalty = CHAT_REPEAT_PENALTY,
+        seed = chatSeed,
         stopSequences = state.template.stopSequences,
     )
 
@@ -425,7 +446,7 @@ class LlmChatController(
                 mutableState.update { it.copy(status = "Cancelled") }
                 throw e
             } catch (t: Throwable) {
-                mutableState.update { it.copy(error = t.describe()) }
+                mutableState.update { it.copy(error = t.describe() + projectorHint(t, it.projectorPath)) }
             } finally {
                 mutableState.update { it.copy(activity = ChatActivity.IDLE) }
             }
@@ -510,3 +531,23 @@ private fun StopReason?.label(): String = when (this) {
     StopReason.CONTEXT_FULL -> "context full"
     null -> "unknown"
 }
+
+/**
+ * What to do about a vision projector that did not load: libmtmd refuses a projector made for another model (its
+ * embedding width differs from the text model's), and the native message cannot tell that apart from a broken file.
+ */
+internal fun projectorHint(failure: Throwable, projectorPath: String): String =
+    if (failure is ModelLoadException && projectorPath.isNotBlank() && failure.message.orEmpty().contains("projector")) {
+        "\n\nA vision projector (mmproj) only works with the model it was made for, e.g. SmolVLM's projector with the " +
+            "SmolVLM model. Pick the matching model (the picker fills in its projector), or clear the projector for " +
+            "text-only chat. If they do match, the projector file may be incomplete: delete it and download it again."
+    } else {
+        ""
+    }
+
+/** Repetition penalty of chat and vision replies; structured extraction runs without one (JSON repeats quotes). */
+internal const val CHAT_REPEAT_PENALTY = 1.1f
+
+/** Selects [path] and, when its name tells, the template that model expects (the user can still change it). */
+private fun LlmChatState.withModel(path: String): LlmChatState =
+    copy(modelPath = path, template = PromptTemplate.forModel(path.trim()) ?: template)

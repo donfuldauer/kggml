@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Audits dynamic ggml linkage of the host desktop build (Linux: readelf/nm, macOS: otool/nm).
 # Expects ./kggml-runtime/native/scripts/build-host.sh to have produced build/native/lib.
-# Shared by CI (.github/workflows/runtime-native*.yml) and ./scripts/ci-local.sh.
+# Shared by CI (.github/workflows/ci.yml) and ./scripts/ci-local.sh.
 #
 # Usage: scripts/ci/audit-host-linkage.sh [lib-dir]   (default: build/native/lib)
+# A cross-compiled Linux tree (e.g. build/native-linux-aarch64/lib) can pass its binutils as READELF / NM
+# (READELF=aarch64-linux-gnu-readelf NM=aarch64-linux-gnu-nm); the host's are used by default.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -12,30 +14,32 @@ lib="${1:-${REPO_ROOT}/build/native/lib}"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # Outputs are captured first so `grep -q` exiting early can never SIGPIPE a producer under pipefail.
 contains() { grep -Eq -- "$2" <<<"$1"; }
+READELF="${READELF:-readelf}"
+NM="${NM:-nm}"
 
 case "$(uname -s)" in
   Linux)
-    rt_dyn="$(readelf -d "${lib}/libkggml_runtime.so")"
+    rt_dyn="$("${READELF}" -d "${lib}/libkggml_runtime.so")"
     echo "${rt_dyn}"
     contains "${rt_dyn}" 'NEEDED.*\[libggml\.so' || fail "libkggml_runtime.so does not link libggml.so"
     contains "${rt_dyn}" 'NEEDED.*\[libggml-base\.so' || fail "libkggml_runtime.so does not link libggml-base.so"
     # kggml_runtime must import ggml, never define (embed) it.
     for so in libkggml_runtime.so libkggml_runtime_jni.so; do
-      defs="$(nm -D --defined-only "${lib}/${so}")"
+      defs="$("${NM}" -D --defined-only "${lib}/${so}")"
       if contains "${defs}" ' (ggml|gguf)_'; then
         grep -E ' (ggml|gguf)_' <<<"${defs}" >&2
         fail "${so} embeds ggml symbols"
       fi
     done
-    jni_dyn="$(readelf -d "${lib}/libkggml_runtime_jni.so")"
+    jni_dyn="$("${READELF}" -d "${lib}/libkggml_runtime_jni.so")"
     contains "${jni_dyn}" 'NEEDED.*\[libkggml_runtime\.so' || fail "libkggml_runtime_jni.so does not link libkggml_runtime.so"
     # The JNI bridge exports only Java_* entry points.
-    stray="$(nm -D --defined-only "${lib}/libkggml_runtime_jni.so" | awk '$2 ~ /[TDB]/ {print $3}' \
+    stray="$("${NM}" -D --defined-only "${lib}/libkggml_runtime_jni.so" | awk '$2 ~ /[TDB]/ {print $3}' \
       | grep -v '^Java_com_donfuldauer_kggml_runtime_KggmlRuntimeJni_' || true)"
     [[ -z "${stray}" ]] || { echo "${stray}" >&2; fail "libkggml_runtime_jni.so exports non-JNI symbols"; }
-    contains "$(nm -D --defined-only "${lib}/libggml-base.so")" ' ggml_init$' \
+    contains "$("${NM}" -D --defined-only "${lib}/libggml-base.so")" ' ggml_init$' \
       || fail "libggml-base.so does not export ggml_init"
-    contains "$(nm -D --defined-only "${lib}/libggml.so")" ' ggml_backend_reg_by_name$' \
+    contains "$("${NM}" -D --defined-only "${lib}/libggml.so")" ' ggml_backend_reg_by_name$' \
       || fail "libggml.so does not export ggml_backend_reg_by_name"
     ;;
   Darwin)

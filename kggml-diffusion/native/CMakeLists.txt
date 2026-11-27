@@ -20,10 +20,17 @@
 
 cmake_minimum_required(VERSION 3.24)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../kggml-runtime/native/cmake/kggml-version.cmake") # KGGML_VERSION
+
 project(kggml_diffusion
-    VERSION 1.0.0
+    VERSION ${KGGML_VERSION}
     DESCRIPTION "Kggml stable-diffusion.cpp engine"
     LANGUAGES C CXX)
+
+# Host processes may load msvcp140 < 14.40 (e.g. a JVM's bundled copy); see kggml-runtime/native (issue #65).
+if (MSVC)
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
 
 # Exact upstream stable-diffusion.cpp pin (no release tag; `git describe` = master-612-d7ecbe1-2-g3b4d26f). Its
 # ggml submodule is upstream ggml 404fcb9d, two commits behind the :kggml-runtime pin (ggml v0.9.9, a04eea07),
@@ -93,7 +100,7 @@ endif()
 # ---------------------------------------------------------------------------------------------------------
 
 find_package(Threads REQUIRED)
-find_package(kggml-runtime 1.0 CONFIG REQUIRED)
+find_package(kggml-runtime ${KGGML_VERSION} CONFIG REQUIRED)
 
 if (NOT TARGET kggml::runtime OR NOT TARGET kggml::ggml)
     message(FATAL_ERROR "kggml-runtime package does not provide kggml::runtime / kggml::ggml")

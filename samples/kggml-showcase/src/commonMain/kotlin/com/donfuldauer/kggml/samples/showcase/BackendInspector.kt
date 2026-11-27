@@ -72,6 +72,7 @@ val INSPECTED_BACKENDS: List<ComputeBackend> = listOf(
     ComputeBackend.CPU_ONLY,
     ComputeBackend.GPU_METAL,
     ComputeBackend.GPU_VULKAN,
+    ComputeBackend.GPU_OPENCL,
     ComputeBackend.NPU_COREML,
 )
 
@@ -80,6 +81,7 @@ fun ComputeBackend.displayName(): String = when (this) {
     ComputeBackend.CPU_ONLY -> "CPU"
     ComputeBackend.GPU_METAL -> "Metal"
     ComputeBackend.GPU_VULKAN -> "Vulkan"
+    ComputeBackend.GPU_OPENCL -> "OpenCL"
     ComputeBackend.NPU_COREML -> "Core ML"
 }
 

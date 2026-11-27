@@ -3,6 +3,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+# shellcheck source=ci/python.sh
+source "${REPO_ROOT}/scripts/ci/python.sh"
+kggml_require_python 3.11
 
 errors=0
 
@@ -65,7 +68,7 @@ for dir in .claude/skills .gemini/skills .antigravity/skills; do
 done
 
 # 4. Verify .codex/config.toml and .codex/agents/*.toml parse cleanly and match canonical agents
-python3 - <<'PY' || errors=$((errors + 1))
+kggml_python - <<'PY' || errors=$((errors + 1))
 import glob
 import os
 import re

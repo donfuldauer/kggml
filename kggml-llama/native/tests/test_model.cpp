@@ -115,7 +115,7 @@ TEST(LlamaModel, CoreMlIsUnavailable) {
 
 TEST(LlamaModel, MissingGpuBackendIsUnavailable) {
     ASSERT_EQ(kggml_runtime_init(), KGGML_STATUS_OK);
-    for (int32_t kind : {KGGML_BACKEND_METAL, KGGML_BACKEND_VULKAN}) {
+    for (int32_t kind : {KGGML_BACKEND_METAL, KGGML_BACKEND_VULKAN, KGGML_BACKEND_OPENCL}) {
         int32_t available = 0;
         ASSERT_EQ(kggml_runtime_backend_available(kind, &available), KGGML_STATUS_OK);
         if (available == 1) continue; // exercised on hosts / CI runners that have this GPU backend

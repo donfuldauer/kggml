@@ -2,6 +2,7 @@ package com.donfuldauer.kggml.samples.showcase.llm
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class PromptTemplateTest {
     private val conversation = listOf(
@@ -34,6 +35,17 @@ class PromptTemplateTest {
             "<|im_start|>User: <__media__><__media__>\nDescribe<end_of_utterance>\nAssistant:",
             PromptTemplate.USER_ASSISTANT.format("", listOf(ChatMessage(ChatRole.USER, "Describe")), imageCount = 2),
         )
+    }
+
+    @Test
+    fun forModelRecognizesTheModelFamilyFromItsFileName() {
+        assertEquals(PromptTemplate.CHATML, PromptTemplate.forModel("/models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"))
+        assertEquals(PromptTemplate.CHATML, PromptTemplate.forModel("C:\\models\\qwen2.5-1.5b-instruct.gguf"))
+        assertEquals(PromptTemplate.CHATML, PromptTemplate.forModel("SmolLM2-360M-Instruct-Q8_0.gguf"))
+        assertEquals(PromptTemplate.USER_ASSISTANT, PromptTemplate.forModel("/sdcard/SmolVLM-256M-Instruct-Q8_0.gguf"))
+        assertEquals(PromptTemplate.GEMMA, PromptTemplate.forModel("gemma-3-1b-it-q4_0.gguf"))
+        assertNull(PromptTemplate.forModel("Llama-3.2-1B-Instruct-Q4_K_M.gguf"), "unknown family: no guess")
+        assertNull(PromptTemplate.forModel(""))
     }
 
     @Test

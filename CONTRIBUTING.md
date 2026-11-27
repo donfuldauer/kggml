@@ -21,7 +21,7 @@ Prerequisites:
 
 - JDK 17
 - CMake 3.24+ and a C++17 compiler (Clang, GCC or MSVC)
-- Python 3 and Bash, for the scripts in `scripts/`
+- Python 3.9+ (3.11+ for the agent-mirror scripts) and Bash, for the scripts in `scripts/`
 - Optional: the Android SDK and NDK for Android builds; macOS with Xcode for iOS builds
 
 ```bash
@@ -39,7 +39,8 @@ every platform.
 | Directory | Contents |
 | --- | --- |
 | `kggml-core-api/` | Public API types shared by every engine. Pure Kotlin, no native code. |
-| `kggml-runtime/` | The one shared ggml build (CPU, Metal, Vulkan) and its JNI / cinterop bindings |
+| `kggml-runtime/` | The one shared ggml build (CPU, plus Metal on Apple platforms) and its JNI / cinterop bindings |
+| `kggml-runtime-vulkan/`, `kggml-runtime-opencl/` | Optional GPU add-ons: ggml's Vulkan (Android, desktop Linux) and OpenCL (Android) backends as modules the runtime loads |
 | `kggml-whisper/`, `kggml-llama/`, `kggml-diffusion/` | One engine each: the upstream library as a git submodule, a C wrapper in `native/`, Kotlin bindings in `src/` |
 | `kggml-model-manager/` | Optional pure-Kotlin downloads, model inspection and caching |
 | `kggml-bom/` | The BOM that aligns all published versions |
@@ -75,7 +76,7 @@ Every change ships with tests:
 | --- | --- |
 | Pure Kotlin | `commonTest` with deterministic fakes (`./gradlew :<module>:allTests`) |
 | C/C++ | CTest / GoogleTest suites in `native/tests`, run by each `build-host.sh` |
-| Bindings | `jvmTest`, `androidUnitTest` and `iosSimulatorArm64Test` against the real native libraries |
+| Bindings | `jvmTest`, `androidUnitTest`, `iosSimulatorArm64Test` and (core-api, runtime) `macosArm64Test` against the real native libraries |
 | Samples and UI | Compose UI tests and the binary symbol audit of `samples/whisper-only-minimal` |
 
 Test fixtures must be small, synthetic or MIT / CC0 licensed, and recorded in [NOTICE](NOTICE). Never commit model
@@ -100,8 +101,7 @@ module's README and listed in [`docs/MANUAL_VERIFICATION.md`](docs/MANUAL_VERIFI
 4. If you change `AGENTS.md`, `.agents/agents/` or `.agents/skills/`, run `./scripts/sync-agent-mirrors.sh` and
    `./scripts/verify-agent-parity.sh`.
 5. Fill in the pull request template. A maintainer reviews the change and merges it with a merge commit once CI
-   passes. The macOS and Windows CI jobs cost more and only run when a maintainer adds the `ci:macos` or
-   `ci:windows` label.
+   passes. Every ready pull request runs the Ubuntu, macOS and Windows CI jobs.
 
 Commits made by AI coding agents keep the agent as author and credit the person it works for with a
 `Co-authored-by:` trailer, which the hook from `./scripts/install-git-hooks.sh` adds.

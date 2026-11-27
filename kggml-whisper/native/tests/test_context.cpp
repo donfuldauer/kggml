@@ -163,7 +163,8 @@ TEST(Context, InvalidArguments) {
 
 TEST(Context, UnavailableBackendsAreRejected) {
     ASSERT_EQ(kggml_runtime_init(), KGGML_STATUS_OK);
-    for (int32_t kind : {static_cast<int32_t>(KGGML_BACKEND_METAL), static_cast<int32_t>(KGGML_BACKEND_VULKAN)}) {
+    for (int32_t kind : {static_cast<int32_t>(KGGML_BACKEND_METAL), static_cast<int32_t>(KGGML_BACKEND_VULKAN),
+                         static_cast<int32_t>(KGGML_BACKEND_OPENCL)}) {
         int32_t available = 0;
         ASSERT_EQ(kggml_runtime_backend_available(kind, &available), KGGML_STATUS_OK);
         kggml_whisper_context_params p{};

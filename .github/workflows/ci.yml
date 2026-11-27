@@ -1,38 +1,31 @@
 name: CI (Phase 1 cross-platform matrix)
 
-# Phase 1 matrix (issue #6). Billed minutes are limited on this private repository (see AGENTS.md
-# "CI Minutes Policy"), so only the 1x-billed Ubuntu job runs on every ready PR push:
+# Every ready pull request runs all three platform jobs on GitHub-hosted runners:
 #   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + llama (llama.cpp + libmtmd) + diffusion
-#              (stable-diffusion.cpp) + CTest + ggml / upstream pins + host linkage audits,
-#              `./gradlew check` (commonTest, jvmTest, androidUnitTest, BOM checks, sample audits) with
-#              native-backed tests mandatory (incl. the :integration-tests dual-engine coexistence suite: whisper +
-#              llama inferring concurrently in one JVM on the single shared ggml runtime, plus diffusion), Android NDK cross-compile + linkage audits,
-#              whisper-only-minimal release APK binary symbol audit, Android APKs + desktop jar for both samples,
-#              and the Maven Central release dry-run (scripts/ci/stage-release.sh, as release.yml runs it).
-#              (This job also covers everything runtime-native.yml used to run per PR, so that workflow is
-#              now manual-dispatch only and the same work is not billed twice.)
-#   - macOS (10x billed):  only on PRs labelled `ci:macos` or a manual dispatch. macOS arm64 native runtime
-#              (Metal + Accelerate) + whisper + llama + diffusion + CTest, JVM tests, GgmlRuntime/KggmlWhisper.xcframework
-#              (CoreML) + KggmlLlama.xcframework + KggmlDiffusion.xcframework, iosSimulatorArm64Test, sample iOS
-#              frameworks + whisper-only-minimal iOS symbol audit, release dry-run with the iOS components.
-#   - Windows (2x billed): only on PRs labelled `ci:windows` or a manual dispatch. Windows x64 native
-#              runtime + whisper + llama + diffusion (MSVC) + CTest, JVM tests against it.
+#              (stable-diffusion.cpp) + CTest + ggml / upstream pins + host linkage audits, the linux-aarch64 cross
+#              build with CTest under qemu, `./gradlew check` (commonTest, jvmTest, androidUnitTest, BOM checks, sample
+#              audits) with native-backed tests mandatory (incl. the :integration-tests dual-engine coexistence suite:
+#              whisper + llama inferring concurrently in one JVM on the single shared ggml runtime, plus diffusion),
+#              Android NDK cross-compile + linkage audits, the GPU add-on builds and the desktop Vulkan test on
+#              lavapipe, whisper-only-minimal release APK binary symbol audit, Android APKs + desktop jar for both
+#              samples, and the Maven Central release dry-run (scripts/ci/stage-release.sh, as release.yml runs it).
+#   - macOS:   macOS arm64 native runtime (Metal + Accelerate) + whisper + llama + diffusion + CTest, JVM tests,
+#              GgmlRuntime/KggmlWhisper.xcframework (CoreML) + KggmlLlama.xcframework + KggmlDiffusion.xcframework,
+#              iosSimulatorArm64Test and macosArm64Test, sample iOS frameworks + whisper-only-minimal iOS symbol
+#              audit, both samples' Xcode apps (simulator + device, unsigned), release dry-run with the iOS components.
+#   - Windows: Windows x64 native runtime + whisper + llama + diffusion (MSVC) + CTest, JVM tests against it, and
+#              the windows-arm64 cross build.
+# Android instrumented suites need an emulator and are run by hand (scripts/ci/run-android-instrumented.sh).
 # Checkouts fetch first-level submodules only (`submodules: true`): stable-diffusion.cpp's own nested submodules
 # (its ggml copy, libwebp, libwebm, web UI) are never built, and none of the other upstreams has nested ones.
 # Not run: draft PRs, docs/agent-instruction-only PRs (paths-ignore below), and pushes to main (PRs
 # merge with a merge commit after this workflow passed on the PR head, so a main run repeats it).
-# Every job runs on a standard GitHub-hosted runner (ubuntu-latest, macos-latest, windows-latest); when hosted
-# jobs are refused (quota / billing) the fallback is the local gate. Every job and slow step has a timeout, so a
-# check always ends; a runner that never starts, is lost, or times out is handled per AGENTS.md "When a runner fails or hangs"
-# (agents never wait on CI open-endedly).
-# Every Ubuntu step is reproducible locally with `./scripts/ci-local.sh --full`, the fallback gate
-# when the Actions quota is exhausted.
+# Every job and slow step has a timeout, so a check always ends (AGENTS.md "When a runner fails or hangs").
+# Every Ubuntu step is reproducible locally with `./scripts/ci-local.sh --full`.
 
 on:
   pull_request:
-    # `labeled` lets adding `ci:macos` / `ci:windows` start that job without a new push; the Ubuntu job
-    # skips `labeled` events because the PR's head already ran it.
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [opened, synchronize, reopened, ready_for_review]
     paths-ignore:
       - "**/*.md"
       - "docs/**"
@@ -48,9 +41,7 @@ permissions:
   contents: read
 
 concurrency:
-  # A `labeled` run gets its own throwaway group so adding a label never cancels the head's build
-  # (and is never cancelled by it).
-  group: ci-${{ github.ref }}-${{ github.event.action == 'labeled' && github.run_id || 'build' }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -63,8 +54,8 @@ env:
 jobs:
   linux:
     name: Ubuntu (Linux JVM, Android, CTest)
-    # Draft PRs start no runner (skipped jobs are not billed); marking the PR ready runs it.
-    if: github.event.action != 'labeled' && !github.event.pull_request.draft
+    # Draft PRs start no runner; marking the PR ready runs it.
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     # llama.cpp + libmtmd and stable-diffusion.cpp (host + 2 Android ABIs each) more than double the cold native
     # compile time; ccache keeps warm runs well below this.
@@ -78,8 +69,9 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      # Everything the job needs (Ninja, CMake, the aarch64 cross toolchain, qemu-user), installed when missing.
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/linux.sh --arm64-cross
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2
@@ -100,6 +92,16 @@ jobs:
           ./scripts/ci/verify-ggml-pin.sh
           ./kggml-runtime/native/scripts/build-host.sh
           ./scripts/ci/audit-host-linkage.sh
+
+      # Issue #91: the JVM jar also ships linux-aarch64. Cross-compiled here (no arm64 Linux runner); CTest runs the
+      # aarch64 test binaries under qemu-user, and the release staging path is checked for the right ELF machine.
+      - name: Native runtime (linux-aarch64 cross, CTest under qemu-aarch64) + linkage audit + staged arch check
+        run: |
+          ./kggml-runtime/native/scripts/build-host.sh --target linux-aarch64
+          READELF=aarch64-linux-gnu-readelf NM=aarch64-linux-gnu-nm \
+            ./scripts/ci/audit-host-linkage.sh build/native-linux-aarch64/lib
+          ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=linux-aarch64 --console=plain
+          python3 scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm linux-aarch64
 
       - name: Native whisper (linux-x64) build + CTest + dynamic ggml linkage audit
         run: |
@@ -126,9 +128,9 @@ jobs:
       # checksum and gpg signature audit. iOS components are built only on macOS (see the macOS job).
       - name: Release dry-run (signed Maven Central staging + audit, JVM/Android/metadata)
         timeout-minutes: 20
-        run: ./scripts/ci/stage-release.sh --dry-run --skip-targets ios -- $NATIVE_GRADLE_ARGS
+        run: ./scripts/ci/stage-release.sh --dry-run --skip-targets ios,macos -- $NATIVE_GRADLE_ARGS
 
-      - name: Android NDK cross-compile (arm64-v8a, x86_64)
+      - name: Android NDK cross-compile (arm64-v8a, x86_64) incl. the Vulkan and OpenCL GPU add-ons
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
           ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
@@ -139,11 +141,36 @@ jobs:
           ./scripts/ci/audit-llama-linkage.sh android arm64-v8a x86_64
           ./kggml-diffusion/native/scripts/build-android.sh arm64-v8a x86_64
           ./scripts/ci/audit-diffusion-linkage.sh android arm64-v8a x86_64
+          # Android GPU add-on (kggml-runtime-vulkan): ggml's Vulkan backend module against the runtime's ggml.
+          ./kggml-runtime-vulkan/native/scripts/build-android.sh arm64-v8a x86_64
+          ./scripts/ci/audit-gpu-addon.sh vulkan arm64-v8a x86_64
+          # Android OpenCL add-on (kggml-runtime-opencl): ggml's OpenCL backend module (Adreno kernels).
+          ./kggml-runtime-opencl/native/scripts/build-android.sh arm64-v8a x86_64
+          ./scripts/ci/audit-gpu-addon.sh opencl arm64-v8a x86_64
 
-      - name: whisper-only-minimal binary symbol audit (release APK, zero llama / stable-diffusion symbols)
+      # Issue #92: the JVM desktop Vulkan add-on (kggml-runtime-vulkan's jar module), built against the runtime's ggml and
+      # registered by the JVM loader. Mesa's lavapipe is a software Vulkan device, so the runtime must report Vulkan
+      # available and AUTO must resolve to it (GGML_VK_VISIBLE_DEVICES=0 lets ggml use a CPU-type device).
+      - name: Desktop Vulkan add-on (linux-x86_64 module) + JVM runtime test on Mesa lavapipe
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
+          ./scripts/ci/setup/linux.sh --vulkan
+          ./kggml-runtime-vulkan/native/scripts/build-host.sh
+          ./scripts/ci/audit-gpu-addon.sh vulkan --desktop linux-x86_64
+          report=kggml-runtime/build/test-results/jvmTest/TEST-com.donfuldauer.kggml.runtime.JvmNativeRuntimeTest.xml
+          ./gradlew :kggml-runtime:jvmTest --tests '*JvmNativeRuntimeTest*' $NATIVE_GRADLE_ARGS \
+            -Pkggml.test.vulkanAddonDir=build/native-vulkan-jvm/kggml/native-addons/linux-x86_64/ggml-vulkan \
+            || { grep -A8 '<failure' "${report}" >&2 || true; exit 1; }
+          grep -q 'testcase name="theDesktopVulkanAddonRegistersWhenConfigured' "${report}"
+          ! grep -A1 'testcase name="theDesktopVulkanAddonRegistersWhenConfigured' "${report}" | grep -q '<skipped' \
+            || { echo "the Vulkan add-on test was skipped" >&2; exit 1; }
+
+      - name: whisper-only-minimal binary symbol audit (release APK + desktop app, zero llama / stable-diffusion symbols)
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
           ./scripts/ci/audit-minimal-sample.sh android
+          # Desktop: the app jar + runtime classpath, and the linux-x64 host native libraries it loads (ELF).
+          ./scripts/ci/audit-minimal-sample.sh desktop
 
       - name: Assemble samples (Android APKs, desktop jar) via kggml-bom
         run: >
@@ -151,6 +178,14 @@ jobs:
           :samples:kggml-showcase:assembleDebug
           :samples:kggml-showcase:desktopJar
           :samples:whisper-only-minimal:assembleDebug
+
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
 
       - name: Upload reports on failure
         if: failure()
@@ -163,30 +198,26 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore
 
   macos:
     name: macOS (macOS JVM, iOS XCFramework + simulator tests, CTest)
-    # Skipped jobs start no runner and are not billed. On a `labeled` event, only the `ci:macos`
-    # label itself starts a run, not unrelated labels added to an already-labelled PR.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       contains(github.event.pull_request.labels.*.name, 'ci:macos') &&
-       (github.event.action != 'labeled' || github.event.label.name == 'ci:macos'))
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: macos-latest
     # Every step below has its own timeout so a hang fails in minutes with a named step instead of holding the
     # PR (and the agent waiting on it) for hours; the job cap is only a backstop. Agents treat a timed-out or
     # runner-lost job per AGENTS.md "When a runner fails or hangs".
-    timeout-minutes: 90
+    timeout-minutes: 140
     steps:
       - name: Checkout repository (with ggml submodule)
         uses: actions/checkout@v4
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: brew install ninja || true
+      # Ninja and CMake when missing (Homebrew, as the runner user); checks Xcode and an iOS simulator runtime.
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/macos.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -222,9 +253,14 @@ jobs:
           ./kggml-diffusion/native/scripts/build-host.sh
           ./scripts/ci/audit-diffusion-linkage.sh host
 
-      - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64)
+      - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64 + macosArm64)
         timeout-minutes: 20
         run: ./kggml-runtime/native/scripts/build-ios-xcframework.sh
+
+      # Issue #93: Kotlin/Native macOS (core-api and runtime so far) against the framework's macos-arm64 slice, natively.
+      - name: Kotlin/Native macOS tests (macosArm64Test, core-api + runtime, real GgmlRuntime.framework)
+        timeout-minutes: 20
+        run: ./gradlew :kggml-core-api:macosArm64Test :kggml-runtime:macosArm64Test $NATIVE_GRADLE_ARGS
 
       - name: Build KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML, linked to GgmlRuntime)
         timeout-minutes: 20
@@ -244,7 +280,9 @@ jobs:
 
       - name: JVM tests (incl. dual-engine coexistence) against the macOS native runtime
         timeout-minutes: 20
-        run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
+        run: |
+          ./gradlew jvmTest :samples:kggml-showcase:desktopTest :samples:whisper-only-minimal:desktopTest $NATIVE_GRADLE_ARGS
+          ./scripts/ci/audit-minimal-sample.sh desktop $NATIVE_GRADLE_ARGS
 
       # A simulator left booted or wedged (e.g. by the image's own setup) can stall the test run, so start
       # from a clean slate.
@@ -289,10 +327,24 @@ jobs:
         timeout-minutes: 10
         run: ./scripts/ci/audit-minimal-sample.sh ios
 
+      # The Xcode host apps of both samples (samples/*/iosApp), unsigned: they compile the Kotlin frameworks through
+      # their own build phase and embed the xcframeworks built above, as a developer's Xcode build does.
+      - name: Build the samples' iOS apps (simulator + device, unsigned)
+        timeout-minutes: 20
+        run: ./scripts/ios/build-sample-apps.sh all
+
       - name: Shut down simulators
         if: always()
         timeout-minutes: 3
         run: xcrun simctl shutdown all || true
+
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
 
       - name: Upload reports on failure
         if: failure()
@@ -305,17 +357,12 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore
 
   windows:
     name: Windows (Windows x64 native, JVM, CTest)
-    # Windows minutes are billed at 2x, so this runs only on `ci:windows`-labelled PRs or a manual
-    # dispatch, mirroring the macOS gate above.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' &&
-       contains(github.event.pull_request.labels.*.name, 'ci:windows') &&
-       (github.event.action != 'labeled' || github.event.label.name == 'ci:windows'))
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:
@@ -333,6 +380,11 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Everything the job needs (Visual Studio C++ x64 + ARM64 tools, clang, Ninja), installed when missing.
+      - name: Runner setup (installs missing build tools)
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1 -Arm64
+
       - name: Set up MSVC developer environment (x64)
         uses: ilammy/msvc-dev-cmd@v1
         with:
@@ -345,7 +397,6 @@ jobs:
       - name: Native runtime (windows-x64, MSVC) build + CTest
         shell: cmd
         run: |
-          where ninja >nul 2>&1 || choco install ninja -y --no-progress || exit /b 1
           cmake -S kggml-runtime/native --preset windows-x64 -B build/native || exit /b 1
           cmake --build build/native --config Release -j 4 || exit /b 1
           ctest --test-dir build/native --build-config Release --output-on-failure -j 4
@@ -372,7 +423,31 @@ jobs:
           ctest --test-dir build/native-diffusion --build-config Release --output-on-failure -j 4
 
       - name: JVM tests (incl. dual-engine coexistence) against the Windows native runtime
-        run: ./gradlew jvmTest :samples:kggml-showcase:desktopTest $NATIVE_GRADLE_ARGS
+        run: |
+          ./gradlew jvmTest :samples:kggml-showcase:desktopTest :samples:whisper-only-minimal:desktopTest $NATIVE_GRADLE_ARGS
+          ./scripts/ci/audit-minimal-sample.sh desktop $NATIVE_GRADLE_ARGS
+
+      # Issue #91: the JVM jar also ships windows-aarch64 (Windows on ARM). Cross-compiled with LLVM clang for the
+      # MSVC ABI (ggml rejects cl.exe for ARM); there is no arm64 Windows runner to run it, so the staged DLLs are
+      # checked for the ARM64 PE machine type instead.
+      - name: Native runtime (windows-arm64 cross, LLVM clang) build
+        shell: cmd
+        run: call kggml-runtime\native\scripts\build-windows-arm64.cmd build\native-release-install
+
+      - name: Stage the windows-aarch64 runtime + staged arch check
+        run: |
+          ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=windows-aarch64 \
+            -x :kggml-runtime:buildNativeHostRelease --console=plain
+          source scripts/ci/python.sh && kggml_require_python 3.9
+          kggml_python scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm windows-aarch64
+
+      - name: Print JVM crash reports on failure
+        if: failure()
+        shell: bash
+        run: |
+          find . -name 'hs_err_pid*.log' -not -path './.git/*' -print0 | while IFS= read -r -d '' f; do
+            echo "::group::${f}"; sed -n '1,150p' "${f}"; echo '--- native libraries:'; grep -E '\.so|\.dylib|\.dll' "${f}" | grep -v '^Event' | head -150; echo "::endgroup::"
+          done
 
       - name: Upload reports on failure
         if: failure()
@@ -385,4 +460,5 @@ jobs:
             build/native-llama/Testing/Temporary/
             build/native-diffusion/Testing/Temporary/
             **/build/reports/
+            **/hs_err_pid*.log
           if-no-files-found: ignore

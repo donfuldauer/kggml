@@ -2,11 +2,10 @@
 language: "en-US"
 
 reviews:
-  # Disabled by default so routine iterative PRs stay fast and quiet.
-  # Invoke on demand via `@coderabbitai review` when explicitly requested by a human developer.
-  # Milestone and phase-gate audits are owned exclusively by the internal `phase-reviewer` agent.
+  # Every ready pull request gets an automatic review; drafts are skipped until marked ready.
+  # `@coderabbitai review` asks for another pass. Milestone and phase-gate audits stay with the `phase-reviewer` agent.
   auto_review:
-    enabled: false
+    enabled: true
     drafts: false
   poem: false
   collapse_walkthrough: true
@@ -16,15 +15,16 @@ reviews:
         Enforce Kotlin Multiplatform engineering rules for `com.donfuldauer.kggml`:
         1. No global engine singletons; inference engines must be instantiable `AutoCloseable` classes with a dedicated single-thread `CoroutineDispatcher` serializing `init`, `infer`, and `close`.
         2. Verify cooperative coroutine cancellation propagates cleanly into native abort callbacks (`abort_callback`, `llama_set_abort_callback`, etc.).
-        3. Verify `BackendConfig` (`CPU_ONLY`, `GPU_METAL`, `GPU_VULKAN`, `NPU_COREML`) is respected at runtime without compile-time-only locks, especially `use_gpu = false` on iOS for Whisper.
+        3. Verify `BackendConfig` (`CPU_ONLY`, `GPU_METAL`, `GPU_VULKAN`, `GPU_OPENCL`, `NPU_COREML`) is respected at runtime without compile-time-only locks, especially `use_gpu = false` on iOS for Whisper.
         4. Check for zero-copy buffer crossing (`usePinned` on Kotlin/Native, direct `ByteBuffer` / `GetPrimitiveArrayCritical` on JNI) and absence of temporary WAV/image disk I/O in streaming pipelines.
         5. Ensure pure Kotlin logic has deterministic `commonTest` unit coverage.
     - path: "**/CMakeLists.txt"
       instructions: |
         Verify strict binary modularity and single-symbol linkage:
-        1. All `ggml-base`, `ggml-cpu`, `ggml-metal`, and `ggml-vulkan` targets must be centralized exclusively in `:kggml-runtime`.
+        1. All `ggml-base`, `ggml-cpu` and `ggml-metal` targets must be centralized exclusively in `:kggml-runtime`. The optional GPU add-ons (`:kggml-runtime-vulkan`, `:kggml-runtime-opencl`) build only their `GGML_BACKEND_DL` backend module against the runtime's `libggml-base` and must not carry a ggml core of their own.
         2. Engine libraries (`:kggml-whisper`, `:kggml-llama`, `:kggml-diffusion`) must link dynamically against `:kggml-runtime` and never statically embed duplicate `ggml` objects.
-        3. Confirm cross-compilation flags for Android (`arm64-v8a`, `x86_64`), iOS (`iosArm64`, `iosSimulatorArm64` XCFrameworks), and JVM Desktop (`macosArm64`, `linuxX64`, `windowsX64`).
+        3. Confirm cross-compilation flags for Android (`arm64-v8a`, `x86_64`), Apple (`ios-arm64`, `ios-arm64-simulator` and `macos-arm64` XCFramework slices), and JVM desktop (`macos-aarch64`, `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64`).
+        4. The version comes from `kggml-runtime/native/cmake/kggml-version.cmake` (`VERSION_NAME` in `gradle.properties`); no project may hard-code its own.
     - path: "**/*.{c,cc,cpp,h,hpp,mm}"
       instructions: |
         Audit C++/Objective-C++ native bridges for memory safety and FFI soundness:

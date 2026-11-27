@@ -39,7 +39,7 @@ object MiniJson {
                 't' -> literal("true", true)
                 'f' -> literal("false", false)
                 'n' -> literal("null", null)
-                else -> if (c == '-' || c.isDigit()) number() else fail("unexpected character '$c'")
+                else -> if (c == '-' || c.isAsciiDigit()) number() else fail("unexpected character '$c'")
             }
         }
 
@@ -112,8 +112,14 @@ object MiniJson {
                             'r' -> sb.append('\r')
                             't' -> sb.append('\t')
                             'u' -> {
-                                if (i + 4 > s.length) fail("truncated \\u escape")
-                                val code = s.substring(i, i + 4).toIntOrNull(16) ?: fail("invalid \\u escape")
+                                val hex = s.substring(i, minOf(i + 4, s.length))
+                                if (!hex.all { it.isAsciiHexDigit() }) fail("invalid \\u escape")
+                                if (hex.length < 4) {
+                                    // Cut off by the end of the (possibly still streaming) text: incomplete, not invalid.
+                                    i = s.length
+                                    fail("truncated \\u escape")
+                                }
+                                val code = hex.toInt(16)
                                 sb.append(code.toChar())
                                 i += 4
                             }
@@ -135,22 +141,22 @@ object MiniJson {
             if (peek() == '0') {
                 i++
             } else {
-                if (peek()?.isDigit() != true) fail("expected a digit")
-                while (peek()?.isDigit() == true) i++
+                if (peek()?.isAsciiDigit() != true) fail("expected a digit")
+                while (peek()?.isAsciiDigit() == true) i++
             }
             var integral = true
             if (peek() == '.') {
                 integral = false
                 i++
-                if (peek()?.isDigit() != true) fail("expected a digit after '.'")
-                while (peek()?.isDigit() == true) i++
+                if (peek()?.isAsciiDigit() != true) fail("expected a digit after '.'")
+                while (peek()?.isAsciiDigit() == true) i++
             }
             if (peek() == 'e' || peek() == 'E') {
                 integral = false
                 i++
                 if (peek() == '+' || peek() == '-') i++
-                if (peek()?.isDigit() != true) fail("expected an exponent digit")
-                while (peek()?.isDigit() == true) i++
+                if (peek()?.isAsciiDigit() != true) fail("expected an exponent digit")
+                while (peek()?.isAsciiDigit() == true) i++
             }
             val text = s.substring(start, i)
             return if (integral) text.toLongOrNull() ?: text.toDouble() else text.toDouble()
@@ -267,3 +273,8 @@ private fun sameJson(a: Any?, b: Any?): Boolean = when {
     a is Number && b is Number -> a.toDouble() == b.toDouble()
     else -> a == b
 }
+
+/** JSON (RFC 8259) digits are ASCII only; [Char.isDigit] would also accept e.g. Arabic-Indic digits. */
+private fun Char.isAsciiDigit(): Boolean = this in '0'..'9'
+
+private fun Char.isAsciiHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'

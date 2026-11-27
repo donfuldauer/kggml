@@ -230,6 +230,7 @@ const char * backend_name(int32_t backend) {
         case KGGML_BACKEND_METAL: return "Metal";
         case KGGML_BACKEND_VULKAN: return "Vulkan";
         case KGGML_BACKEND_COREML: return "CoreML";
+        case KGGML_BACKEND_OPENCL: return "OpenCL";
         default: return "unknown";
     }
 }
@@ -245,7 +246,8 @@ bool iequals_prefix(const char * s, const char * prefix) {
     return true;
 }
 
-/// True if ggml device `dev` belongs to the GPU backend `kind` (Metal registers as "MTL", Vulkan as "Vulkan").
+/// True if ggml device `dev` belongs to the GPU backend `kind` (Metal registers as "MTL", Vulkan as "Vulkan",
+/// OpenCL as "OpenCL").
 bool device_matches(ggml_backend_dev_t dev, int32_t kind) {
     const auto type = ggml_backend_dev_type(dev);
     if (type != GGML_BACKEND_DEVICE_TYPE_GPU && type != GGML_BACKEND_DEVICE_TYPE_IGPU) {
@@ -256,6 +258,7 @@ bool device_matches(ggml_backend_dev_t dev, int32_t kind) {
     switch (kind) {
         case KGGML_BACKEND_METAL: return iequals_prefix(reg_name, "MTL") || iequals_prefix(reg_name, "Metal");
         case KGGML_BACKEND_VULKAN: return iequals_prefix(reg_name, "Vulkan");
+        case KGGML_BACKEND_OPENCL: return iequals_prefix(reg_name, "OpenCL");
         default: return false;
     }
 }
@@ -264,7 +267,7 @@ kggml_status validate_context_params(const kggml_diffusion_context_params & p) {
     if (!is_set(p.model_path) && !is_set(p.diffusion_model_path)) {
         return fail(KGGML_STATUS_INVALID_ARGUMENT, "model_path or diffusion_model_path is required");
     }
-    if (p.backend < KGGML_BACKEND_CPU || p.backend > KGGML_BACKEND_COREML) {
+    if (p.backend < KGGML_BACKEND_CPU || p.backend >= KGGML_BACKEND_KIND_COUNT) {
         return fail(KGGML_STATUS_INVALID_ARGUMENT, ("unknown backend kind " + std::to_string(p.backend)).c_str());
     }
     if (p.gpu_device < 0) {

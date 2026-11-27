@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Fails if any tracked file (outside vendored submodules) reintroduces a private CI runner: a `runs-on` that is not
-# a GitHub-hosted image, the owner's former Mac runner label, or its on/off repository variable. Before the
-# repository is public every job must run on GitHub-hosted runners, because a fork PR can edit a workflow to run
-# arbitrary code on any runner registered to the repository (issue #23).
+# Audits where workflow jobs run: every job must run on a GitHub-hosted runner.
+#
+# In a public repository a pull request from a fork can edit a workflow, so a self-hosted runner would let anyone run
+# code on the machine behind it. Rules:
+#   - every `runs-on` is a GitHub-hosted image (ubuntu-*, macos-*, windows-*) or a `${{ matrix.* }}` value;
+#   - every matrix runner entry (`os:` / `runner:`) is a GitHub-hosted image.
+# Anything else (a label array such as [self-hosted, ...], a runner group, an expression) fails.
 #
 # Usage: scripts/ci/verify-hosted-runners.sh [<repo-root>]
 set -euo pipefail
@@ -10,50 +13,59 @@ set -euo pipefail
 ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 cd "${ROOT}"
 
-# Built from pieces so this script does not match itself.
-forbidden=("self""-hosted" "local""-mac" "MAC""_RUNNER")
 hosted_images='^(ubuntu|macos|windows)-[0-9a-z.]+$'
-
 status=0
-files=()
-while IFS= read -r -d '' f; do files+=("$f"); done < <(git ls-files -z)
+jobs_checked=0
+fail() { echo "FAIL: $*" >&2; status=1; }
 
-for token in "${forbidden[@]}"; do
-  hits="$(printf '%s\0' "${files[@]}" | xargs -0 grep -nF -- "${token}" 2>/dev/null || true)"
-  if [[ -n "${hits}" ]]; then
-    echo "FAIL: '${token}' found (private runners are not allowed):" >&2
-    echo "${hits}" >&2
-    status=1
-  fi
-done
+# Prints one tab-separated record per job: <job>\t<runs-on value, continuation lines joined>.
+jobs_of() {
+  awk '
+    function flush() { if (job != "") printf "%s\t%s\n", job, ro }
+    /^jobs:[[:space:]]*$/ { injobs = 1; next }
+    injobs && /^[^[:space:]#]/ { flush(); job = ""; injobs = 0; next }
+    injobs && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); job = $1; sub(/:$/, "", job); ro = ""; cont = 0; next }
+    injobs && job != "" {
+      if (cont) {
+        if ($0 ~ /^      +[^ ]/) { l = $0; gsub(/^ +/, "", l); ro = (ro == "" ? l : ro " " l); next }
+        cont = 0
+      }
+      if ($0 ~ /^    runs-on:/) {
+        v = $0; sub(/^    runs-on:[[:space:]]*/, "", v); sub(/[[:space:]]+#.*$/, "", v)
+        if (v == ">-" || v == ">" || v == "|" || v == "") { ro = ""; cont = 1 } else ro = v
+      }
+    }
+    END { flush() }
+  ' "$1"
+}
 
-# Every runs-on in our own workflows must be a single GitHub-hosted image name (no labels arrays, no expressions).
 for wf in .github/workflows/*.yml .github/workflows/*.yaml; do
   [[ -f "${wf}" ]] || continue
-  while IFS= read -r line; do
-    num="${line%%:*}"
-    value="$(sed -E 's/^[0-9]+:[[:space:]]*runs-on:[[:space:]]*//; s/[[:space:]]+#.*$//; s/^["'\'']//; s/["'\'']$//' <<<"${line}")"
-    if [[ "${value}" =~ ^\$\{\{[[:space:]]*matrix\.[a-z_-]+[[:space:]]*\}\}$ ]]; then
-      # A matrix value: every `os:`-style entry of the workflow is checked below.
-      continue
+
+  while IFS=$'\t' read -r job value; do
+    [[ -n "${value}" ]] || continue
+    jobs_checked=$((jobs_checked + 1))
+    value="$(sed -E 's/^["'\'']//; s/["'\'']$//' <<<"${value}")"
+    if [[ "${value}" =~ ${hosted_images} ]]; then
+      :
+    elif [[ "${value}" =~ ^\$\{\{[[:space:]]*matrix\.[a-z_-]+[[:space:]]*\}\}$ ]]; then
+      : # matrix entries are checked below
+    else
+      fail "${wf}: job '${job}': runs-on '${value}' is not a GitHub-hosted image"
     fi
-    if ! [[ "${value}" =~ ${hosted_images} ]]; then
-      echo "FAIL: ${wf}:${num}: runs-on '${value}' is not a GitHub-hosted image (ubuntu-*, macos-*, windows-*)" >&2
-      status=1
-    fi
-  done < <(grep -nE '^[[:space:]]*runs-on:' "${wf}" || true)
-  # Matrix runner entries (e.g. `- os: windows-latest` / `os: [ubuntu-latest, ...]`).
+  done < <(jobs_of "${wf}")
+
+  # Matrix runner entries (e.g. `- os: windows-latest` / `os: [ubuntu-latest, ...]`) must be hosted images.
   while IFS= read -r line; do
     for value in $(sed -E 's/^[^:]*:[[:space:]]*-?[[:space:]]*(os|runner):[[:space:]]*//; s/[][,"'\'']/ /g' <<<"${line}"); do
       if ! [[ "${value}" =~ ${hosted_images} ]]; then
-        echo "FAIL: ${wf}: matrix runner '${value}' is not a GitHub-hosted image" >&2
-        status=1
+        fail "${wf}: matrix runner '${value}' is not a GitHub-hosted image"
       fi
     done
   done < <(grep -nE '^[[:space:]]*-?[[:space:]]*(os|runner):[[:space:]]*' "${wf}" || true)
 done
 
 if [[ ${status} -eq 0 ]]; then
-  echo "Hosted-runner audit OK: every workflow job runs on a GitHub-hosted image; no private runner references."
+  echo "Runner audit OK: all ${jobs_checked} job(s) run on GitHub-hosted runners."
 fi
 exit "${status}"

@@ -338,6 +338,87 @@ class WhisperStudioControllerTest {
     }
 
     @Test
+    fun defaultsHaveNoModelAndNoBackgroundStress() = runTest {
+        val controller = WhisperStudioController(
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()),
+            factory = FakeTranscriberFactory(),
+            capture = FakeAudioCapture(),
+            readFile = { ByteArray(0) },
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        assertEquals("", controller.state.value.modelPath)
+        assertFalse(controller.state.value.backgroundStressSupported)
+        assertFalse(controller.state.value.canStartLive, "no model selected yet")
+    }
+
+    @Test
+    fun stopAndCancelWithoutASessionDoNothing() = runTest {
+        val h = Harness(this)
+        h.controller.stop()
+        h.controller.cancel()
+        advanceUntilIdle()
+        assertEquals(StudioActivity.IDLE, h.state.activity)
+        assertNull(h.state.status)
+        assertTrue(h.factory.opened.isEmpty())
+    }
+
+    @Test
+    fun stoppingTwiceCommitsTheTurnOnce() = runTest {
+        val h = Harness(this)
+        h.controller.startLive()
+        advanceUntilIdle()
+        h.capture!!.sendMs(100)
+        advanceUntilIdle()
+        h.controller.stop()
+        assertEquals(StudioActivity.STOPPING, h.state.activity)
+        h.controller.stop()
+        assertEquals(StudioActivity.STOPPING, h.state.activity)
+        advanceUntilIdle()
+        assertEquals(listOf(TranscriptLine(0, "word1.", 0, 100)), h.state.committed)
+        assertEquals("Completed: 1 segment(s), 0.1 s of audio", h.state.status)
+        assertEquals(StudioActivity.IDLE, h.state.activity)
+    }
+
+    @Test
+    fun backgroundFallbackFailureIsShownWhileDictationContinues() = runTest {
+        val h = Harness(this, FakeTranscriberFactory { it.fallbackFailure = IllegalStateException("no lifecycle owner") })
+        h.controller.startLive()
+        advanceUntilIdle()
+        assertEquals("Background fallback failed: IllegalStateException: no lifecycle owner", h.state.error)
+        assertEquals(StudioActivity.LISTENING, h.state.activity)
+    }
+
+    @Test
+    fun cancelWhileTheModelIsOpeningClosesTheOpenedModel() = runTest {
+        lateinit var h: Harness
+        // Only the first open is cancelled (opened is recorded after configure runs).
+        h = Harness(this, FakeTranscriberFactory { if (h.factory.opened.isEmpty()) h.controller.cancel() })
+        h.controller.setFilePath("/a.wav")
+        h.controller.transcribeFile()
+        advanceUntilIdle()
+        val first = h.transcriber
+        assertTrue(first.closed, "the model loaded under a cancelled job is closed, not leaked")
+        assertEquals("Cancelled", h.state.status)
+        assertEquals(StudioActivity.IDLE, h.state.activity)
+        assertNull(h.state.activeBackend)
+
+        h.controller.startLive()
+        advanceUntilIdle()
+        assertEquals(2, h.factory.opened.size, "the next session opens a fresh model")
+        assertFalse(h.transcriber.closed)
+        assertEquals(StudioActivity.LISTENING, h.state.activity)
+    }
+
+    @Test
+    fun failureWithoutAMessageIsStillDescribed() = runTest {
+        val h = Harness(this, FakeTranscriberFactory(failure = IllegalStateException()))
+        h.controller.startLive()
+        advanceUntilIdle()
+        assertEquals("IllegalStateException: (no message)", h.state.error)
+        assertEquals(StudioActivity.IDLE, h.state.activity)
+    }
+
+    @Test
     fun cpuOnlySelectionRequestsNoGpuLayers() {
         assertEquals(BackendConfig.CPU, studioBackendConfig(ComputeBackend.CPU_ONLY))
         assertEquals(0, studioBackendConfig(ComputeBackend.CPU_ONLY).gpuLayers)

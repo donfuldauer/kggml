@@ -59,8 +59,9 @@ with `InvalidInputException`.
 ## Backends
 
 `BackendConfig` is applied when the model is loaded: `CPU_ONLY` hands llama.cpp an empty device list (no GPU backend
-is ever created — safe in the iOS background), `GPU_METAL` / `GPU_VULKAN` offload `gpuLayers` layers to
-`LlamaEngineOptions.gpuDevice`, `AUTO` prefers Metal, then Vulkan, then CPU. llama.cpp has no Core ML path:
+is ever created — safe in the iOS background), `GPU_METAL` / `GPU_OPENCL` / `GPU_VULKAN` offload `gpuLayers` layers
+to `LlamaEngineOptions.gpuDevice`, `AUTO` prefers Metal, then OpenCL, then Vulkan, then CPU. Vulkan and OpenCL are only
+available with the `:kggml-runtime-vulkan` / `:kggml-runtime-opencl` add-ons. llama.cpp has no Core ML path:
 `NPU_COREML` falls back (or fails with `BackendUnavailableException` when `allowBackendFallback = false`).
 `cpuThreads`, `useFlashAttention` and `useMmap` map to the llama.cpp context / model parameters.
 
@@ -91,7 +92,8 @@ during the final acceptance pass (`docs/MANUAL_VERIFICATION.md`):
 
 1. Download a small instruct GGUF (e.g. a 0.5–1.5 B Q4_K_M model) to the device / desktop.
 2. Load it with `BackendConfig.DEFAULT` and with `BackendConfig.CPU`; check `activeBackend` / `usesGpu` (Metal on
-   iPhone / Apple Silicon, Vulkan on a supported Android GPU, CPU otherwise).
+   iPhone / Apple Silicon, OpenCL on an Adreno GPU or Vulkan on a supported Android GPU with the matching add-on,
+   CPU otherwise).
 3. Stream a chat-formatted prompt with `GenerationOptions(maxTokens = 128)`: text must be coherent and arrive token by
    token; cancel the collecting coroutine mid-stream and confirm generation stops within ~100 ms.
 4. Generate with `LlamaGrammar.jsonSchema(...)` for a small object schema; the output must parse and match the schema.

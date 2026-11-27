@@ -154,6 +154,21 @@ JNIEXPORT jint JNICALL KGGML_JNI(nativePerformanceThreadCount)(JNIEnv * env, jcl
     });
 }
 
+JNIEXPORT jint JNICALL KGGML_JNI(nativeLoadBackend)(JNIEnv * env, jclass, jstring jpath) {
+    return jni_guard([&]() -> jint {
+        if (jpath == nullptr) {
+            return static_cast<jint>(kggml_runtime_load_backend(nullptr));
+        }
+        const char * path = env->GetStringUTFChars(jpath, nullptr);
+        if (path == nullptr) {
+            return static_cast<jint>(KGGML_STATUS_OUT_OF_MEMORY); // OutOfMemoryError is pending in the JVM
+        }
+        const kggml_status status = kggml_runtime_load_backend(path);
+        env->ReleaseStringUTFChars(jpath, path);
+        return static_cast<jint>(status);
+    });
+}
+
 JNIEXPORT jint JNICALL KGGML_JNI(nativeHardwareThreadCount)(JNIEnv *, jclass) {
     return jni_guard([] { return static_cast<jint>(kggml_runtime_hardware_thread_count()); });
 }

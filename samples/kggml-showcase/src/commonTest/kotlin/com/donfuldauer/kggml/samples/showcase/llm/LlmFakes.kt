@@ -25,6 +25,8 @@ class FakeChatModel(
     var jsonReply: String = """{"name": "Maria", "age": 34, "city": "Lisbon"}""",
     var streamError: InferenceException? = null,
     var tokenGate: Channel<Unit>? = null,
+    /** Stop reason of the final [TokenEvent.Completed]; `null` ends the stream without one. */
+    var stopReason: StopReason? = StopReason.END_OF_GENERATION,
 ) : ChatModel {
     val calls = mutableListOf<GenerateCall>()
     val restored = mutableListOf<ByteArray>()
@@ -61,7 +63,7 @@ class FakeChatModel(
                 return@flow
             }
         }
-        emit(TokenEvent.Completed(pieces.size, StopReason.END_OF_GENERATION))
+        stopReason?.let { emit(TokenEvent.Completed(pieces.size, it)) }
     }
 
     override suspend fun saveSession(): ByteArray = "session:${calls.size}".encodeToByteArray()

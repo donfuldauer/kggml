@@ -83,10 +83,11 @@ typedef enum kggml_backend_kind {
     KGGML_BACKEND_CPU    = 0, /* ComputeBackend.CPU_ONLY   - always compiled and available */
     KGGML_BACKEND_METAL  = 1, /* ComputeBackend.GPU_METAL  */
     KGGML_BACKEND_VULKAN = 2, /* ComputeBackend.GPU_VULKAN */
-    KGGML_BACKEND_COREML = 3  /* ComputeBackend.NPU_COREML - compile-time capability flag only */
+    KGGML_BACKEND_COREML = 3, /* ComputeBackend.NPU_COREML - compile-time capability flag only */
+    KGGML_BACKEND_OPENCL = 4  /* ComputeBackend.GPU_OPENCL - registered from the Android OpenCL add-on module */
 } kggml_backend_kind;
 
-#define KGGML_BACKEND_KIND_COUNT 4
+#define KGGML_BACKEND_KIND_COUNT 5
 #define KGGML_BACKEND_NAME_MAX   32
 
 typedef struct kggml_backend_info {
@@ -94,7 +95,7 @@ typedef struct kggml_backend_info {
     int32_t compiled;                      /* 1 if support was compiled into this runtime build         */
     int32_t available;                     /* 1 if usable on this device right now (compiled && device) */
     int32_t device_count;                  /* ggml devices backing this kind (0 for COREML)             */
-    char    name[KGGML_BACKEND_NAME_MAX];  /* NUL-terminated, e.g. "CPU", "Metal", "Vulkan", "CoreML"  */
+    char    name[KGGML_BACKEND_NAME_MAX];  /* NUL-terminated: "CPU", "Metal", "Vulkan", "CoreML", "OpenCL"   */
 } kggml_backend_info;
 
 /**
@@ -117,10 +118,11 @@ KGGML_API int32_t kggml_runtime_has_coreml(void);
 /* ------------------------------------------------------------------------------------------------------ */
 
 /**
- * Number of performance (P-) cores, a good default for inference thread pools. Always in
- * [1, hardware threads]. Linux/Android: cores whose cpuinfo_max_freq equals the highest one (SMT siblings
- * counted once); Apple: hw.perflevel0.physicalcpu (fallback hw.physicalcpu); Windows: cores of the highest
- * EfficiencyClass. Falls back to std::thread::hardware_concurrency(). Does not require init.
+ * Number of performance cores, a good default for inference thread pools. Always in [1, hardware threads].
+ * Linux/Android (SMT siblings counted once): with differing cpu_capacity (ARM phones), the cores with at least half
+ * the highest capacity, i.e. prime + performance cores without the efficiency cores; otherwise the cores whose
+ * cpuinfo_max_freq equals the highest one. Apple: hw.perflevel0.physicalcpu (fallback hw.physicalcpu); Windows: cores
+ * of the highest EfficiencyClass. Falls back to std::thread::hardware_concurrency(). Does not require init.
  */
 KGGML_API kggml_status kggml_runtime_performance_thread_count(int32_t * out_count);
 
@@ -128,10 +130,24 @@ KGGML_API kggml_status kggml_runtime_performance_thread_count(int32_t * out_coun
 KGGML_API int32_t kggml_runtime_hardware_thread_count(void);
 
 /* ------------------------------------------------------------------------------------------------------ */
+/* Backend modules                                                                                         */
+/* ------------------------------------------------------------------------------------------------------ */
+
+/**
+ * Loads a ggml backend module (a shared library exporting `ggml_backend_init`, built against this runtime's ggml,
+ * e.g. `libggml-vulkan.so` from the Android `kggml-runtime-vulkan` add-on) and registers it with the ggml backend
+ * registry, so the engines can use its devices. Each path is registered at most once per process (repeat calls return
+ * KGGML_STATUS_OK). Call it before kggml_runtime_init; when the runtime is already initialized the backend list is
+ * refreshed. KGGML_STATUS_BACKEND_UNAVAILABLE when the module cannot be loaded; a module whose backend finds no
+ * usable device still loads and simply reports 0 devices. Does not require init.
+ */
+KGGML_API kggml_status kggml_runtime_load_backend(const char * path);
+
+/* ------------------------------------------------------------------------------------------------------ */
 /* Versions                                                                                                */
 /* ------------------------------------------------------------------------------------------------------ */
 
-/** Kggml runtime version, e.g. "1.0.0". Static string. */
+/** Kggml runtime version, e.g. "0.1.0". Static string. */
 KGGML_API const char * kggml_runtime_version(void);
 
 /** Version reported by the linked ggml (ggml_version()), e.g. "0.9.9". Static string. */

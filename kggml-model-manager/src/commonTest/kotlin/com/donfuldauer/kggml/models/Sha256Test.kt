@@ -50,6 +50,8 @@ class Sha256Test {
         assertFailsWith<IllegalStateException> { sha.digest() }
         assertFailsWith<IllegalStateException> { sha.update(ByteArray(1)) }
         assertFailsWith<IllegalArgumentException> { Sha256().update(ByteArray(2), 1, 2) }
+        assertFailsWith<IllegalArgumentException> { Sha256().update(ByteArray(2), -1, 1) }
+        assertFailsWith<IllegalArgumentException> { Sha256().update(ByteArray(2), 0, -1) }
     }
 
     @Test

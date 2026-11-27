@@ -1,7 +1,7 @@
 name: Repo Hygiene & Agent Parity
 
 # Cheap Linux checks on every PR. Not re-run on pushes to main: PRs merge with a merge commit after
-# these passed on the PR head. Every job runs on a GitHub-hosted runner.
+# these passed on the PR head.
 on:
   pull_request:
   workflow_dispatch:
@@ -30,6 +30,7 @@ jobs:
       - name: Test the agent CI waiter (scripts/ci/wait-pr-checks.sh)
         run: ./scripts/tests/test-wait-pr-checks.sh
 
+      # Fails if any job can run on a self-hosted runner: in a public repository a fork PR could run code on it.
       - name: Verify every workflow job runs on a GitHub-hosted runner
         run: ./scripts/ci/verify-hosted-runners.sh
 
@@ -38,6 +39,9 @@ jobs:
 
       - name: Test the Maven Central release audit (scripts/ci/verify_release.py)
         run: ./scripts/tests/test-verify-release.sh
+
+      - name: Test the desktop runtime architecture check (scripts/ci/check_native_arch.py)
+        run: ./scripts/tests/test-check-native-arch.sh
 
   license-audit:
     name: License, NOTICE & Fixture Audit

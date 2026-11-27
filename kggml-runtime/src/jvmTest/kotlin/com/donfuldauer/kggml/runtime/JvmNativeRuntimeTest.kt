@@ -96,10 +96,10 @@ class JvmNativeRuntimeTest {
     fun reportsAllBackendKindsWithCpuAvailable() {
         val backends = KggmlRuntime.backends()
         assertEquals(
-            listOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.NPU_COREML),
+            listOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL, ComputeBackend.GPU_VULKAN, ComputeBackend.NPU_COREML, ComputeBackend.GPU_OPENCL),
             backends.map { it.backend },
         )
-        assertEquals(listOf("CPU", "Metal", "Vulkan", "CoreML"), backends.map { it.name })
+        assertEquals(listOf("CPU", "Metal", "Vulkan", "CoreML", "OpenCL"), backends.map { it.name })
         val cpu = backends.first()
         assertTrue(cpu.compiled && cpu.available && cpu.deviceCount >= 1, "CPU must always be available: $cpu")
         // CoreML is never available on desktop builds, and nothing is available without being compiled in.
@@ -119,6 +119,23 @@ class JvmNativeRuntimeTest {
             available,
         )
         assertEquals(ComputeBackend.CPU_ONLY, KggmlRuntime.resolveBackend(ComputeBackend.CPU_ONLY))
+    }
+
+    /**
+     * Issue #92: with the desktop Vulkan add-on configured (`-Pkggml.test.vulkanAddonDir=<dir>`, CI uses Mesa's
+     * software Vulkan device lavapipe), the module registers, Vulkan is available and AUTO picks it over the CPU.
+     */
+    @Test
+    fun theDesktopVulkanAddonRegistersWhenConfigured() {
+        assumeTrue(System.getProperty("kggml.test.expectVulkanAddon").toBoolean(), "Vulkan add-on not configured")
+        val vulkan = KggmlRuntime.backends().single { it.backend == ComputeBackend.GPU_VULKAN }
+        assertTrue(
+            vulkan.compiled,
+            "the Vulkan backend module was not registered: $vulkan; add-ons: ${JvmNativeLibraryLoader.addonReport}",
+        )
+        assertTrue(vulkan.deviceCount >= 1, "no Vulkan device (driver missing?): $vulkan")
+        assertTrue(ComputeBackend.GPU_VULKAN in KggmlRuntime.availableBackends())
+        assertEquals(ComputeBackend.GPU_VULKAN, KggmlRuntime.resolveBackend(ComputeBackend.AUTO))
     }
 
     @Test

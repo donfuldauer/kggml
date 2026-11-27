@@ -62,6 +62,24 @@ enum class PromptTemplate(val label: String, val stopSequences: List<String>) {
         }
     }
 
+    companion object {
+        /**
+         * The template a model was trained on, guessed from its file name or path (the GGUF names of the catalog and
+         * of most community conversions name the family), or `null` when the name does not tell. A mismatched
+         * template makes a model ramble: it never produces the stop sequence of a format it does not know.
+         */
+        fun forModel(path: String): PromptTemplate? {
+            val name = path.substringAfterLast('/').substringAfterLast('\\').lowercase()
+            return when {
+                name.isBlank() -> null
+                "smolvlm" in name || "idefics" in name -> USER_ASSISTANT
+                "gemma" in name -> GEMMA
+                listOf("qwen", "smollm", "chatml", "hermes").any { it in name } -> CHATML
+                else -> null
+            }
+        }
+    }
+
     /** Removes a trailing stop sequence (the engine emits the token that completed it) and surrounding blanks. */
     fun clean(text: String): String {
         var out = text

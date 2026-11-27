@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds GgmlRuntime.xcframework (dynamic) for iOS device (arm64) and iOS simulator (arm64).
+# Builds GgmlRuntime.xcframework (dynamic) for iOS device (arm64), iOS simulator (arm64) and macOS (arm64; the
+# Kotlin/Native macosArm64 target, issue #93).
 #
 # Each slice is one dynamic framework (GgmlRuntime.framework) produced by the KGGML_RUNTIME_MONOLITHIC
 # layout: ggml-base + ggml-cpu (NEON/Accelerate) + ggml-blas (Accelerate) + ggml-metal (embedded Metal
@@ -35,7 +36,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 frameworks=()
-for preset in ios-device ios-simulator-arm64; do
+for preset in ios-device ios-simulator-arm64 macos-framework; do
   build_dir="${REPO_ROOT}/build/native-${preset}"
   echo "==> ${preset}"
   cmake -S "${NATIVE_DIR}" --preset "${preset}" ${extra_args[@]+"${extra_args[@]}"}
@@ -43,6 +44,7 @@ for preset in ios-device ios-simulator-arm64; do
 
   # Each preset has its own build dir, so any GgmlRuntime.framework in it is this platform's. Newer Xcode also
   # emits a binary-less stub under build/EagerLinkingTBDs/, so only accept a framework that holds its Mach-O.
+  # (A macOS framework is versioned: its top-level GgmlRuntime is a symlink into Versions/Current.)
   fw=""
   while IFS= read -r candidate; do
     if [[ -f "${candidate}/GgmlRuntime" ]]; then fw="${candidate}"; break; fi
@@ -55,7 +57,7 @@ for preset in ios-device ios-simulator-arm64; do
   echo "    framework: ${fw}"
   # Sanity: a dynamic Mach-O that exports both the kggml C ABI and ggml.
   # (Captured to variables first: `grep -q` closing a pipe early would trip `set -o pipefail`.)
-  file_info="$(file "${fw}/GgmlRuntime")"
+  file_info="$(file -L "${fw}/GgmlRuntime")"
   symbols="$(nm -gU "${fw}/GgmlRuntime")"
   grep -q "dynamically linked shared library" <<<"${file_info}"
   grep -q " _kggml_runtime_init$" <<<"${symbols}"

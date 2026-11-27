@@ -17,6 +17,10 @@
 #   scripts/audit-binary-symbols.sh elf <dir> [dir ...]
 #       Every ELF *.so / *.so.<version> file (not symlinks) in the given directories is audited as one set
 #       (host builds, tests).
+#   scripts/audit-binary-symbols.sh jars <dir>
+#       JVM desktop: every *.jar in <dir> (the app jar plus its runtime classpath) must carry no llama / diffusion /
+#       GPU add-on classes and no such native library; at least one jar must carry com.donfuldauer.kggml.whisper
+#       classes. Uses unzip -Z1 (or jar tf).
 #
 # Exit status: 0 when the audit passes, 1 on any violation (the offending symbols are printed), 2 on usage
 # errors. Shared by .github/workflows/ci.yml and ./scripts/ci-local.sh; tested by
@@ -28,15 +32,16 @@ set -euo pipefail
 # ggml CPU backend exports e.g. ggml_cpu_has_llamafile); their uniqueness is checked separately. ggml's own
 # llamafile sgemm kernels (GGML_LLAMAFILE) are not llama.cpp and are allowed as well.
 FORBIDDEN_SYMBOL_RE='llama|mtmd|stable_?diffusion|diffusion_?engine|kggml_diffusion|(^|_)(new|free)_sd_ctx|(^|_)sd_(ctx|image|img_gen|vid_gen|get_system_info)|(^|_)(txt2img|img2img|upscaler_ctx)'
-FORBIDDEN_LIB_RE='(llama|mtmd|stable-diffusion|stable_diffusion|diffusion)'
-FORBIDDEN_CLASS_RE='com/donfuldauer/kggml/(llama|diffusion)/|com\.donfuldauer\.kggml\.(llama|diffusion)\.'
+# GPU backend add-ons (kggml-runtime-vulkan, later OpenCL) are opt-in and never part of the minimal sample either.
+FORBIDDEN_LIB_RE='(llama|mtmd|stable-diffusion|stable_diffusion|diffusion|ggml-vulkan|ggml-opencl)'
+FORBIDDEN_CLASS_RE='com/donfuldauer/kggml/(llama|diffusion|runtime/vulkan|runtime/opencl)/|com\.donfuldauer\.kggml\.(llama|diffusion|runtime\.vulkan|runtime\.opencl)\.'
 GGML_SYMBOL_RE='^_?(ggml|gguf)_'
 ALLOWED_SYMBOL_RE='llamafile'
 
 failures=0
 fail() { echo "FAIL: $*" >&2; failures=$((failures + 1)); }
 die() { echo "FAIL: $*" >&2; exit 1; }
-usage() { sed -n '2,25p' "$0" >&2; exit 2; }
+usage() { sed -n '2,29p' "$0" >&2; exit 2; }
 
 pick_tool() {
   local t
@@ -234,6 +239,30 @@ audit_ios() {
   done
 }
 
+audit_jars() {
+  [[ $# -eq 1 && -d "$1" ]] || usage
+  local jar entries bad have_whisper_classes=0 count=0
+  for jar in "$1"/*.jar; do
+    [[ -f "${jar}" ]] || continue
+    count=$((count + 1))
+    entries="$(unzip -Z1 "${jar}" 2>/dev/null || jar tf "${jar}")"
+    grep -q '^com/donfuldauer/kggml/whisper/' <<<"${entries}" && have_whisper_classes=1
+    bad="$(grep -E "^(${FORBIDDEN_CLASS_RE})" <<<"${entries}" || true)"
+    if [[ -n "${bad}" ]]; then
+      head -n 20 <<<"${bad}" >&2
+      fail "jars: $(basename "${jar}") contains Kggml llama / diffusion / GPU add-on classes"
+    fi
+    while IFS= read -r lib; do
+      [[ -n "${lib}" ]] || continue
+      if grep -Eqi "${FORBIDDEN_LIB_RE}" <<<"$(basename "${lib}")"; then
+        fail "jars: $(basename "${jar}") carries forbidden native library ${lib}"
+      fi
+    done < <(grep -E '\.(so|dylib|dll)$' <<<"${entries}" || true)
+  done
+  [[ ${count} -gt 0 ]] || die "jars: no *.jar in $1"
+  [[ ${have_whisper_classes} -eq 1 ]] || fail "jars: no jar contains com.donfuldauer.kggml.whisper classes"
+}
+
 audit_elf_dirs() {
   [[ $# -gt 0 ]] || usage
   local list="${WORK}/elf.list"
@@ -255,6 +284,7 @@ case "${mode}" in
   apk) [[ $# -ge 1 ]] || usage; audit_apk "$@" ;;
   ios) audit_ios "$@" ;;
   elf) audit_elf_dirs "$@" ;;
+  jars) audit_jars "$@" ;;
   -h|--help) usage ;;
   *) echo "unknown mode '${mode}'" >&2; usage ;;
 esac

@@ -20,7 +20,7 @@ assignees: ""
 ## Environment
 
 - Kggml version (BOM):
-- Module(s): <!-- kggml-whisper / kggml-llama / kggml-diffusion / kggml-model-manager / kggml-runtime -->
+- Module(s): <!-- kggml-whisper / kggml-llama / kggml-diffusion / kggml-model-manager / kggml-runtime / kggml-runtime-vulkan / kggml-runtime-opencl -->
 - Platform and OS version: <!-- e.g. Android 14 on Pixel 8, iOS 18 on iPhone 15, macOS 15 arm64, Ubuntu 24.04 x86_64 -->
 - `BackendConfig` and the engine's `activeBackend`:
 - Model (name, quantization, source):

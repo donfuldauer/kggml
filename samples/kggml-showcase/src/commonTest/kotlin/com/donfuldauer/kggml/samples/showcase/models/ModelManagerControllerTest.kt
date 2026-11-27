@@ -2,6 +2,8 @@ package com.donfuldauer.kggml.samples.showcase.models
 
 import com.donfuldauer.kggml.core.ManualMemoryPressureObserver
 import com.donfuldauer.kggml.core.MemoryPressureLevel
+import com.donfuldauer.kggml.core.MemoryPressureListener
+import com.donfuldauer.kggml.core.MemoryPressureObserver
 import com.donfuldauer.kggml.models.ChecksumMismatchException
 import com.donfuldauer.kggml.models.DownloadEvent
 import com.donfuldauer.kggml.models.DownloadHttpException
@@ -283,6 +285,199 @@ class ModelManagerControllerTest {
         assertTrue(engine.closed)
         assertNotNull(h.residents.state.value.evictions.firstOrNull { it.evictedKeys == listOf("llm") })
         h.residents.close()
+    }
+
+    @Test
+    fun unreadableModelDirectoryIsReported() = runTest {
+        val store = FakeModelStore().apply { failures["files"] = IllegalStateException("permission denied") }
+        val h = Harness(this, store)
+        advanceUntilIdle()
+        assertFalse(h.state.loading)
+        assertEquals("Cannot read /data/models: IllegalStateException: permission denied", h.state.error)
+        assertTrue(h.state.rows.all { it.phase == DownloadPhase.NOT_DOWNLOADED })
+    }
+
+    @Test
+    fun failedHashingDeletionAndPartialCleanupAreReported() = runTest {
+        val store = FakeModelStore().apply {
+            files["llm.gguf"] = 1000
+            partials["sd.safetensors"] = 30
+        }
+        val h = Harness(this, store)
+        advanceUntilIdle()
+
+        store.failures["sha256"] = IllegalStateException("I/O error")
+        h.controller.verify("llm")
+        advanceUntilIdle()
+        assertEquals("IllegalStateException: I/O error", h.row("llm").error)
+        assertFalse(h.row("llm").working)
+        assertEquals(Verification.NOT_CHECKED, h.row("llm").verification)
+
+        store.failures["delete"] = IllegalStateException("read-only file system")
+        h.controller.delete("llm")
+        advanceUntilIdle()
+        assertEquals("IllegalStateException: read-only file system", h.state.error)
+        assertEquals(DownloadPhase.INSTALLED, h.row("llm").phase, "the model is still installed")
+
+        store.failures["clearPartialDownloads"] = IllegalStateException("busy")
+        h.controller.clearPartialDownloads()
+        advanceUntilIdle()
+        assertEquals("IllegalStateException: busy", h.state.error)
+        assertEquals(DownloadPhase.PARTIAL, h.row("sd").phase)
+    }
+
+    @Test
+    fun refreshKeepsRunningDownloadsVerificationAndFailures() = runTest {
+        val store = FakeModelStore().apply {
+            files["ggml-tiny.bin"] = 500
+            digests["ggml-tiny.bin"] = "d".repeat(64)
+        }
+        val h = Harness(this, store)
+        advanceUntilIdle()
+        h.controller.verify("whisper")
+        advanceUntilIdle()
+        assertEquals(Verification.UNVERIFIED, h.row("whisper").verification)
+
+        h.controller.download("llm")
+        h.store.script("llm.gguf").send(DownloadEvent.Progress(300, 1000))
+        h.controller.download("sd")
+        h.store.script("sd.safetensors").send(DownloadHttpException(404, "https://example.invalid/sd.safetensors"))
+        advanceUntilIdle()
+        assertEquals(DownloadPhase.FAILED, h.row("sd").phase, "nothing was downloaded, so nothing can be resumed")
+        assertContains(h.row("sd").error!!, "DownloadHttpException")
+
+        h.controller.refresh()
+        advanceUntilIdle()
+        assertEquals(DownloadPhase.DOWNLOADING, h.row("llm").phase, "a running download is not reset by a re-scan")
+        assertEquals(300, h.row("llm").downloadedBytes)
+        assertEquals(Verification.UNVERIFIED, h.row("whisper").verification, "a digest checked this session is kept")
+        assertEquals(DownloadPhase.FAILED, h.row("sd").phase)
+        assertContains(h.row("sd").error!!, "DownloadHttpException")
+    }
+
+    @Test
+    fun downloadRequestsThatCannotStartAreIgnored() = runTest {
+        val h = Harness(this, FakeModelStore().apply { files["llm.gguf"] = 1000 })
+        advanceUntilIdle()
+        h.controller.download("llm") // already installed
+        h.controller.download("whisper")
+        h.controller.download("whisper") // already running
+        h.controller.cancelDownload("sd") // not running: no-op
+        advanceUntilIdle()
+        assertEquals(listOf("ggml-tiny.bin"), h.store.downloadsStarted)
+        assertEquals(DownloadPhase.NOT_DOWNLOADED, h.row("sd").phase)
+
+        h.controller.close()
+        advanceUntilIdle()
+        assertEquals(DownloadPhase.PARTIAL, h.row("whisper").phase, "close pauses running downloads")
+        h.controller.close()
+        h.controller.download("sd")
+        h.controller.refresh()
+        advanceUntilIdle()
+        assertEquals(listOf("ggml-tiny.bin"), h.store.downloadsStarted, "a closed controller starts no download")
+    }
+
+    @Test
+    fun actionsOnRowsInTheWrongStateAreIgnored() = runTest {
+        val h = Harness(this)
+        h.store.metadata[llmPath] = TEST_METADATA
+        advanceUntilIdle()
+        h.controller.verify("llm") // not installed
+        h.controller.inspect("llm") // not installed
+        h.controller.inspectPath() // no path
+        advanceUntilIdle()
+        assertNull(h.row("llm").metadata)
+        assertNull(h.row("llm").verification)
+        assertNull(h.state.inspected)
+        assertFalse(h.state.inspecting)
+
+        h.controller.download("llm")
+        h.controller.delete("llm") // transferring
+        advanceUntilIdle()
+        assertEquals(DownloadPhase.DOWNLOADING, h.row("llm").phase)
+        assertNull(h.state.status)
+    }
+
+    @Test
+    fun progressWithoutATotalKeepsTheAnnouncedSize() = runTest {
+        val h = Harness(this)
+        advanceUntilIdle()
+        h.controller.download("llm")
+        val script = h.store.script("llm.gguf")
+        script.send(DownloadEvent.Started(0, 1000))
+        script.send(DownloadEvent.Progress(500, null))
+        advanceUntilIdle()
+        assertEquals(1000, h.row("llm").totalBytes)
+        assertEquals(0.5f, h.row("llm").fraction)
+    }
+
+    @Test
+    fun alreadyInstalledDownloadIsReportedAsSuch() = runTest {
+        val h = Harness(this)
+        advanceUntilIdle()
+        h.controller.download("llm")
+        h.store.script("llm.gguf").send(DownloadEvent.Completed(llmPath, 1000, "a".repeat(64), resumedFromBytes = 0, alreadyPresent = true))
+        advanceUntilIdle()
+        assertEquals("Test LLM was already installed", h.state.status)
+        assertEquals(DownloadPhase.INSTALLED, h.row("llm").phase)
+    }
+
+    @Test
+    fun diskUsageIsKeptWhenTheRescanAfterADownloadFails() = runTest {
+        val h = Harness(this, FakeModelStore().apply { files["notes.txt"] = 5 })
+        advanceUntilIdle()
+        assertEquals(5, h.state.diskBytes)
+        h.controller.download("llm")
+        h.store.failures["files"] = IllegalStateException("gone")
+        h.store.script("llm.gguf").send(DownloadEvent.Completed(llmPath, 1000, "a".repeat(64), 0, false))
+        advanceUntilIdle()
+        assertEquals(DownloadPhase.INSTALLED, h.row("llm").phase)
+        assertEquals(5, h.state.diskBytes, "the last known usage is kept")
+        assertNull(h.state.error)
+    }
+
+    @Test
+    fun defaultLowMemorySimulationIsCriticalAndNeedsADrivableObserver() = runTest {
+        val h = Harness(this)
+        advanceUntilIdle()
+        val engine = FakeResource("llm")
+        h.residents.lease("llm") { engine to 100L }.close()
+        h.controller.simulateLowMemory()
+        assertTrue(engine.closed, "CRITICAL closes every idle engine")
+        assertEquals("Simulated CRITICAL memory pressure: released 100 B", h.state.status)
+
+        // A platform observer that only the OS can drive (not a ManualMemoryPressureObserver).
+        val osOnly = object : MemoryPressureObserver {
+            override val currentLevel = MemoryPressureLevel.NORMAL
+            override fun addListener(listener: MemoryPressureListener) = AutoCloseable {}
+        }
+        val controller = ModelManagerController(
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()),
+            store = FakeModelStore(),
+            residents = ResidentModels(10_000, osOnly),
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        controller.simulateLowMemory()
+        assertEquals("This platform's memory observer cannot be driven manually", controller.state.value.status)
+    }
+
+    @Test
+    fun defaultCatalogAndCallbackAreUsedWithoutArguments() = runTest {
+        val store = FakeModelStore()
+        val controller = ModelManagerController(
+            scope = CoroutineScope(StandardTestDispatcher(testScheduler) + Job()),
+            store = store,
+            residents = ResidentModels(10_000, ManualMemoryPressureObserver()),
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+        )
+        assertEquals(DEFAULT_MODEL_CATALOG.map { it.id }, controller.state.value.rows.map { it.model.id })
+        val first = DEFAULT_MODEL_CATALOG.first()
+        store.files[first.fileName] = 10
+        advanceUntilIdle()
+        controller.refresh()
+        advanceUntilIdle()
+        controller.use(first.id) // the default callback does nothing; the selection is still reported
+        assertEquals("Selected ${first.displayName}", controller.state.value.status)
     }
 
     @Test

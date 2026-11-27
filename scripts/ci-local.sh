@@ -14,14 +14,20 @@
 #                                            against the published artifacts), Maven Central release dry-run
 #                                            (signed staging + audit; iOS components only on macOS); with --full
 #                                            also `./gradlew check` and the sample assemble tasks
-# The macOS/iOS jobs (ci.yml macOS, runtime-native-macos.yml) cannot run on a Linux host;
+# The macOS/iOS job (ci.yml macOS) cannot run on a Linux host;
 # on a macOS host the host build, CTest, linkage audit and jvmTest steps below cover the macOS job.
 #
 # Usage: ./scripts/ci-local.sh [--only <steps>] [--skip <steps>] [--strict] [--clean] [--full]
-#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample,snippets,release,check
+#   steps (comma-separated): parity,gitleaks,pin,native,jvm,android,sample,snippets,release,check,coverage,instrumented,
+#                            ios-apps
+#   coverage      (only with --only) merged Kover report of every JVM test (scripts/ci/coverage.sh)
+#   instrumented  (only with --only) every Android instrumented suite on a connected device / KGGML_AVD emulator
+#                 with the real native libraries (scripts/ci/run-android-instrumented.sh)
+#   ios-apps      (only with --only, macOS) the samples' Xcode host apps for the simulator and devices, unsigned
+#                 (scripts/ios/build-xcframeworks.sh + scripts/ios/build-sample-apps.sh)
 #   --full     run every step regardless of what changed, including `check` (./gradlew check + sample
-#              assembles, which need an Android SDK). This is the merge gate when GitHub Actions cannot
-#              run (quota exhausted); see AGENTS.md "When the Actions quota is exhausted".
+#              assembles, which need an Android SDK). Stands in for the Linux CI job when a runner fails or hangs
+#              (AGENTS.md "When a runner fails or hangs").
 #   --strict   fail instead of skipping when a tool (gitleaks, Android NDK/SDK) is missing
 #   --clean    pass --clean to the host native build
 #   The Android NDK comes from ANDROID_NDK_HOME / ANDROID_NDK_ROOT, else the newest NDK under
@@ -35,7 +41,7 @@ cd "${REPO_ROOT}"
 # Make sure commit attribution hooks (.githooks/) are active in this clone.
 ./scripts/install-git-hooks.sh
 
-all_steps=(parity gitleaks pin native jvm android sample snippets release check)
+all_steps=(parity gitleaks pin native jvm android sample snippets release check coverage instrumented ios-apps)
 only=""
 skip=""
 strict=0
@@ -49,7 +55,7 @@ while [[ $# -gt 0 ]]; do
     --strict) strict=1 ;;
     --clean) clean_flag=(--clean) ;;
     --full) full=1 ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -57,9 +63,9 @@ done
 
 in_list() { [[ ",$2," == *",$1,"* ]]; }
 
-# Native-relevant paths (what used to be runtime-native.yml's PR path filter, plus ci.yml).
+# Native-relevant paths.
 native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/native kggml-llama/src kggml-llama/build.gradle.kts kggml-diffusion/native kggml-diffusion/src kggml-diffusion/build.gradle.kts kggml-core-api/src/commonMain integration-tests build-logic gradle gradle.properties .gitmodules NOTICE
-  scripts/ci .github/workflows/ci.yml .github/workflows/runtime-native.yml .github/workflows/runtime-native-macos.yml)
+  scripts/ci .github/workflows/ci.yml)
 native_changed() {
   local base
   base="$(git merge-base HEAD origin/main 2>/dev/null || true)"
@@ -82,6 +88,7 @@ sample_changed() {
 
 # Paths that affect the README snippet compile (:docs-snippets against the published library artifacts).
 snippet_paths=(docs-snippets README.md kggml-bom kggml-core-api kggml-runtime/src kggml-runtime/build.gradle.kts
+  kggml-runtime-vulkan/src kggml-runtime-vulkan/build.gradle.kts kggml-runtime-opencl/src kggml-runtime-opencl/build.gradle.kts
   kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/src kggml-llama/build.gradle.kts kggml-diffusion/src
   kggml-diffusion/build.gradle.kts kggml-model-manager settings.gradle.kts build-logic gradle gradle.properties)
 snippets_changed() {
@@ -94,7 +101,7 @@ snippets_changed() {
 
 # Paths that affect the published artifacts or the release staging/audit.
 release_paths=(build-logic gradle gradle.properties settings.gradle.kts kggml-bom kggml-core-api/build.gradle.kts
-  kggml-runtime/build.gradle.kts kggml-whisper/build.gradle.kts kggml-llama/build.gradle.kts
+  kggml-runtime/build.gradle.kts kggml-runtime-vulkan/build.gradle.kts kggml-runtime-opencl/build.gradle.kts kggml-whisper/build.gradle.kts kggml-llama/build.gradle.kts
   kggml-diffusion/build.gradle.kts kggml-model-manager/build.gradle.kts scripts/ci/stage-release.sh
   scripts/ci/verify_release.py .github/workflows/release.yml)
 release_changed() {
@@ -109,6 +116,9 @@ selected() {
   local step="$1"
   if [[ -n "${only}" ]]; then in_list "${step}" "${only}"; return; fi
   in_list "${step}" "${skip}" && return 1
+  # Opt-in steps: coverage re-runs every JVM test with the Kover agent; instrumented needs a device; ios-apps builds
+  # the iOS xcframeworks and both Xcode apps.
+  case "${step}" in coverage|instrumented|ios-apps) return 1 ;; esac
   [[ ${full} -eq 1 ]] && return 0
   case "${step}" in
     check) return 1 ;;   # full Gradle check only with --full or --only check
@@ -203,6 +213,7 @@ for step in "${all_steps[@]}"; do
       run_step runners ./scripts/ci/verify-hosted-runners.sh
       run_step rn-test ./scripts/tests/test-verify-hosted-runners.sh
       run_step rel-test ./scripts/tests/test-verify-release.sh
+      run_step arch-test ./scripts/tests/test-check-native-arch.sh
       run_step license ./scripts/ci/verify-licenses.sh
       run_step l-test ./scripts/tests/test-verify-licenses.sh
       run_step docs ./scripts/ci/verify-docs.sh
@@ -244,11 +255,16 @@ for step in "${all_steps[@]}"; do
         run_step la-audit ./scripts/ci/audit-llama-linkage.sh android arm64-v8a x86_64
         run_step d-android ./kggml-diffusion/native/scripts/build-android.sh arm64-v8a x86_64
         run_step da-audit ./scripts/ci/audit-diffusion-linkage.sh android arm64-v8a x86_64
+        run_step v-android ./kggml-runtime-vulkan/native/scripts/build-android.sh arm64-v8a x86_64
+        run_step va-audit ./scripts/ci/audit-gpu-addon.sh vulkan arm64-v8a x86_64
+        run_step o-android ./kggml-runtime-opencl/native/scripts/build-android.sh arm64-v8a x86_64
+        run_step oa-audit ./scripts/ci/audit-gpu-addon.sh opencl arm64-v8a x86_64
       else
         missing android "Android NDK not found (set ANDROID_NDK_HOME or ANDROID_HOME)"
       fi ;;
     sample)
       run_step s-check ./gradlew :samples:whisper-only-minimal:check --console=plain
+      run_step sd-audit ./scripts/ci/audit-minimal-sample.sh desktop
       if ndk="$(find_ndk)"; then
         export ANDROID_NDK_HOME="${ndk}"
         run_step s-audit ./scripts/ci/audit-minimal-sample.sh android
@@ -260,7 +276,7 @@ for step in "${all_steps[@]}"; do
       run_step snippets ./gradlew :docs-snippets:compileKotlinJvm --console=plain ;;
     release)
       # On Linux the iOS components cannot be built; the ci.yml macOS job stages them.
-      release_skip=(--skip-targets ios)
+      release_skip=(--skip-targets ios,macos)
       [[ "$(uname -s)" == Darwin ]] && release_skip=()
       run_step release ./scripts/ci/stage-release.sh --dry-run ${release_skip[@]+"${release_skip[@]}"} ;;
     check)
@@ -271,6 +287,23 @@ for step in "${all_steps[@]}"; do
           :samples:kggml-showcase:desktopJar :samples:whisper-only-minimal:assembleDebug
       else
         missing check "Android SDK not found (./gradlew check needs ANDROID_HOME)"
+      fi ;;
+    coverage)
+      run_step coverage ./scripts/ci/coverage.sh ;;
+    instrumented)
+      if sdk="$(find_sdk)"; then
+        export ANDROID_HOME="${sdk}"
+        if ndk="$(find_ndk)"; then export ANDROID_NDK_HOME="${ndk}"; fi
+        run_step instrumented ./scripts/ci/run-android-instrumented.sh
+      else
+        missing instrumented "Android SDK not found (instrumented tests need ANDROID_HOME and a device)"
+      fi ;;
+    ios-apps)
+      if [[ "$(uname -s)" == Darwin ]] && command -v xcodebuild >/dev/null 2>&1; then
+        run_step ios-xcf ./scripts/ios/build-xcframeworks.sh all
+        run_step ios-apps ./scripts/ios/build-sample-apps.sh all
+      else
+        missing ios-apps "Xcode not found (the iOS apps build on macOS only)"
       fi ;;
   esac
 done

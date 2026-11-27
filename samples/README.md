@@ -5,14 +5,15 @@ module dependencies). They are never published.
 
 | Sample | Targets | Purpose |
 | --- | --- | --- |
-| `:samples:kggml-showcase` | Android, iOS, JVM Desktop (Compose Multiplatform) | Five functional screens: **Hardware Backend Inspector** (`KggmlRuntime`), **Model Manager** (catalog, resumable / verified downloads, header metadata + peak-RAM estimate, manual / OS low-memory eviction), **Live Whisper Dictation & Audio Studio**, **LLM Chat, Structured Output & Vision** (streaming chat, thread / GPU-layer controls, KV snapshots, JSON-schema extraction, embeddings, in-memory VLM images) and **Diffusion Image Studio** (steps / CFG / seed, live progress, cancel, PNG export); see [its README](kggml-showcase/README.md). |
-| `:samples:whisper-only-minimal` | Android, iOS | Minimal app depending only on `kggml-bom` + `:kggml-whisper`: PCM file transcription, runtime `ComputeBackend` toggle and an iOS background `CPU_ONLY` test mode (see [its README](whisper-only-minimal/README.md)). Used for CI binary symbol leakage audits (`scripts/audit-binary-symbols.sh`); `verifyMinimalDependencies` (part of `check`) fails if `:kggml-llama` or `:kggml-diffusion` is ever resolved. |
+| `:samples:kggml-showcase` | Android, iOS, JVM Desktop (Compose Multiplatform; the Android app adds the Vulkan and OpenCL GPU add-ons) | Five functional screens: **Hardware Backend Inspector** (`KggmlRuntime`), **Model Manager** (catalog, resumable / verified downloads, header metadata + peak-RAM estimate, manual / OS low-memory eviction), **Live Whisper Dictation & Audio Studio**, **LLM Chat, Structured Output & Vision** (streaming chat, thread / GPU-layer controls, KV snapshots, JSON-schema extraction, embeddings, in-memory VLM images) and **Diffusion Image Studio** (steps / CFG / seed, live progress, cancel, PNG export); see [its README](kggml-showcase/README.md). |
+| `:samples:whisper-only-minimal` | Android, iOS, JVM Desktop (platform UI toolkits) | Minimal app depending only on `kggml-bom` + `:kggml-whisper`: PCM file transcription, runtime `ComputeBackend` toggle and an iOS background `CPU_ONLY` test mode (see [its README](whisper-only-minimal/README.md)). Used for CI binary symbol leakage audits (`scripts/audit-binary-symbols.sh`); `verifyMinimalDependencies` (part of `check`) fails if `:kggml-llama` or `:kggml-diffusion` is ever resolved, and the audit also rejects the GPU add-ons. |
 
 ## Running
 
 ```bash
 # JVM Desktop (uses build/native/lib automatically if kggml-runtime/native/scripts/build-host.sh was run)
 ./gradlew :samples:kggml-showcase:run
+./gradlew :samples:whisper-only-minimal:runDesktop   # Swing app; needs the kggml-whisper host build too
 
 # Android APKs (add -Pkggml.bundleNative=true to package the native runtime for arm64-v8a / x86_64)
 ./gradlew :samples:kggml-showcase:assembleDebug :samples:whisper-only-minimal:assembleDebug

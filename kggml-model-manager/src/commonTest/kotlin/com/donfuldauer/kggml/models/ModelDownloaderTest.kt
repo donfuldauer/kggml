@@ -263,4 +263,130 @@ class ModelDownloaderTest {
         assertNull(ContentRange.parse("items 0-1/2"))
         assertNull(ContentRange.parse(null))
     }
+
+    @Test
+    fun writtenSizeDifferentFromExpectedFailsAfterTheLastChunk() = runTest {
+        // 206 responses never announce a total, so the 200-byte shortfall only shows once the server runs out.
+        repeat(20) { server.script += FakeHttpServer.Behavior.UnknownTotal }
+        val e = assertFailsWith<DownloadSizeMismatchException> { downloader().downloadTo(request(sha256 = null, size = 1200)) }
+        assertEquals(1200L, e.expectedBytes)
+        assertEquals(1000L, e.actualBytes)
+        assertNull(fs.files[part], "the partial file is deleted")
+        assertNull(fs.files[dest])
+    }
+
+    @Test
+    fun progressFractionStaysInRange() {
+        assertEquals(0.25, DownloadEvent.Progress(50, 200).fraction)
+        assertNull(DownloadEvent.Progress(50, null).fraction)
+        assertNull(DownloadEvent.Progress(0, 0).fraction, "an empty total has no fraction rather than NaN")
+    }
+
+    @Test
+    fun contentRangeEdgeCases() {
+        assertEquals(ContentRange(7, 7, 8), ContentRange.parse("bytes 7-7/8"), "a single byte")
+        assertEquals(ContentRange(0, 0, 1), ContentRange.parse("  bytes 0-0/1  "))
+        assertNull(ContentRange.parse("bytes 0-/10"))
+        assertNull(ContentRange.parse("bytes -1-5/10"))
+        assertNull(ContentRange.parse(""))
+    }
+
+    /** A transport answering every request with [status], [responseHeaders] (lowercase names) and [body]. */
+    private class FixedResponseTransport(
+        val status: Int,
+        val body: ByteArray,
+        val responseHeaders: Map<String, String> = emptyMap(),
+    ) : HttpTransport {
+        var requests = 0
+
+        override suspend fun <T> get(url: String, headers: Map<String, String>, handle: suspend (HttpResponse) -> T): T {
+            requests++
+            var pos = 0
+            return handle(
+                object : HttpResponse {
+                    override val statusCode = status
+                    override fun header(name: String) = responseHeaders[name.lowercase()]
+                    override suspend fun read(buffer: ByteArray): Int {
+                        if (pos >= body.size) return -1
+                        val n = minOf(buffer.size, body.size - pos)
+                        body.copyInto(buffer, 0, pos, pos + n)
+                        pos += n
+                        return n
+                    }
+                },
+            )
+        }
+    }
+
+    private fun TestScope.downloaderWith(transport: HttpTransport, retries: Int = 3) = ModelDownloader(
+        transport = transport,
+        fileSystem = fs,
+        chunkSizeBytes = 128,
+        maxRetries = retries,
+        initialRetryDelay = 100.milliseconds,
+        ioDispatcher = StandardTestDispatcher(testScheduler),
+        readBufferSize = 50,
+    )
+
+    @Test
+    fun emptyPartialContentIsRetriedThenFails() = runTest {
+        val transport = FixedResponseTransport(206, ByteArray(0), mapOf("content-range" to "bytes 0-127/1000"))
+        val e = assertFailsWith<DownloadTransportException> { downloaderWith(transport, retries = 2).downloadTo(request()) }
+        assertEquals("empty 206 body at offset 0", e.message)
+        assertEquals(3, transport.requests, "the first attempt plus 2 retries")
+    }
+
+    @Test
+    fun fullResponseWithoutContentLengthUsesTheBytesWritten() = runTest {
+        val transport = FixedResponseTransport(200, content)
+        val events = downloaderWith(transport).download(request(size = null)).toList()
+        assertEquals(DownloadEvent.Started(0, null), events.first())
+        assertNull(events.filterIsInstance<DownloadEvent.Progress>().first().totalBytes)
+        assertEquals(DownloadEvent.Completed(dest, 1000, sha, 0, alreadyPresent = false), events.last())
+        assertEquals(1, transport.requests)
+        assertContentEquals(content, fs.files[dest])
+    }
+
+    @Test
+    fun requestTimeoutAndTooManyRequestsAreRetried() = runTest {
+        server.script += FakeHttpServer.Behavior.Status(408)
+        server.script += FakeHttpServer.Behavior.Status(429)
+        server.script += FakeHttpServer.Behavior.Status(599)
+        downloader().downloadTo(request())
+        assertContentEquals(content, fs.files[dest])
+        assertEquals(List(4) { "bytes=0-127" }, server.requests.take(4).map { it["Range"] })
+        // 4xx other than 408/429/416 are permanent; 600 is not a 5xx.
+        for (status in listOf(400, 401, 410, 600)) {
+            server.script += FakeHttpServer.Behavior.Status(status)
+            fs.files.remove(dest)
+            assertEquals(status, assertFailsWith<DownloadHttpException> { downloader().downloadTo(request()) }.statusCode)
+        }
+    }
+
+    @Test
+    fun unsatisfiableRangeAtOffsetZeroFails() = runTest {
+        // 416 for "bytes=0-127" of a file expected to hold 1000 bytes: nothing to resume from, so it is an error.
+        server.script += FakeHttpServer.Behavior.Status(416)
+        val e = assertFailsWith<DownloadHttpException> { downloader().downloadTo(request()) }
+        assertEquals(416, e.statusCode)
+        assertEquals("https://h/m", e.url)
+        assertEquals(1, server.requests.size)
+    }
+
+    @Test
+    fun existingDestinationOfTheWrongSizeIsDownloadedAgain() = runTest {
+        fs.files[dest] = ByteArray(10)
+        val events = downloader().download(request()).toList()
+        assertEquals(DownloadEvent.Started(0, 1000), events.first(), "the stale file is not even hashed")
+        assertFalse((events.last() as DownloadEvent.Completed).alreadyPresent)
+        assertContentEquals(content, fs.files[dest])
+    }
+
+    @Test
+    fun destinationWithoutADirectoryCreatesNoDirectories() = runTest {
+        downloader().downloadTo(DownloadRequest("https://h/m", "model.gguf", sha))
+        assertTrue(fs.directories.isEmpty())
+        assertContentEquals(content, fs.files["model.gguf"])
+        assertFailsWith<IllegalArgumentException> { ModelDownloader(server, fs, readBufferSize = 0) }
+    }
 }

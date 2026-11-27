@@ -6,6 +6,7 @@
 #include "kggml_runtime.h"
 
 #include "cpu_topology.hpp"
+#include "device_policy.hpp"
 #include "guard.hpp"
 
 #if defined(KGGML_RUNTIME_TEST_HOOKS)
@@ -18,11 +19,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #ifndef KGGML_RUNTIME_VERSION_STRING
 #    error "KGGML_RUNTIME_VERSION_STRING must be defined by the build"
@@ -103,6 +106,7 @@ struct runtime_state {
     std::mutex mutex;
     int32_t ref_count = 0;
     std::array<kggml_backend_info, KGGML_BACKEND_KIND_COUNT> backends{};
+    std::vector<std::string> loaded_modules; // backend modules registered by kggml_runtime_load_backend
 };
 
 runtime_state & state() noexcept {
@@ -128,16 +132,35 @@ int32_t registry_device_count(const char * reg_name) {
     return reg == nullptr ? 0 : static_cast<int32_t>(ggml_backend_reg_dev_count(reg));
 }
 
-#if defined(GGML_USE_METAL) || defined(GGML_USE_VULKAN)
+// Usable Vulkan devices: those vulkan_device_allowed keeps (PowerVR drivers are excluded; see device_policy.hpp).
+int32_t vulkan_device_count() {
+    ggml_backend_reg_t reg = ggml_backend_reg_by_name("Vulkan");
+    if (reg == nullptr) return 0;
+    const char * allow = std::getenv(kggml::runtime::kAllowPowerVrEnv);
+    int32_t usable = 0;
+    for (size_t i = 0; i < ggml_backend_reg_dev_count(reg); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_reg_dev_get(reg, i);
+        if (kggml::runtime::vulkan_device_allowed(ggml_backend_dev_description(dev), allow)) ++usable;
+    }
+    return usable;
+}
+
 // Probes one optional GPU backend; a failing driver means "unavailable", never an error.
-int32_t probe_devices(const char * reg_name) noexcept {
+[[maybe_unused]] int32_t probe_devices(const char * reg_name) noexcept {
     try {
         return registry_device_count(reg_name);
     } catch (...) {
         return 0;
     }
 }
-#endif
+
+int32_t probe_vulkan_devices() noexcept {
+    try {
+        return vulkan_device_count();
+    } catch (...) {
+        return 0;
+    }
+}
 
 void probe_backends(std::array<kggml_backend_info, KGGML_BACKEND_KIND_COUNT> & out) {
     fill_info(out[KGGML_BACKEND_CPU], KGGML_BACKEND_CPU, "CPU", true, registry_device_count("CPU"));
@@ -153,11 +176,16 @@ void probe_backends(std::array<kggml_backend_info, KGGML_BACKEND_KIND_COUNT> & o
     fill_info(out[KGGML_BACKEND_METAL], KGGML_BACKEND_METAL, "Metal", false, 0);
 #endif
 
-#if defined(GGML_USE_VULKAN)
-    fill_info(out[KGGML_BACKEND_VULKAN], KGGML_BACKEND_VULKAN, "Vulkan", true, probe_devices("Vulkan"));
-#else
-    fill_info(out[KGGML_BACKEND_VULKAN], KGGML_BACKEND_VULKAN, "Vulkan", false, 0);
-#endif
+    // Vulkan is either linked in (GGML_USE_VULKAN, desktop builds with KGGML_ENABLE_VULKAN) or registered at runtime
+    // from a backend module (the Android kggml-runtime-vulkan add-on, kggml_runtime_load_backend): ask the registry.
+    const bool vulkan_registered = ggml_backend_reg_by_name("Vulkan") != nullptr;
+    fill_info(out[KGGML_BACKEND_VULKAN], KGGML_BACKEND_VULKAN, "Vulkan", vulkan_registered,
+              vulkan_registered ? probe_vulkan_devices() : 0);
+
+    // OpenCL is only ever a registered backend module (the Android kggml-runtime-opencl add-on).
+    const bool opencl_registered = ggml_backend_reg_by_name("OpenCL") != nullptr;
+    fill_info(out[KGGML_BACKEND_OPENCL], KGGML_BACKEND_OPENCL, "OpenCL", opencl_registered,
+              opencl_registered ? probe_devices("OpenCL") : 0);
 
     // CoreML is a compile-time capability flag; the engine (whisper.cpp encoder) owns the actual model.
 #if defined(KGGML_HAS_COREML)
@@ -244,6 +272,30 @@ int32_t kggml_runtime_ref_count(void) {
 }
 
 // ----- backends -------------------------------------------------------------------------------------------
+
+kggml_status kggml_runtime_load_backend(const char * path) {
+    return guarded("kggml_runtime_load_backend", [&]() -> kggml_status {
+        if (path == nullptr || *path == '\0') {
+            return fail(KGGML_STATUS_INVALID_ARGUMENT, "kggml_runtime_load_backend: path is NULL or empty");
+        }
+        runtime_state & s = state();
+        std::lock_guard<std::mutex> lock(s.mutex);
+        const std::string module(path);
+        if (std::find(s.loaded_modules.begin(), s.loaded_modules.end(), module) != s.loaded_modules.end()) {
+            return KGGML_STATUS_OK; // registered once per process; a second registration would duplicate its devices
+        }
+        if (ggml_backend_load(path) == nullptr) {
+            const std::string message = "kggml_runtime_load_backend: could not load ggml backend module '" + module +
+                                        "' (missing, wrong ABI, or built against another ggml)";
+            return fail(KGGML_STATUS_BACKEND_UNAVAILABLE, message.c_str());
+        }
+        s.loaded_modules.push_back(module);
+        if (s.ref_count > 0) {
+            probe_backends(s.backends); // already initialized: report the new backend right away
+        }
+        return KGGML_STATUS_OK;
+    });
+}
 
 kggml_status kggml_runtime_get_backends(kggml_backend_info * out, int32_t capacity, int32_t * out_count) {
     return guarded("kggml_runtime_get_backends", [&]() -> kggml_status {

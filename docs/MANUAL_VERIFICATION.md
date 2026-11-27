@@ -68,13 +68,9 @@ when it has been run; a failed check becomes a new issue.
 - [ ] [#20] Whisper live dictation and LLM Chat streaming at the same time in `:samples:kggml-showcase` on a physical
   Android phone, an iPhone and desktop (both keep producing output, no crash or OOM, one mapping per `libggml*` library
   on Android) — procedure in `integration-tests/README.md` ("Whisper and Llama together on devices").
-- [ ] [#20] CI re-run on Windows (billing / spending-limit refusal, job failed with no logs: MSVC runtime / whisper /
-  llama / diffusion build + CTest and root `jvmTest` incl. `:integration-tests` dual-engine coexistence) —
-  https://github.com/donfuldauer/kggml/pull/54
-- [ ] [#22] External links in the Markdown docs once the repository is public (GitHub issue-template, advisory and
-  upstream links answer 404/403 to unauthenticated requests while it is private, and CI has no network rule for
-  them): `./scripts/ci/verify-docs.sh --online --only links` reports no failures — procedure in `CONTRIBUTING.md`
-  ("Documentation").
+- [ ] [#22] External links in the Markdown docs (CI has no network rule for them, and GitHub links only resolve for
+  unauthenticated readers once the repository is public): `./scripts/ci/verify-docs.sh --online --only links`
+  reports no failures — procedure in `CONTRIBUTING.md` ("Documentation").
 - [ ] [#22] README quickstart on real hardware: the `README.md` Whisper, Llama, Diffusion and model-manager snippets
   (compiled by `:docs-snippets`) produce sensible output with real models on desktop, a physical Android phone and an
   iPhone, and the iOS background guidance (`BackendConfig.CPU` / `observeAppLifecycle`) keeps transcription running
@@ -82,33 +78,33 @@ when it has been run; a failed check becomes a new issue.
 
 ## Phase OSS
 
-- [ ] [#23] Owner, before the repository is made public: remove the Mac runner registered for #43 (on the Mac:
-  `gh-runner remove donfuldauer/kggml`, then check Settings → Actions → Runners is empty) and delete the Mac runner's
-  on/off repository variable (Settings → Secrets and variables → Actions → Variables). Nothing in the repository refers
-  to either any more (`scripts/ci/verify-hosted-runners.sh`) — procedure in `docs/RELEASING.md` ("Before the first
-  release").
+- [ ] Android instrumented suites on an emulator or phone before each release (CI runs no Android emulator):
+  `./scripts/ci-local.sh --only instrumented` (or `./scripts/ci/run-android-instrumented.sh`) with an arm64 or x86_64 AVD passes, with the real native libraries
+  bundled and required.
+- [ ] Owner, right after the repository is made public: private vulnerability reporting enabled (Settings → Advanced
+  Security → "Private vulnerability reporting"), so the `SECURITY.md` and issue-template report links open the
+  advisory form; Security → "Report a vulnerability" opens it.
 - [ ] [#23] Owner: Central Portal namespace `com.donfuldauer` verified, release secrets added, public signing key on a
   keyserver, then a `release.yml` dry-run dispatch from `main` is green and its bundle validates in the portal —
   procedure in `docs/RELEASING.md` ("Before the first release" and "Dry run").
-- [ ] [#23] Full `ci.yml` matrix (Ubuntu, macOS, Windows) green on GitHub-hosted runners from `main` after merge
-  (`Actions → CI → Run workflow`) — procedure in `docs/RELEASING.md` ("Dry run").
-- [ ] [#23] CI re-run on macOS/Windows once Actions minutes reset (billing / spending-limit refusal, every hosted job
-  failed in ~2 s with no logs: macOS release dry-run with the iOS klibs, `release.yml` iOS/xcframework path, Windows
-  MSVC build + `jvmTest`) — https://github.com/donfuldauer/kggml/pull/57
-- [ ] [#24] Owner, before the visibility flip: no runner registered to the repository (`gh api repos/donfuldauer/kggml/actions/runners
-  --jq .total_count` prints `0`, `gh variable list` shows no runner variable) — procedure in `docs/OSS_LAUNCH.md`
-  ("Owner steps before the visibility flip", step 1).
-- [ ] [#24] Owner: GitHub secret scanning and push protection enabled (Settings → Code security), and no secret
-  scanning alerts after the flip — procedure in `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip",
-  step 2).
-- [ ] [#24] Owner decision: keep or rewrite the personal commit e-mail on 12 early/merge commits
-  (`./scripts/ci/audit-history.sh` lists them without the address) — procedure in `docs/OSS_LAUNCH.md` ("Commit
-  e-mail addresses").
-- [ ] [#24] Owner: `./scripts/ci/audit-history.sh` passes on a fresh full clone right before the visibility flip, then
-  flip to public — procedure in `docs/OSS_LAUNCH.md` ("Owner steps before the visibility flip", steps 4–5).
-- [ ] [#24] Owner, right after the flip: private vulnerability reporting enabled (Settings → Code security), so the
-  `SECURITY.md` and issue-template report links open the advisory form — procedure in `docs/OSS_LAUNCH.md` ("Owner
-  steps before the visibility flip", step 6).
-- [ ] [#24] CI re-run once Actions minutes reset (billing / spending-limit refusal: every hosted job, including
-  repo-hygiene's `secret-scan` full-history audit with the pinned gitleaks download, the Ubuntu job and the labelled
-  macOS/Windows jobs, failed in 1–3 s with no logs) — https://github.com/donfuldauer/kggml/pull/58
+- [ ] [#83] Android GPU add-on on a physical phone with a Vulkan 1.1+ GPU (owner's Pixel; ideally also one Adreno and
+  one Mali device): the showcase Backends screen lists Vulkan as available; whisper, llama (SmolVLM / Qwen) and
+  diffusion (SD-Turbo, 4 steps, 512x512) produce correct output on `GPU_VULKAN` and `AUTO`, and diffusion is faster than
+  on `CPU_ONLY`; on a device without a usable driver the logcat warning appears and everything runs on the CPU.
+- [x] PowerVR exclusion on the owner's Pixel 11 Pro (Tensor, Imagination PowerVR GPU): with the showcase from this change,
+  the Backends screen shows Vulkan registered with 0 devices, `AUTO` and `GPU_VULKAN` load and run whisper, llama and
+  diffusion on the CPU without hanging (before: model loads hung or the app stopped responding on Vulkan).
+  Verified by the owner on 2026-11-27 on a Pixel 11 Pro with a build containing #102 and #103: passed, Vulkan falls
+  back to the CPU.
+- [ ] Android OpenCL add-on on a Qualcomm Adreno phone (Snapdragon): the showcase Backends screen lists OpenCL as
+  available and `AUTO` resolves to it; whisper, llama and diffusion (SD-Turbo) produce correct output on `GPU_OPENCL`
+  (diffusion op coverage of ggml-opencl is the open question). On a phone without OpenCL (Pixel) the logcat
+  warning appears and Vulkan / the CPU are used.
+- [ ] [#91] JVM desktop on arm64 hardware, with the released (or `-Pkggml.bundleNative=true`) jar: on a Windows on ARM
+  laptop (Snapdragon X) and on an arm64 Linux machine (Raspberry Pi 5, Graviton, Jetson), the whisper-only-minimal
+  desktop app transcribes the sample, and `./gradlew jvmTest -Pkggml.requireNative=true` passes. CI only cross-compiles
+  these: linux-aarch64 CTest runs under qemu, windows-aarch64 is checked for the ARM64 machine type only.
+- [ ] [#92] JVM desktop Vulkan add-on on a Linux x86_64 machine with a real GPU driver (Mesa radv/anv or NVIDIA): with
+  `kggml-runtime-vulkan` on the classpath, the showcase desktop Backends screen lists Vulkan as available and `AUTO`
+  resolves to it; whisper and llama produce the same output as on `CPU_ONLY`, faster. CI only checks registration on
+  Mesa's software lavapipe device.

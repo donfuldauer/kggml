@@ -80,4 +80,36 @@ class RamEstimateTest {
         assertFailsWith<IllegalArgumentException> { LlmRamEstimateOptions(batchSize = 0) }
         assertFailsWith<IllegalArgumentException> { LlmRamEstimateOptions(kvCacheElementBytes = Double.NaN) }
     }
+
+    @Test
+    fun zeroOrMissingTrainedContext() {
+        val h = GgufModelHeader.parse(
+            ByteArrayModelSource(
+                GgufBuilder()
+                    .string("general.architecture", "llama")
+                    .u32("llama.embedding_length", 64)
+                    .u32("llama.block_count", 2)
+                    .u32("llama.attention.head_count", 4)
+                    .u32("llama.vocab_size", 100)
+                    .build(),
+            ),
+        )
+        // contextLength = 0 means "the trained context", which is absent (0): no KV cache, no attention scores,
+        // and the batch is not capped by a zero context.
+        val full = estimateLlmPeakRam(h, LlmRamEstimateOptions(contextLength = 0, batchSize = 8))
+        assertEquals(0L, full.kvCacheBytes)
+        assertEquals(100L * 8 * 4 + 64L * 8 * 4 * 8, full.computeBytes)
+        // The default falls back to the 4096-token cap: 2 layers * 4096 * 4 kv heads * (16 + 16) * 2 bytes.
+        val default = estimateLlmPeakRam(h, LlmRamEstimateOptions(batchSize = 8))
+        assertEquals(2L * 4096 * 4 * (16 + 16) * 2, default.kvCacheBytes)
+        assertEquals(100L * 8 * 4 + 64L * 8 * 4 * 8 + 4L * 8 * 4096 * 4, default.computeBytes)
+    }
+
+    @Test
+    fun kvElementSizeMustBePositiveAndFinite() {
+        for (bytes in listOf(0.0, -1.0, Double.POSITIVE_INFINITY)) {
+            assertFailsWith<IllegalArgumentException>("$bytes") { LlmRamEstimateOptions(kvCacheElementBytes = bytes) }
+        }
+        assertEquals(0.5, LlmRamEstimateOptions(kvCacheElementBytes = 0.5).kvCacheElementBytes)
+    }
 }

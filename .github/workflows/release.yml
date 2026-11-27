@@ -1,11 +1,12 @@
 name: Release (Maven Central)
 
 # Builds, signs, audits and uploads every Kggml coordinate under com.donfuldauer to Maven Central (issue #23):
-#   kggml-bom, kggml-core-api, kggml-runtime, kggml-whisper, kggml-llama, kggml-diffusion, kggml-model-manager
+#   kggml-bom, kggml-core-api, kggml-runtime, kggml-runtime-vulkan, kggml-runtime-opencl, kggml-whisper, kggml-llama, kggml-diffusion, kggml-model-manager
 # (each Kotlin Multiplatform library with its android, jvm, iosArm64 and iosSimulatorArm64 components).
 #
-#   desktop-natives  ubuntu-latest + windows-latest build the release ggml runtime for linux-x86_64 and
-#                    windows-x86_64 and stage it as JVM resources (kggml/native/<platform>/).
+#   desktop-natives  ubuntu-latest + windows-latest build the release ggml runtime for linux-x86_64,
+#                    windows-x86_64 and (cross-compiled, issue #91) linux-aarch64 and windows-aarch64, and stage it as
+#                    JVM resources (kggml/native/<platform>/).
 #   publish          macos-latest (the only host that builds every KMP target) builds the iOS xcframeworks, then
 #                    scripts/ci/stage-release.sh publishes every publication signed into build/kggml-staging-repo
 #                    with the macOS + Android runtimes bundled and the two desktop runtimes above added to the
@@ -13,7 +14,7 @@ name: Release (Maven Central)
 #                    A real release then uploads it with scripts/ci/upload-central-bundle.sh.
 #
 # Triggers:
-#   - push of a tag `v<VERSION_NAME>` (e.g. v1.0.0): real release. The tag must match gradle.properties.
+#   - push of a tag `v<VERSION_NAME>` (e.g. v0.1.0): real release. The tag must match gradle.properties.
 #   - manual dispatch: dry run by default (sign with the configured key, or a throwaway key if none, audit, keep
 #     the bundle as a workflow artifact, upload nothing). A non-dry-run dispatch must target a `v*` tag.
 # Secrets (Settings -> Secrets and variables -> Actions; see docs/RELEASING.md):
@@ -59,6 +60,10 @@ jobs:
             platform: linux-x86_64
           - os: windows-latest
             platform: windows-x86_64
+          - os: ubuntu-latest
+            platform: linux-aarch64
+          - os: windows-latest
+            platform: windows-aarch64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -79,23 +84,34 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Install Ninja (Linux)
+      - name: Runner setup (Linux; installs missing build tools)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: ./scripts/ci/setup/linux.sh ${{ matrix.platform == 'linux-aarch64' && '--arm64-cross' || '' }}
+
+      - name: Runner setup (Windows; installs missing build tools, ARM64 + clang for windows-aarch64)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1 ${{ matrix.platform == 'windows-aarch64' && '-Arm64' || '' }}
 
       - name: Set up MSVC developer environment (Windows)
-        if: runner.os == 'Windows'
+        if: matrix.platform == 'windows-x86_64'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
       # Windows: build in cmd so MSVC wins over Git Bash's `link`, exactly as ci.yml does; Gradle then only stages.
-      - name: Release runtime build (Windows, MSVC)
-        if: runner.os == 'Windows'
+      - name: Release runtime build (Windows arm64, LLVM clang)
+        if: matrix.platform == 'windows-aarch64'
         shell: cmd
         timeout-minutes: 30
         run: |
-          where ninja >nul 2>&1 || choco install ninja -y --no-progress || exit /b 1
+          call kggml-runtime\native\scripts\build-windows-arm64.cmd build\native-release-install
+
+      - name: Release runtime build (Windows, MSVC)
+        if: matrix.platform == 'windows-x86_64'
+        shell: cmd
+        timeout-minutes: 30
+        run: |
           cmake -S kggml-runtime/native --preset windows-x64 -B build/native-release -DKGGML_RUNTIME_BUILD_TESTS=OFF || exit /b 1
           cmake --build build/native-release --config Release -j 4 || exit /b 1
           cmake --install build/native-release --config Release --prefix build/native-release-install
@@ -105,16 +121,37 @@ jobs:
         run: |
           skip=()
           [[ "${RUNNER_OS}" == Windows ]] && skip=(-x :kggml-runtime:buildNativeHostRelease)
-          ./gradlew :kggml-runtime:stageJvmNativeResources --console=plain "${skip[@]}"
+          ./gradlew :kggml-runtime:stageJvmNativeResources --console=plain "${skip[@]}" \
+            -Pkggml.nativePlatform=${{ matrix.platform }}
           index="kggml-runtime/build/generated/kggml-native/jvm/kggml/native/${{ matrix.platform }}/index.txt"
           test -f "${index}" || { echo "missing ${index}" >&2; exit 1; }
           cat "${index}"
+          source scripts/ci/python.sh && kggml_require_python 3.9
+          kggml_python scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm ${{ matrix.platform }}
 
       - name: Upload staged runtime
         uses: actions/upload-artifact@v4
         with:
           name: jvm-natives-${{ matrix.platform }}
           path: kggml-runtime/build/generated/kggml-native/jvm/
+          if-no-files-found: error
+          retention-days: 7
+
+      # Issue #92: the desktop Vulkan add-on module for the kggml-runtime-vulkan jar (Linux x86_64 for now; Windows
+      # needs the Vulkan SDK on the build machine).
+      - name: Desktop Vulkan add-on module (linux-x86_64)
+        if: matrix.platform == 'linux-x86_64'
+        run: |
+          ./scripts/ci/setup/linux.sh --vulkan
+          ./kggml-runtime-vulkan/native/scripts/build-host.sh
+          ./scripts/ci/audit-gpu-addon.sh vulkan --desktop linux-x86_64
+
+      - name: Upload the desktop Vulkan add-on module
+        if: matrix.platform == 'linux-x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-addons-${{ matrix.platform }}
+          path: build/native-vulkan-jvm/
           if-no-files-found: error
           retention-days: 7
 
@@ -137,8 +174,8 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ninja
-        run: brew install ninja || true
+      - name: Runner setup (installs missing build tools)
+        run: ./scripts/ci/setup/macos.sh
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -155,6 +192,13 @@ jobs:
           pattern: jvm-natives-*
           merge-multiple: true
           path: build/release-natives
+
+      - name: Download the desktop GPU add-on modules
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jvm-addons-*
+          merge-multiple: true
+          path: build/release-addons
 
       - name: Build the iOS xcframeworks (GgmlRuntime, KggmlWhisper, KggmlLlama, KggmlDiffusion)
         timeout-minutes: 60
@@ -176,17 +220,25 @@ jobs:
           [[ "${DRY_RUN}" == true ]] && args+=(--dry-run)
           [[ "${GITHUB_REF}" == refs/tags/v* ]] && args+=(--expect-version "${GITHUB_REF_NAME#v}")
           ./scripts/ci/stage-release.sh "${args[@]}" -- \
-            -Pkggml.bundleNative=true -Pkggml.extraJvmNativeResources="${GITHUB_WORKSPACE}/build/release-natives"
+            -Pkggml.bundleNative=true -Pkggml.extraJvmNativeResources="${GITHUB_WORKSPACE}/build/release-natives" \
+            -Pkggml.extraJvmAddonResources="${GITHUB_WORKSPACE}/build/release-addons"
 
       - name: Check the kggml-runtime jar ships every desktop runtime
         run: |
           version="$(sed -n 's/^VERSION_NAME=//p' gradle.properties)"
           jar="build/kggml-staging-repo/com/donfuldauer/kggml-runtime-jvm/${version}/kggml-runtime-jvm-${version}.jar"
-          for platform in linux-x86_64 windows-x86_64 macos-aarch64; do
+          for platform in linux-x86_64 linux-aarch64 windows-x86_64 windows-aarch64 macos-aarch64; do
             unzip -l "${jar}" "kggml/native/${platform}/index.txt" >/dev/null \
               || { echo "kggml-runtime-jvm jar is missing kggml/native/${platform}/" >&2; exit 1; }
           done
           unzip -l "${jar}" 'kggml/native/*'
+          # Every bundled library matches its platform directory (ELF / PE / Mach-O machine type; issue #91).
+          tmp="$(mktemp -d)"
+          unzip -q "${jar}" 'kggml/native/*' -d "${tmp}"
+          python3 scripts/ci/check_native_arch.py "${tmp}"
+          vk="build/kggml-staging-repo/com/donfuldauer/kggml-runtime-vulkan-jvm/${version}/kggml-runtime-vulkan-jvm-${version}.jar"
+          unzip -l "${vk}" 'kggml/native-addons/linux-x86_64/ggml-vulkan/libggml-vulkan.so' >/dev/null \
+            || { echo "kggml-runtime-vulkan-jvm jar is missing the linux-x86_64 Vulkan module" >&2; exit 1; }
 
       - name: Zip the iOS xcframeworks
         run: |

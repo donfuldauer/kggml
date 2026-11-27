@@ -48,6 +48,8 @@ class FakeTranscriber(
     private val available: Set<ComputeBackend> = setOf(ComputeBackend.CPU_ONLY, ComputeBackend.GPU_METAL),
     var streamError: InferenceException? = null,
     var fileSegments: List<TranscriptionEvent.CommittedSegment> = emptyList(),
+    /** Reported through `onError` when the background fallback is installed (e.g. the OS refused the observer). */
+    var fallbackFailure: Throwable? = null,
 ) : Transcriber {
     val reinitialized = mutableListOf<BackendConfig>()
     val transcribedFiles = mutableListOf<PcmAudio>()
@@ -99,6 +101,7 @@ class FakeTranscriber(
 
     override fun installBackgroundFallback(scope: CoroutineScope, onError: (Throwable) -> Unit): AutoCloseable {
         fallbackInstalls++
+        fallbackFailure?.let(onError)
         return AutoCloseable { fallbackCloses++ }
     }
 

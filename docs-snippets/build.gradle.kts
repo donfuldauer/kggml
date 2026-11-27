@@ -25,13 +25,15 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // One version for every Kggml module.
-            implementation(project.dependencies.platform("com.donfuldauer:kggml-bom:1.0.0"))
+            implementation(project.dependencies.platform("com.donfuldauer:kggml-bom:0.1.0"))
 
             // Pick only the engines you ship; unused engines add no native code to your app.
             implementation("com.donfuldauer:kggml-whisper")        // speech-to-text
             implementation("com.donfuldauer:kggml-llama")          // text generation, embeddings, vision
             implementation("com.donfuldauer:kggml-diffusion")      // text-to-image
             implementation("com.donfuldauer:kggml-model-manager")  // optional: downloads, RAM estimates
+            implementation("com.donfuldauer:kggml-runtime-vulkan") // optional: GPU via Vulkan (Android, desktop Linux)
+            implementation("com.donfuldauer:kggml-runtime-opencl") // optional: Android GPU (OpenCL, Adreno)
         }
     }
     // snippet:end gradle-dependencies
@@ -44,6 +46,8 @@ kotlin {
 val kggmlLibraryModules = listOf(
     ":kggml-core-api",
     ":kggml-runtime",
+    ":kggml-runtime-vulkan",
+    ":kggml-runtime-opencl",
     ":kggml-whisper",
     ":kggml-llama",
     ":kggml-diffusion",

@@ -11,10 +11,20 @@
 
 cmake_minimum_required(VERSION 3.24) # $<LINK_LIBRARY:WHOLE_ARCHIVE,...> for the monolithic iOS framework
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/kggml-version.cmake") # KGGML_VERSION from gradle.properties
+
 project(kggml_runtime
-    VERSION 1.0.0
+    VERSION ${KGGML_VERSION}
     DESCRIPTION "Kggml shared ggml runtime"
     LANGUAGES C CXX)
+
+# MSVC >= 19.40 (VS 2022 17.10) made std::mutex's constructor constexpr; code built that way crashes in
+# msvcp140.dll when the host process (e.g. a JVM that bundles its own, older copy) loads msvcp140 < 14.40.
+# Keep the runtime-compatible constructor for every target in this tree, ggml included (issue #65).
+# clang targeting the MSVC ABI (the windows-arm64 preset) uses the same STL, so it needs it too.
+if (MSVC OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
 
 # Exact upstream ggml pin (tag v0.9.9). Keep in sync with the submodule gitlink and NOTICE.
 set(KGGML_GGML_PINNED_COMMIT "a04eea0761a85d18f3f504d6ab970c5c9dce705f")
@@ -197,7 +207,7 @@ message(STATUS "kggml: ggml targets: ${KGGML_GGML_TARGETS}")
 # requirement of every ggml target (and of kggml_runtime below, which covers the monolithic iOS layout).
 # Consumers that link kggml::ggml / kggml::runtime inherit it automatically; anything compiling against ggml.h
 # without these targets must pass -DGGML_MAX_NAME=128 itself (see README.md, "ggml ABI: GGML_MAX_NAME").
-set(KGGML_GGML_MAX_NAME 128)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/kggml-ggml-abi.cmake") # KGGML_GGML_MAX_NAME, shared with the GPU add-ons
 foreach (_t IN LISTS KGGML_GGML_TARGETS)
     target_compile_definitions(${_t} PUBLIC GGML_MAX_NAME=${KGGML_GGML_MAX_NAME})
 endforeach()
@@ -224,7 +234,8 @@ endif()
 
 add_library(kggml_runtime SHARED
     src/kggml_runtime.cpp
-    src/cpu_topology.cpp)
+    src/cpu_topology.cpp
+    src/device_policy.cpp)
 add_library(kggml::runtime ALIAS kggml_runtime)
 
 target_include_directories(kggml_runtime

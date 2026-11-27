@@ -17,7 +17,7 @@
 #
 # Usage: scripts/ci/stage-release.sh [--dry-run] [--skip-targets <list>] [--expect-version <v>] [-- <gradle args>]
 #   --dry-run          allow an ephemeral signing key when none is configured
-#   --skip-targets     comma-separated targets the host cannot build, skipped by the audit (e.g. `ios` on Linux)
+#   --skip-targets     comma-separated targets the host cannot build, skipped by the audit (e.g. `ios,macos` on Linux)
 #   --expect-version   fail unless VERSION_NAME equals this (release.yml passes the tag without its `v`)
 #   <gradle args>      extra Gradle arguments (e.g. -Pkggml.bundleNative=true)
 set -euo pipefail
@@ -80,8 +80,14 @@ BUNDLE="${REPO_ROOT}/build/kggml-central-bundle.zip"
 rm -rf "${STAGING}" "${BUNDLE}"
 
 echo "==> Publishing every coordinate to ${STAGING#"${REPO_ROOT}/"} (signed)"
-./gradlew publishAllPublicationsToKggmlStagingRepository -Pkggml.release=true --console=plain \
-  ${gradle_args[@]+"${gradle_args[@]}"}
+# Plain console output unless the caller chose one: Gradle rejects a second --console (ci.yml passes
+# $NATIVE_GRADLE_ARGS, which already has --console=plain; issue #69).
+console_args=(--console=plain)
+for arg in ${gradle_args[@]+"${gradle_args[@]}"}; do
+  [[ "${arg}" == --console || "${arg}" == --console=* ]] && console_args=()
+done
+./gradlew publishAllPublicationsToKggmlStagingRepository -Pkggml.release=true \
+  ${console_args[@]+"${console_args[@]}"} ${gradle_args[@]+"${gradle_args[@]}"}
 
 echo "==> Auditing the staged release"
 python3 -I "${REPO_ROOT}/scripts/ci/verify_release.py" "${STAGING}" --version "${version}" --group "${group}" \

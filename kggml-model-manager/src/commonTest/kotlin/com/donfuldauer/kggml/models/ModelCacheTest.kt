@@ -84,4 +84,33 @@ class ModelCacheTest {
         assertEquals(listOf("a.part"), cache().clearPartialDownloads())
         assertEquals(listOf("/c/b"), fs.files.keys.toList())
     }
+
+    @Test
+    fun filesThatCannotBeDeletedAreSkippedByTrim() {
+        put("a", 40, 1)
+        put("b", 40, 2)
+        put("c", 40, 3)
+        val stuck = object : ModelFileSystem by fs {
+            override fun delete(path: String) = path != "/c/a" && fs.delete(path)
+        }
+        val c = ModelCache("/c", stuck, maxBytes = 100) { now }
+        assertEquals(listOf("b"), c.trimToSize(), "a (LRU) cannot be deleted, so b goes and 80 bytes remain")
+        assertEquals(listOf("a", "c"), c.entries().map { it.fileName })
+        assertEquals(listOf("c"), c.trimToSize(0))
+        assertEquals(40L, c.totalBytes())
+        assertFalse(c.remove("a"))
+    }
+
+    @Test
+    fun filesThatVanishAfterListingAreIgnored() {
+        put("a", 10, 1)
+        put("gone", 10, 2)
+        val racy = object : ModelFileSystem by fs {
+            override fun size(path: String) = if (path == "/c/gone") -1L else fs.size(path)
+        }
+        val c = ModelCache("/c", racy) { now }
+        assertEquals(listOf("a"), c.entries().map { it.fileName })
+        assertEquals(10L, c.totalBytes())
+        assertFalse(c.contains("gone"))
+    }
 }
