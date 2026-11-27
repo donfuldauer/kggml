@@ -56,7 +56,8 @@ With an installed runtime, point CMake at its package: `-Dkggml-runtime_DIR=<pre
 | `KGGML_BACKEND_METAL`, `KGGML_BACKEND_VULKAN`, `KGGML_BACKEND_OPENCL` | `true` | never loaded | `BACKEND_UNAVAILABLE` if the runtime has no such device. |
 | `KGGML_BACKEND_COREML` | `true` | loaded if `<model>-encoder.mlmodelc` exists | `BACKEND_UNAVAILABLE` if the build has no CoreML. A missing bundle falls back to Metal, then CPU. |
 
-On iOS, whisper.cpp is built with `WHISPER_COREML` and `WHISPER_COREML_ALLOW_FALLBACK`. Upstream always tries to
+On iOS, whisper.cpp is built with `WHISPER_USE_COREML` (the define behind upstream's `WHISPER_COREML` option) and
+`WHISPER_COREML_ALLOW_FALLBACK`. Upstream always tries to
 load the `.mlmodelc`, so the upstream loader is compiled under a different name and `src/coreml_gate.cpp` supplies
 `whisper_coreml_init()`. That gate loads CoreML only for contexts created with `KGGML_BACKEND_COREML`.
 `kggml_whisper_get_backend()` reports the backend actually in use.

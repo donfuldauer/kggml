@@ -41,7 +41,7 @@ This is deferred to the owner's final acceptance pass (`docs/MANUAL_VERIFICATION
    `./gradlew :samples:kggml-showcase:run`.
 2. In **Model Manager**, download a Whisper model (for example `ggml-base.en`) and a small instruct GGUF (for example
    a 0.5B to 1.5B Q4 model).
-3. Start live dictation in **Whisper Studio** and keep talking. While it transcribes, switch to **LLM Chat** and send a
+3. Start live dictation on the **Whisper** screen and keep talking. While it transcribes, switch to the **Chat** screen and send a
    prompt that produces a long answer.
 4. Expect both engines to keep producing output: transcript segments keep arriving and tokens keep streaming. The app
    must not crash, and neither engine may fail with an out-of-memory or native error.
