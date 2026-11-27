@@ -106,18 +106,17 @@ class JvmIntegrationTest {
     fun cancelledDownloadResumesFromPartialFile() = runBlocking {
         val dest = File(dir, "model.bin").path
         val request = DownloadRequest(url, dest, sha)
-        // download() runs on the I/O dispatcher ahead of this collector, so without a hold it can finish the whole
-        // file before the collector cancels. Hold the third 64 KiB chunk until the download has been cancelled.
+        // download() runs on the I/O dispatcher ahead of this collector (flowOn buffers its events), so without a
+        // hold it can finish the whole file before the collector cancels. The server holds every request from the
+        // third 64 KiB chunk on, so the download can never get past 128 KiB. `first` returns only once the cancelled
+        // download has finished, which needs the held request answered: release it shortly after cancelling.
         holdFrom = 2 * 64 * 1024
         downloader().download(request).filterIsInstance<DownloadEvent.Progress>().first {
             (it.downloadedBytes >= 100_000).also { reached ->
-                if (reached) {
-                    holdFrom = Int.MAX_VALUE
-                    // Release the held request only after `first` has cancelled the download.
-                    Thread { Thread.sleep(200); gate.countDown() }.apply { isDaemon = true }.start()
-                }
+                if (reached) Thread { Thread.sleep(200); gate.countDown() }.apply { isDaemon = true }.start()
             }
         }
+        holdFrom = Int.MAX_VALUE
         val partial = File("$dest.part").length()
         assertTrue(partial in 100_000 until content.size)
         val completed = downloader().downloadTo(request)
