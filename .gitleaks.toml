@@ -10,3 +10,8 @@ paths = [
   '''^SECURITY\.md$''',
   '''^\.gitleaks\.toml$''',
 ]
+# Gradle test task names of Kotlin targets (e.g. `:kggml-runtime:macosArm64Test`): generic-api-key reads the token
+# after `-api:` as a key. Only whole task names of known target prefixes are allowed.
+regexes = [
+  '''^(android|ios|macos|tvos|watchos|linux|mingw|jvm|wasmJs|js)[A-Za-z0-9]*Test$''',
+]
