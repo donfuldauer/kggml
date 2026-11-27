@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Installs what CI needs on a Windows runner (hosted windows-* or the owner's self-hosted local-win), only when
+  Installs what CI needs on a Windows machine (the hosted windows-* runner, or a contributor's PC), only when
   missing. Idempotent; a no-op on a prepared machine.
 
 .DESCRIPTION
@@ -9,11 +9,9 @@
     and adds them with the Visual Studio Installer when missing.
   - Ninja is installed with winget (or Chocolatey) when missing.
 
-  Installing Visual Studio components needs administrator rights. The script runs the installer directly when the
-  job is already elevated (a runner service under an administrator account, or a hosted runner). Otherwise it asks
-  Windows to elevate (works for an interactively started run.cmd, through the UAC prompt). A non-interactive service
-  under a non-admin account (the runner's default NETWORK SERVICE) cannot elevate: the script then fails and prints
-  the one-time command to run by hand, and how to switch the service to an administrator account.
+  Installing Visual Studio components needs administrator rights. The script runs the installer directly when it is
+  already elevated (as on hosted runners); otherwise it asks Windows to elevate through the UAC prompt, and if that
+  is not possible it fails and prints the one-time command to run in an elevated prompt.
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1 -Arm64
@@ -64,11 +62,9 @@ if ($missing.Count -gt 0) {
             $proc = Start-Process -FilePath $installer -ArgumentList $vsArgs -Wait -PassThru -Verb RunAs
         }
     } catch {
-        Write-Host "::error::Installing Visual Studio components needs administrator rights, and this job ($identity) cannot elevate."
-        Write-Host "Either run once in an elevated prompt on this machine:"
+        Write-Host "::error::Installing Visual Studio components needs administrator rights, and $identity cannot elevate."
+        Write-Host "Run once in an elevated prompt on this machine:"
         Write-Host "  $manual"
-        Write-Host "or run the runner service as an administrator account (services.msc -> 'GitHub Actions Runner (...)' -> Log On),"
-        Write-Host "or reconfigure it elevated: config.cmd --runasservice --windowslogonaccount <admin> --windowslogonpassword <password>."
         exit 1
     }
     # 3010: success, reboot required (the new components are usable without one).

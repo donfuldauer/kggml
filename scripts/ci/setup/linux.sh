@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Installs what CI needs on a Linux runner (hosted ubuntu-* or the owner's self-hosted local-linux), only when missing,
+# Installs what CI needs on a Linux machine (the hosted ubuntu-* runner, or a contributor's machine), only when missing,
 # so a job never depends on what happened to be installed by hand. Idempotent; a no-op on a prepared machine.
 #
 # Packages are installed with apt-get as root: directly when already root, else through passwordless `sudo -n`
-# (a self-hosted runner user needs a sudoers entry for apt-get; hosted runners have one). Without it the script
-# fails and names the missing packages instead of hanging on a password prompt.
+# (hosted runners have it). Without it the script fails and names the missing packages instead of hanging on a
+# password prompt.
 #
 # Usage: scripts/ci/setup/linux.sh [--arm64-cross] [--vulkan]
 #   (always)       ninja-build, cmake, python3
@@ -39,7 +39,7 @@ elif sudo -n true 2>/dev/null; then
   as_root=(sudo -n)
 else
   echo "runner setup (linux): missing ${missing[*]}, and $(id -un) cannot run sudo without a password." >&2
-  echo "Install them once (sudo apt-get install -y ${missing[*]}) or give the runner user passwordless sudo for apt-get." >&2
+  echo "Install them once (sudo apt-get install -y ${missing[*]}) or run this script with sudo available." >&2
   exit 1
 fi
 echo "runner setup (linux): installing ${missing[*]}"

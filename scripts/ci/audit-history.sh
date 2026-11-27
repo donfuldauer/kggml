@@ -16,7 +16,7 @@
 # address (the address itself is never printed). With --strict-identity those fail too.
 #
 # Remediation for a finding is a history rewrite with `git filter-repo`, which only the repository owner may run:
-# see docs/OSS_LAUNCH.md ("Remediating a finding").
+# see docs/HISTORY_AUDIT.md ("Remediating a finding").
 #
 # Needs a full clone (`actions/checkout` with `fetch-depth: 0`). Shared by .github/workflows/repo-hygiene.yml and
 # ./scripts/ci-local.sh (step `history`).
@@ -189,7 +189,7 @@ if [[ -n "${identity_commits}" ]]; then
   if [[ ${strict_identity} -eq 1 ]]; then
     err "${msg}"
   else
-    note "NOTE: ${msg}— owner decision, see docs/OSS_LAUNCH.md (\"Commit e-mail addresses\")"
+    note "NOTE: ${msg}— see docs/HISTORY_AUDIT.md (\"Commit e-mail addresses\")"
   fi
 fi
 

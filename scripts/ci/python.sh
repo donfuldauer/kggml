@@ -3,7 +3,7 @@
 # (default 3.11, the first release with `tomllib`), or exits with an error.
 #
 # Why: macOS ships /usr/bin/python3 3.9 ahead of any Homebrew python on a non-login PATH, and Windows
-# (Git Bash on a self-hosted runner) often has only `python` or the `py` launcher, not `python3`.
+# (Git Bash) often has only `python` or the `py` launcher, not `python3`.
 #
 # Usage:
 #   source "${REPO_ROOT}/scripts/ci/python.sh"

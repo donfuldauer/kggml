@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Audits dynamic ggml linkage of the host desktop build (Linux: readelf/nm, macOS: otool/nm).
 # Expects ./kggml-runtime/native/scripts/build-host.sh to have produced build/native/lib.
-# Shared by CI (.github/workflows/runtime-native*.yml) and ./scripts/ci-local.sh.
+# Shared by CI (.github/workflows/ci.yml) and ./scripts/ci-local.sh.
 #
 # Usage: scripts/ci/audit-host-linkage.sh [lib-dir]   (default: build/native/lib)
 # A cross-compiled Linux tree (e.g. build/native-linux-aarch64/lib) can pass its binutils as READELF / NM

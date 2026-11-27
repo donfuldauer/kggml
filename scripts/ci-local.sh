@@ -14,7 +14,7 @@
 #                                            against the published artifacts), Maven Central release dry-run
 #                                            (signed staging + audit; iOS components only on macOS); with --full
 #                                            also `./gradlew check` and the sample assemble tasks
-# The macOS/iOS jobs (ci.yml macOS, runtime-native-macos.yml) cannot run on a Linux host;
+# The macOS/iOS job (ci.yml macOS) cannot run on a Linux host;
 # on a macOS host the host build, CTest, linkage audit and jvmTest steps below cover the macOS job.
 #
 # Usage: ./scripts/ci-local.sh [--only <steps>] [--skip <steps>] [--strict] [--clean] [--full]
@@ -26,8 +26,8 @@
 #   ios-apps      (only with --only, macOS) the samples' Xcode host apps for the simulator and devices, unsigned
 #                 (scripts/ios/build-xcframeworks.sh + scripts/ios/build-sample-apps.sh)
 #   --full     run every step regardless of what changed, including `check` (./gradlew check + sample
-#              assembles, which need an Android SDK). This is the merge gate when GitHub Actions cannot
-#              run (quota exhausted); see AGENTS.md "When the Actions quota is exhausted".
+#              assembles, which need an Android SDK). Stands in for the Linux CI job when a runner fails or hangs
+#              (AGENTS.md "When a runner fails or hangs").
 #   --strict   fail instead of skipping when a tool (gitleaks, Android NDK/SDK) is missing
 #   --clean    pass --clean to the host native build
 #   The Android NDK comes from ANDROID_NDK_HOME / ANDROID_NDK_ROOT, else the newest NDK under
@@ -63,9 +63,9 @@ done
 
 in_list() { [[ ",$2," == *",$1,"* ]]; }
 
-# Native-relevant paths (what used to be runtime-native.yml's PR path filter, plus ci.yml).
+# Native-relevant paths.
 native_paths=(kggml-runtime kggml-whisper/native kggml-whisper/src kggml-whisper/build.gradle.kts kggml-llama/native kggml-llama/src kggml-llama/build.gradle.kts kggml-diffusion/native kggml-diffusion/src kggml-diffusion/build.gradle.kts kggml-core-api/src/commonMain integration-tests build-logic gradle gradle.properties .gitmodules NOTICE
-  scripts/ci .github/workflows/ci.yml .github/workflows/runtime-native.yml .github/workflows/runtime-native-macos.yml)
+  scripts/ci .github/workflows/ci.yml)
 native_changed() {
   local base
   base="$(git merge-base HEAD origin/main 2>/dev/null || true)"

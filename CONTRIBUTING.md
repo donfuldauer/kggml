@@ -101,8 +101,7 @@ module's README and listed in [`docs/MANUAL_VERIFICATION.md`](docs/MANUAL_VERIFI
 4. If you change `AGENTS.md`, `.agents/agents/` or `.agents/skills/`, run `./scripts/sync-agent-mirrors.sh` and
    `./scripts/verify-agent-parity.sh`.
 5. Fill in the pull request template. A maintainer reviews the change and merges it with a merge commit once CI
-   passes. The macOS and Windows CI jobs cost more and only run when a maintainer adds the `ci:macos` or
-   `ci:windows` label.
+   passes. Every ready pull request runs the Ubuntu, macOS and Windows CI jobs.
 
 Commits made by AI coding agents keep the agent as author and credit the person it works for with a
 `Co-authored-by:` trailer, which the hook from `./scripts/install-git-hooks.sh` adds.

@@ -41,7 +41,7 @@ signature (`.asc`) on every file. The iOS xcframeworks (`GgmlRuntime`, `KggmlWhi
    bundle and waits until Central has validated it, and the job drafts the GitHub release.
 
 The same staging and audit run on pull requests as a dry run with a throwaway key: the Ubuntu job of `ci.yml`
-(JVM, Android and metadata components) and the `ci:macos` job (every component, including iOS). Locally:
+(JVM, Android and metadata components) and its macOS job (every component, including iOS). Locally:
 
 ```bash
 ./scripts/ci/stage-release.sh --dry-run --skip-targets ios,macos   # Linux; on macOS drop --skip-targets
@@ -49,14 +49,9 @@ The same staging and audit run on pull requests as a dry run with a throwaway ke
 
 ## Before the first release
 
-1. **Remove the private runners** (issue #63; before the repository is made public, a fork PR could otherwise edit
-   a workflow to run on one). Unregister the Mac, Windows and Linux self-hosted runners, delete `MAC_RUNNER`,
-   `WIN_RUNNER` and `LINUX_RUNNER`, and remove the self-hosted routes from the workflows — procedure in
-   [`OSS_LAUNCH.md`](OSS_LAUNCH.md) ("Owner steps before the visibility flip", step 1).
-   `scripts/ci/verify-hosted-runners.sh` (every PR) fails while the repository is public until that is done.
-2. **Central Portal account and namespace.** Sign in at <https://central.sonatype.com>, verify the `com.donfuldauer`
+1. **Central Portal account and namespace.** Sign in at <https://central.sonatype.com>, verify the `com.donfuldauer`
    namespace (DNS TXT record on `donfuldauer.com`), and generate a user token (Account → Generate User Token).
-3. **Signing key.** Create a key used only for releases, publish its public half, and export the secret half:
+2. **Signing key.** Create a key used only for releases, publish its public half, and export the secret half:
 
    ```bash
    gpg --quick-generate-key "Kggml releases <you@example.com>" rsa4096 sign 2y
@@ -64,13 +59,13 @@ The same staging and audit run on pull requests as a dry run with a throwaway ke
    gpg --armor --export-secret-keys <KEY_ID>   # value of SIGNING_KEY
    ```
 
-4. **Repository secrets** (Settings → Secrets and variables → Actions):
+3. **Repository secrets** (Settings → Secrets and variables → Actions):
 
    | Secret | Value |
    | --- | --- |
    | `MAVEN_CENTRAL_USERNAME` | Central Portal user token name |
    | `MAVEN_CENTRAL_PASSWORD` | Central Portal user token password |
-   | `SIGNING_KEY` | ASCII-armored secret key from step 3 |
+   | `SIGNING_KEY` | ASCII-armored secret key from step 2 |
    | `SIGNING_KEY_PASSWORD` | its passphrase |
    | `SIGNING_KEY_ID` | optional: the (sub)key id to sign with |
 
@@ -82,9 +77,8 @@ signs (with `SIGNING_KEY` if set, otherwise a throwaway key) and audits the full
 uploaded. To check the bundle with Central's own validation, upload that zip by hand in the portal
 (Publish → Publish Component) and drop the deployment afterwards.
 
-To check the full CI matrix on GitHub-hosted runners, run Actions → **CI** → Run workflow on `main` with **runner**
-set to `hosted` (the default, `auto`, uses the owner's self-hosted runners that are on); a dispatch runs the Ubuntu,
-macOS and Windows jobs.
+Every pull request already runs the full CI matrix (Ubuntu, macOS, Windows). To run it on `main` itself, use
+Actions → **CI** → Run workflow.
 
 ## Releasing a version
 
