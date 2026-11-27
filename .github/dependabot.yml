@@ -1,4 +1,4 @@
-# Dependabot version updates (security updates are enabled in the repository settings and use the same groups).
+# Dependabot version and security updates (security updates are enabled in the repository settings).
 #
 # Covered:
 #   - gradle: every version in gradle/libs.versions.toml (shared by the root build and build-logic) and the Gradle
@@ -46,6 +46,20 @@ updates:
           - "androidx.*"
           - "org.robolectric*"
           - "junit:junit"
+      # Security updates are grouped separately (groups without `applies-to` cover version updates only).
+      kotlin-and-compose-security:
+        applies-to: security-updates
+        patterns:
+          - "org.jetbrains.kotlin*"
+          - "org.jetbrains.kotlinx:kotlinx-coroutines*"
+          - "org.jetbrains.kotlinx.kover*"
+          - "org.jetbrains.kotlinx:kover*"
+          - "org.jetbrains.compose*"
+          - "androidx.compose*"
+      gradle-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
     ignore:
       # Android Gradle Plugin 9 changes how Kotlin Multiplatform Android targets are configured (the new KMP Android
       # library plugin), and Compose 1.12 (Multiplatform and Jetpack) needs AGP 9.1+ and compileSdk 37. That migration
@@ -76,5 +90,9 @@ updates:
       - infra:ci
     groups:
       github-actions:
+        patterns:
+          - "*"
+      github-actions-security:
+        applies-to: security-updates
         patterns:
           - "*"
