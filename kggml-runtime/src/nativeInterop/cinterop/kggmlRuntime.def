@@ -1,4 +1,4 @@
-# Kotlin/Native bindings for the kggml_runtime C ABI (iosArm64, iosSimulatorArm64).
+# Kotlin/Native bindings for the kggml_runtime C ABI (iosArm64, iosSimulatorArm64, macosArm64).
 #
 # The include directory (kggml-runtime/native/include) is supplied by kggml-runtime/build.gradle.kts.
 # Symbols resolve at link time against the dynamic GgmlRuntime.framework from GgmlRuntime.xcframework

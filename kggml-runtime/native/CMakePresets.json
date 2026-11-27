@@ -138,6 +138,25 @@
       }
     },
     {
+      "name": "macos-framework",
+      "displayName": "macOS arm64 (GgmlRuntime.framework for Kotlin/Native macosArm64, Metal + Accelerate)",
+      "inherits": "base",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/../../build/native-${presetName}",
+      "installDir": "${sourceDir}/../../build/native-install/${presetName}",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" },
+      "cacheVariables": {
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "13.3",
+        "CMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH": "NO",
+        "KGGML_RUNTIME_MONOLITHIC": "ON",
+        "KGGML_RUNTIME_BUILD_TESTS": "OFF",
+        "KGGML_ENABLE_METAL": "ON",
+        "KGGML_ENABLE_BLAS": "ON",
+        "KGGML_ENABLE_VULKAN": "OFF"
+      }
+    },
+    {
       "name": "ios-device",
       "displayName": "iOS device arm64 (GgmlRuntime.framework)",
       "inherits": "ios-base",
@@ -163,6 +182,7 @@
     { "name": "windows-arm64", "configurePreset": "windows-arm64" },
     { "name": "android-arm64-v8a", "configurePreset": "android-arm64-v8a" },
     { "name": "android-x86_64", "configurePreset": "android-x86_64" },
+    { "name": "macos-framework", "configurePreset": "macos-framework", "configuration": "Release" },
     { "name": "ios-device", "configurePreset": "ios-device", "configuration": "Release" },
     { "name": "ios-simulator-arm64", "configurePreset": "ios-simulator-arm64", "configuration": "Release" }
   ],

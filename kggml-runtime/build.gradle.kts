@@ -51,7 +51,10 @@ val ggmlPinnedVersion = cmakePin("KGGML_GGML_PINNED_VERSION")
 val ggmlPinnedCommit = cmakePin("KGGML_GGML_PINNED_COMMIT")
 
 kotlin {
-    // `jniMain` is shared by androidMain + jvmMain (the JNI bridge); iosMain uses cinterop instead.
+    // Kotlin/Native macOS (issue #93): links the macos-arm64 slice of GgmlRuntime.xcframework (Metal + Accelerate).
+    macosArm64()
+
+    // `jniMain` is shared by androidMain + jvmMain (the JNI bridge); appleMain (iOS + macOS) uses cinterop instead.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
         common {
@@ -75,6 +78,7 @@ kotlin {
     targets.withType<KotlinNativeTarget>().configureEach {
         val slice = when (konanTarget) {
             KonanTarget.IOS_SIMULATOR_ARM64 -> "ios-arm64-simulator"
+            KonanTarget.MACOS_ARM64 -> "macos-arm64"
             else -> "ios-arm64"
         }
         compilations.getByName("main").cinterops.create("kggmlRuntime") {
@@ -230,9 +234,12 @@ tasks.named<Test>("jvmTest") {
     }
 }
 
-// iOS test executables link against GgmlRuntime.xcframework (build-ios-xcframework.sh, macOS only).
+// Apple test executables link against GgmlRuntime.xcframework (build-ios-xcframework.sh, macOS only).
 val iosFrameworkPresent = iosXcframeworkDir.asFile.isDirectory
-tasks.matching { it.name.startsWith("linkDebugTestIos") || it.name.matches(Regex("ios.*Test")) }.configureEach {
+tasks.matching {
+    it.name.startsWith("linkDebugTestIos") || it.name.startsWith("linkDebugTestMacos") ||
+        it.name.matches(Regex("(ios|macos).*Test"))
+}.configureEach {
     onlyIf("GgmlRuntime.xcframework is built (kggml-runtime/native/scripts/build-ios-xcframework.sh)") {
         if (!iosFrameworkPresent && requireNative) {
             throw GradleException("-Pkggml.requireNative=true but ${iosXcframeworkDir.asFile} does not exist")

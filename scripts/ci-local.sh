@@ -276,7 +276,7 @@ for step in "${all_steps[@]}"; do
       run_step snippets ./gradlew :docs-snippets:compileKotlinJvm --console=plain ;;
     release)
       # On Linux the iOS components cannot be built; the ci.yml macOS job stages them.
-      release_skip=(--skip-targets ios)
+      release_skip=(--skip-targets ios,macos)
       [[ "$(uname -s)" == Darwin ]] && release_skip=()
       run_step release ./scripts/ci/stage-release.sh --dry-run ${release_skip[@]+"${release_skip[@]}"} ;;
     check)

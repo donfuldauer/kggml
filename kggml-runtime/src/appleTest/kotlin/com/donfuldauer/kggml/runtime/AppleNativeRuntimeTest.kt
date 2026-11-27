@@ -8,10 +8,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Exercises the cinterop bindings against the real GgmlRuntime.framework (iosSimulatorArm64Test). The test
- * binary only links when GgmlRuntime.xcframework has been built; otherwise Gradle skips the iOS test tasks.
+ * Exercises the cinterop bindings against the real GgmlRuntime.framework (iosSimulatorArm64Test, macosArm64Test).
+ * The test binary only links when GgmlRuntime.xcframework has been built; otherwise Gradle skips the Apple test tasks.
  */
-class IosNativeRuntimeTest {
+class AppleNativeRuntimeTest {
     @AfterTest
     fun noLeakedReferences() {
         assertEquals(0, KggmlRuntime.client.refCount())
@@ -43,9 +43,9 @@ class IosNativeRuntimeTest {
             backends.map { it.backend },
         )
         assertTrue(backends.first().available)
-        // The iOS framework is built with Metal and without Vulkan.
+        // The Apple frameworks are built with Metal and without Vulkan.
         assertTrue(backends[1].compiled, "Metal must be compiled into GgmlRuntime.framework")
-        assertFalse(backends[2].compiled, "Vulkan is never built for iOS")
+        assertFalse(backends[2].compiled, "Vulkan is never built for Apple platforms")
         val available = KggmlRuntime.availableBackends()
         assertTrue(ComputeBackend.CPU_ONLY in available)
         assertFalse(ComputeBackend.GPU_VULKAN in available)

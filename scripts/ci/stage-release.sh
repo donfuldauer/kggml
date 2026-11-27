@@ -17,7 +17,7 @@
 #
 # Usage: scripts/ci/stage-release.sh [--dry-run] [--skip-targets <list>] [--expect-version <v>] [-- <gradle args>]
 #   --dry-run          allow an ephemeral signing key when none is configured
-#   --skip-targets     comma-separated targets the host cannot build, skipped by the audit (e.g. `ios` on Linux)
+#   --skip-targets     comma-separated targets the host cannot build, skipped by the audit (e.g. `ios,macos` on Linux)
 #   --expect-version   fail unless VERSION_NAME equals this (release.yml passes the tag without its `v`)
 #   <gradle args>      extra Gradle arguments (e.g. -Pkggml.bundleNative=true)
 set -euo pipefail

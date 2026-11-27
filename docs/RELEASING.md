@@ -40,7 +40,7 @@ The same staging and audit run on pull requests as a dry run with a throwaway ke
 (JVM, Android and metadata components) and the `ci:macos` job (every component, including iOS). Locally:
 
 ```bash
-./scripts/ci/stage-release.sh --dry-run --skip-targets ios   # Linux; on macOS drop --skip-targets
+./scripts/ci/stage-release.sh --dry-run --skip-targets ios,macos   # Linux; on macOS drop --skip-targets
 ```
 
 ## Before the first release
