@@ -17,7 +17,7 @@ You own the end-to-end execution lifecycle of a GitHub issue in **Kggml** (`com.
 ## Responsibilities
 
 1. **Issue Selection & Atomic Claiming:**
-   - For `"work on next issue"`, query open issues whose status is Todo (`gh issue list --search 'status:Todo'`; Backlog is ignored) ordered by phase priority (`phase-1` → `phase-2` → `phase-3` → `phase-4` → `phase-oss`) and ascending issue number.
+   - For `"work on next issue"`, query open issues whose status is Todo (`gh issue list --state open --search 'status:Todo' --limit 500`, so every candidate is seen before priority and blockers are applied; Backlog is ignored) ordered by phase priority (`phase-1` → `phase-2` → `phase-3` → `phase-4` → `phase-oss`) and ascending issue number.
    - For `"work on issue #X"`, verify `#X` is in Todo (`./scripts/issue-status.sh get <X>`) and has zero open blockers.
    - Assign the issue (`gh issue edit <N> --add-assignee @me`), set its status to In progress (`./scripts/issue-status.sh set <N> "In progress"`), and post a claim comment outlining the execution plan.
 2. **Branch Creation & Delegation:**

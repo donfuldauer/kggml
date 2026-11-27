@@ -33,7 +33,7 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
 1. **Select the target issue:**
    ```bash
    # For "work on next issue": open issues in Todo (Backlog is ignored), with their labels
-   gh issue list --state open --search 'status:Todo' --limit 50 \
+   gh issue list --state open --search 'status:Todo' --limit 500 \
      --json number,title,labels,milestone,assignees
    # For "work on issue #X": it must be in Todo
    ./scripts/issue-status.sh get <N>
