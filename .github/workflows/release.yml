@@ -71,18 +71,18 @@ jobs:
         shell: bash
     steps:
       - name: Checkout repository (with first-level submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Runner setup (Linux; installs missing build tools)
         if: runner.os == 'Linux'
@@ -130,7 +130,7 @@ jobs:
           kggml_python scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm ${{ matrix.platform }}
 
       - name: Upload staged runtime
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jvm-natives-${{ matrix.platform }}
           path: kggml-runtime/build/generated/kggml-native/jvm/
@@ -148,7 +148,7 @@ jobs:
 
       - name: Upload the desktop Vulkan add-on module
         if: matrix.platform == 'linux-x86_64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: jvm-addons-${{ matrix.platform }}
           path: build/native-vulkan-jvm/
@@ -170,7 +170,7 @@ jobs:
           exit 1
 
       - name: Checkout repository (with first-level submodules)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           submodules: true
 
@@ -178,23 +178,23 @@ jobs:
         run: ./scripts/ci/setup/macos.sh
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Download the desktop runtimes
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: jvm-natives-*
           merge-multiple: true
           path: build/release-natives
 
       - name: Download the desktop GPU add-on modules
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: jvm-addons-*
           merge-multiple: true
@@ -249,7 +249,7 @@ jobs:
           (cd build/release-ios && shasum -a 256 *.zip > SHA256SUMS)
 
       - name: Keep the bundle and xcframeworks
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: kggml-release-${{ github.sha }}
           path: |
