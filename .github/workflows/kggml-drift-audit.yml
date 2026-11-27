@@ -71,6 +71,7 @@ jobs:
         uses: anthropics/claude-code-action@v1
         env:
           UPSTREAM_REF: ${{ github.event.inputs.upstream_ref }}
+          ANTHROPIC_WORKSPACE_ID: wrkspc_01BszhTkQCM1Gj4TDefVSCfh
         with:
           anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
           anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
