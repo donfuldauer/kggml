@@ -40,7 +40,7 @@ updates:
         patterns:
           - "com.android.tools.build*"
           - "com.android.application"
-          - "com.android.library"
+          - "com.android.kotlin.multiplatform.library"
       androidx-and-test:
         patterns:
           - "androidx.*"
@@ -60,20 +60,6 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
-    ignore:
-      # Android Gradle Plugin 9 changes how Kotlin Multiplatform Android targets are configured (the new KMP Android
-      # library plugin), and Compose 1.12 (Multiplatform and Jetpack) needs AGP 9.1+ and compileSdk 37. That migration
-      # is planned work (issue #109), not a dependency bump; remove these entries with it.
-      - dependency-name: "org.jetbrains.compose*"
-        versions: [">= 1.9.0"]
-      - dependency-name: "androidx.compose*"
-        versions: [">= 1.9.0"]
-      - dependency-name: "com.android.tools.build:gradle"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "com.android.application"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "com.android.library"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: "/"
