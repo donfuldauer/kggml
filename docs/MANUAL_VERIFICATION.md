@@ -120,3 +120,7 @@ when it has been run; a failed check becomes a new issue.
   laptop (Snapdragon X) and on an arm64 Linux machine (Raspberry Pi 5, Graviton, Jetson), the whisper-only-minimal
   desktop app transcribes the sample, and `./gradlew jvmTest -Pkggml.requireNative=true` passes. CI only cross-compiles
   these: linux-aarch64 CTest runs under qemu, windows-aarch64 is checked for the ARM64 machine type only.
+- [ ] [#92] JVM desktop Vulkan add-on on a Linux x86_64 machine with a real GPU driver (Mesa radv/anv or NVIDIA): with
+  `kggml-runtime-vulkan` on the classpath, the showcase desktop Backends screen lists Vulkan as available and `AUTO`
+  resolves to it; whisper and llama produce the same output as on `CPU_ONLY`, faster. CI only checks registration on
+  Mesa's software lavapipe device.

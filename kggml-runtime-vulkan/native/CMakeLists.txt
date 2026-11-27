@@ -1,5 +1,5 @@
 # kggml-runtime-vulkan/native - ggml's Vulkan backend as a dynamically loadable ggml backend module
-# (libggml-vulkan.so) for the Android GPU add-on.
+# (libggml-vulkan.so / ggml-vulkan.dll) for the GPU add-on on Android and on JVM desktop Linux / Windows (issue #92).
 #
 # Built from :kggml-runtime's pinned ggml with GGML_BACKEND_DL: the module exports ggml_backend_init and links
 # libggml-base.so dynamically, which at run time resolves to the libggml-base.so shipped by :kggml-runtime (same ggml
@@ -11,12 +11,17 @@
 # vulkan.hpp). Loader: the NDK's libvulkan.so stub (the device's loader at run time) of API level 28, the first that
 # exports the Vulkan 1.1 entry points ggml-vulkan calls: on Android 8.x the module fails to load and the runtime stays
 # on the CPU. Shader compiler: the NDK's glslc.
+#
+# Desktop (Linux, Windows): the same pinned headers; the Vulkan loader to link against and glslc come from the build
+# machine (Linux: the libvulkan-dev and glslc packages; Windows: the Vulkan SDK). At run time the module needs the
+# user's Vulkan loader (libvulkan.so.1 / vulkan-1.dll, installed with any Vulkan GPU driver); without it the module
+# fails to load and the runtime stays on the CPU. macOS uses Metal (linked into the runtime) instead.
 cmake_minimum_required(VERSION 3.21)
 project(kggml_runtime_vulkan LANGUAGES C CXX)
 
-if (NOT ANDROID)
-    message(FATAL_ERROR "kggml-runtime-vulkan builds the Android GPU add-on only (desktop builds link Vulkan into the "
-                        "runtime with KGGML_ENABLE_VULKAN=ON)")
+if (APPLE OR NOT (ANDROID OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR WIN32))
+    message(FATAL_ERROR "kggml-runtime-vulkan builds the GPU add-on for Android, Linux and Windows "
+                        "(Apple platforms use Metal)")
 endif()
 
 set(KGGML_GGML_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../kggml-runtime/native/third_party/ggml")
@@ -27,15 +32,22 @@ foreach(_required IN ITEMS "${KGGML_GGML_SOURCE_DIR}/CMakeLists.txt" "${KGGML_VU
     endif()
 endforeach()
 
-# Same Android conventions as :kggml-runtime: unversioned sonames (jniLibs are packaged by file name) and 16 KB pages.
-set(CMAKE_PLATFORM_NO_VERSIONED_SONAME ON)
-add_link_options("LINKER:-z,max-page-size=16384")
+if (ANDROID)
+    # Same Android conventions as :kggml-runtime: unversioned sonames (jniLibs are packaged by file name), 16 KB pages.
+    set(CMAKE_PLATFORM_NO_VERSIONED_SONAME ON)
+    add_link_options("LINKER:-z,max-page-size=16384")
+endif()
+# Same as :kggml-runtime (issue #65): ggml-vulkan uses std::mutex, and the JVM may load an older msvcp140.dll.
+if (MSVC OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
+    add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
+endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+if (ANDROID)
 # Vulkan for the ggml-vulkan CMake (find_package(Vulkan COMPONENTS glslc)): pinned headers, NDK loader stub and glslc.
 string(REGEX REPLACE "^android-" "" _api "${ANDROID_PLATFORM}")
 if (ANDROID_ABI STREQUAL "arm64-v8a")
@@ -54,6 +66,16 @@ list(GET _ndk_glslc 0 _ndk_glslc)
 set(Vulkan_INCLUDE_DIR "${KGGML_VULKAN_HEADERS_DIR}/include" CACHE PATH "" FORCE)
 set(Vulkan_LIBRARY "${_ndk_sysroot_lib}/libvulkan.so" CACHE FILEPATH "" FORCE)
 set(Vulkan_GLSLC_EXECUTABLE "${_ndk_glslc}" CACHE FILEPATH "" FORCE)
+else()
+# Desktop: pinned headers (one vulkan.h / vulkan.hpp version on every platform); the machine's loader and glslc.
+set(Vulkan_INCLUDE_DIR "${KGGML_VULKAN_HEADERS_DIR}/include" CACHE PATH "" FORCE)
+find_package(Vulkan COMPONENTS glslc)
+if (NOT Vulkan_LIBRARY OR NOT Vulkan_GLSLC_EXECUTABLE)
+    message(FATAL_ERROR "kggml-runtime-vulkan needs the Vulkan loader library and glslc on the build machine "
+                        "(Linux: apt install libvulkan-dev glslc; Windows: the Vulkan SDK). "
+                        "Found library='${Vulkan_LIBRARY}' glslc='${Vulkan_GLSLC_EXECUTABLE}'")
+endif()
+endif()
 
 # ggml: only the Vulkan backend, as a GGML_BACKEND_DL module.
 set(BUILD_SHARED_LIBS     ON  CACHE BOOL "" FORCE)

@@ -12,6 +12,10 @@
 # Shared by CI (.github/workflows/ci.yml Ubuntu job) and ./scripts/ci-local.sh.
 #
 # Usage: scripts/ci/audit-gpu-addon.sh <vulkan|opencl> [abi ...]   (default ABIs: arm64-v8a x86_64)
+#        scripts/ci/audit-gpu-addon.sh vulkan --desktop linux-x86_64
+#   --desktop: the JVM desktop module staged by kggml-runtime-vulkan/native/scripts/build-host.sh (issue #92) under
+#   build/native-vulkan-jvm/kggml/native-addons/<platform>/ggml-vulkan/: it must export ggml_backend_init, link the
+#   runtime's versioned libggml-base.so.0 and the system Vulkan loader libvulkan.so.1, and define no ggml core.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -23,6 +27,20 @@ max_name="$(sed -n 's/^set(KGGML_GGML_MAX_NAME \([0-9]*\)).*/\1/p' kggml-runtime
 readelf_bin="$(command -v readelf || command -v llvm-readelf || true)"
 [[ -n "${readelf_bin}" ]] || { echo "FAIL: readelf not found" >&2; exit 1; }
 
+# check_max_name <compile_commands.json>: every ggml source of the module was compiled with the runtime's GGML_MAX_NAME.
+check_max_name() {
+  kggml_python - "$1" "${max_name}" <<'PY'
+import json, sys
+commands, want = sys.argv[1], sys.argv[2]
+ggml = [c for c in json.load(open(commands)) if "/ggml/src/" in c["file"].replace("\\", "/")]
+bad = [c["file"] for c in ggml if f"-DGGML_MAX_NAME={want}" not in c.get("command", " ".join(c.get("arguments", [])))]
+if not ggml or bad:
+    print(f"{len(bad)} of {len(ggml)} ggml sources lack -DGGML_MAX_NAME={want}: {[c.rsplit('/', 1)[-1] for c in bad[:3]]}")
+    sys.exit(1)
+print(f"{len(ggml)} ggml sources built with GGML_MAX_NAME={want}")
+PY
+}
+
 kind="${1:-}"
 case "${kind}" in
   vulkan) api_loader=libvulkan.so ;;
@@ -31,6 +49,31 @@ case "${kind}" in
 esac
 shift
 module_name="libggml-${kind}.so"
+if [[ "${1:-}" == --desktop ]]; then
+  platform="${2:?--desktop needs a platform, e.g. linux-x86_64}"
+  [[ "${kind}" == vulkan && "${platform}" == linux-* ]] || { echo "--desktop audits the Linux Vulkan module only" >&2; exit 2; }
+  so="build/native-vulkan-jvm/kggml/native-addons/${platform}/ggml-vulkan/${module_name}"
+  [[ -f "${so}" ]] || { echo "FAIL: ${so} missing" >&2; exit 1; }
+  needed="$("${readelf_bin}" -d "${so}" | sed -n 's/.*(NEEDED).*\[\(.*\)\].*/\1/p')"
+  bad=0
+  grep -qx 'libggml-base.so.0' <<<"${needed}" || { echo "FAIL: ${so} does not link libggml-base.so.0" >&2; bad=1; }
+  grep -qx 'libvulkan.so.1' <<<"${needed}" || { echo "FAIL: ${so} does not link the Vulkan loader libvulkan.so.1" >&2; bad=1; }
+  if grep -Eq '^libggml(-cpu)?\.so' <<<"${needed}"; then echo "FAIL: ${so} links libggml / ggml-cpu" >&2; bad=1; fi
+  symbols="$("${readelf_bin}" -Ws --dyn-syms "${so}")"
+  grep -Eq ' FUNC +GLOBAL +DEFAULT +[0-9]+ ggml_backend_init$' <<<"${symbols}" || { echo "FAIL: ggml_backend_init not exported" >&2; bad=1; }
+  if grep -Eq ' (FUNC|OBJECT) +GLOBAL +DEFAULT +[0-9]+ (ggml_init|ggml_backend_cpu_init|ggml_backend_reg_count)$' <<<"${symbols}"; then
+    echo "FAIL: ${so} defines ggml core / CPU backend / registry symbols" >&2; bad=1
+  fi
+  commands="build/native-vulkan-${platform/x86_64/x64}/compile_commands.json"
+  if [[ ! -f "${commands}" ]]; then
+    echo "FAIL: ${commands} missing (the preset exports compile commands)" >&2; bad=1
+  elif ! abi_report="$(check_max_name "${commands}")"; then
+    echo "FAIL: ${abi_report}" >&2; bad=1
+  fi
+  [[ ${bad} -eq 0 ]] || exit 1
+  echo "kggml-runtime-vulkan desktop ${platform} audit: OK (needs: $(tr '\n' ' ' <<<"${needed}"); ${abi_report})"
+  exit 0
+fi
 abis=("$@")
 [[ ${#abis[@]} -gt 0 ]] || abis=(arm64-v8a x86_64)
 allowed_needed=(libggml-base.so "${api_loader}" libc++_shared.so libc.so libm.so libdl.so liblog.so)
@@ -63,17 +106,7 @@ for abi in "${abis[@]}"; do
   commands="build/native-${kind}-android-${abi}/compile_commands.json"
   if [[ ! -f "${commands}" ]]; then
     fail "${abi}: ${commands} missing (the preset exports compile commands)"
-  elif ! abi_report="$(kggml_python - "${commands}" "${max_name}" <<'PY'
-import json, sys
-commands, want = sys.argv[1], sys.argv[2]
-ggml = [c for c in json.load(open(commands)) if "/ggml/src/" in c["file"].replace("\\", "/")]
-bad = [c["file"] for c in ggml if f"-DGGML_MAX_NAME={want}" not in c.get("command", " ".join(c.get("arguments", [])))]
-if not ggml or bad:
-    print(f"{len(bad)} of {len(ggml)} ggml sources lack -DGGML_MAX_NAME={want}: {[c.rsplit('/', 1)[-1] for c in bad[:3]]}")
-    sys.exit(1)
-print(f"{len(ggml)} ggml sources built with GGML_MAX_NAME={want}")
-PY
-  )"; then
+  elif ! abi_report="$(check_max_name "${commands}")"; then
     fail "${abi}: ${abi_report}"
   fi
   echo "${abi}: ${module_name} OK (needs: $(tr '\n' ' ' <<<"${needed}"); ${abi_report:-})"

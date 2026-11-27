@@ -6,16 +6,19 @@
 # (a self-hosted runner user needs a sudoers entry for apt-get; hosted runners have one). Without it the script
 # fails and names the missing packages instead of hanging on a password prompt.
 #
-# Usage: scripts/ci/setup/linux.sh [--arm64-cross]
+# Usage: scripts/ci/setup/linux.sh [--arm64-cross] [--vulkan]
 #   (always)       ninja-build, cmake, python3
 #   --arm64-cross  g++-aarch64-linux-gnu, qemu-user: the linux-aarch64 cross build and its CTest under qemu (#91)
+#   --vulkan       libvulkan-dev, glslc, mesa-vulkan-drivers: the desktop Vulkan add-on module and its test on Mesa's
+#                  software lavapipe device (#92)
 set -euo pipefail
 
 want=(ninja-build cmake python3)
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arm64-cross) want+=(g++-aarch64-linux-gnu qemu-user) ;;
-    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
+    --vulkan) want+=(libvulkan-dev glslc mesa-vulkan-drivers) ;;
+    -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift

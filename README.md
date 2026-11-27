@@ -40,7 +40,7 @@ Kotlin API on top of the [ggml](https://github.com/ggml-org/ggml) ecosystem:
 | Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). GPU with the optional add-ons on Android 9+: Vulkan (`kggml-runtime-vulkan`, any Vulkan 1.1 driver) and OpenCL (`kggml-runtime-opencl`, devices whose vendor ships OpenCL, e.g. Adreno); CPU otherwise. |
 | iOS | `iosArm64`, `iosSimulatorArm64` | device and Apple-silicon simulator | CPU (Accelerate / NEON), Metal, Core ML (Whisper encoder) |
 | macOS 13.3+ (Kotlin/Native) | `macosArm64` (`kggml-core-api` and `kggml-runtime` so far; the engines follow, issue #93) | Apple silicon | CPU (Accelerate / NEON), Metal. Link the `macos-arm64` slice of `GgmlRuntime.xcframework` |
-| JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64 and arm64, Windows x86_64 and arm64 | CPU everywhere (arm64 builds need ARMv8.2 with dotprod: Raspberry Pi 5, Graviton 2+, Snapdragon X; not Raspberry Pi 4); Metal on macOS; Vulkan when built with `KGGML_ENABLE_VULKAN=ON` |
+| JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64 and arm64, Windows x86_64 and arm64 | CPU everywhere (arm64 builds need ARMv8.2 with dotprod: Raspberry Pi 5, Graviton 2+, Snapdragon X; not Raspberry Pi 4); Metal on macOS; Vulkan on Linux x86_64 with the optional `kggml-runtime-vulkan` add-on (any installed Vulkan driver) |
 
 What each engine can use:
 
@@ -67,7 +67,7 @@ sourceSets {
         implementation("com.donfuldauer:kggml-llama")          // text generation, embeddings, vision
         implementation("com.donfuldauer:kggml-diffusion")      // text-to-image
         implementation("com.donfuldauer:kggml-model-manager")  // optional: downloads, RAM estimates
-        implementation("com.donfuldauer:kggml-runtime-vulkan") // optional: Android GPU (Vulkan); no-op elsewhere
+        implementation("com.donfuldauer:kggml-runtime-vulkan") // optional: GPU via Vulkan (Android, desktop Linux)
         implementation("com.donfuldauer:kggml-runtime-opencl") // optional: Android GPU (OpenCL, Adreno)
     }
 }
@@ -82,7 +82,7 @@ Gradle picks the right platform variant. Every engine depends on `kggml-core-api
 | `com.donfuldauer:kggml-bom` | Version alignment for every artifact below |
 | `com.donfuldauer:kggml-core-api` | `InferenceEngine`, `BackendConfig`, `ComputeBackend`, events, `InferenceException`s, memory-pressure observers. Pure Kotlin. |
 | `com.donfuldauer:kggml-runtime` | The shared ggml native runtime (CPU, Metal, Vulkan backends) |
-| `com.donfuldauer:kggml-runtime-vulkan` | Optional Android GPU add-on: ggml's Vulkan backend, found and registered by the runtime at load (no code needed); no-op on JVM and iOS. |
+| `com.donfuldauer:kggml-runtime-vulkan` | Optional GPU add-on: ggml's Vulkan backend for Android and desktop Linux x86_64, found and registered by the runtime at load (no code needed); no-op on Windows, macOS and iOS. |
 | `com.donfuldauer:kggml-runtime-opencl` | Optional Android GPU add-on: ggml's OpenCL backend (Adreno-tuned) through the vendor's `libOpenCL.so`; `ComputeBackend.GPU_OPENCL`. No-op on JVM and iOS. |
 | `com.donfuldauer:kggml-whisper` | `WhisperEngine`: whisper.cpp transcription and live streaming |
 | `com.donfuldauer:kggml-llama` | `LlamaEngine`: llama.cpp generation, grammars, sessions, embeddings, vision |
@@ -104,7 +104,10 @@ when it is heavy, depends on the device's drivers, or many apps would rather ski
   the matmul kernels Qualcomm tuned for Adreno, through the device vendor's `libOpenCL.so` (declared optional in the
   add-on's manifest). It loads only where the vendor ships OpenCL (in practice Adreno phones; not Pixel or emulators),
   and `AUTO` prefers it over Vulkan there. Elsewhere the engines use Vulkan (with that add-on) or the CPU.
-- **Vulkan on Linux / Windows desktop** is a build option of the runtime (`KGGML_ENABLE_VULKAN=ON`).
+- **Vulkan on desktop Linux** is the same add-on: its jar carries the module for `linux-x86_64`, which the runtime
+  registers at load; it needs the user's Vulkan loader and driver (any Mesa, NVIDIA or AMD install has them), otherwise
+  the engines stay on the CPU. Windows is not packaged yet. Your own runtime build can instead link Vulkan in
+  (`KGGML_ENABLE_VULKAN=ON`); the add-on is then skipped.
 
 ### Native libraries
 

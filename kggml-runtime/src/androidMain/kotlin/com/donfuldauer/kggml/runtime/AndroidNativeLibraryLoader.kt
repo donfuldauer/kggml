@@ -50,21 +50,5 @@ internal object AndroidNativeLibraryLoader {
         (AndroidNativeLibraryLoader::class.java.classLoader as? BaseDexClassLoader)?.findLibrary(name)
 }
 
-/**
- * Registers each of [modules] that is packaged in the app ([findLibrary] returns its path) through [loadBackend]
- * (a `kggml_status`, 0 = OK). Absent modules are skipped; a failing one is reported to [onFailure] and skipped, so the
- * runtime keeps working on the CPU. Returns the paths that were registered.
- */
-internal fun registerBackendModules(
-    modules: List<String>,
-    findLibrary: (String) -> String?,
-    loadBackend: (String) -> Int,
-    onFailure: (path: String, status: Int) -> Unit,
-): List<String> = modules.mapNotNull { name ->
-    val path = findLibrary(name) ?: return@mapNotNull null
-    val status = loadBackend(path)
-    if (status == 0) path else null.also { onFailure(path, status) }
-}
-
 internal actual fun createPlatformRuntimeBridge(): NativeRuntimeBridge =
     JniRuntimeBridge(AndroidNativeLibraryLoader::load)
