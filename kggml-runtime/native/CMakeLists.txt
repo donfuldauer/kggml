@@ -204,7 +204,7 @@ message(STATUS "kggml: ggml targets: ${KGGML_GGML_TARGETS}")
 # requirement of every ggml target (and of kggml_runtime below, which covers the monolithic iOS layout).
 # Consumers that link kggml::ggml / kggml::runtime inherit it automatically; anything compiling against ggml.h
 # without these targets must pass -DGGML_MAX_NAME=128 itself (see README.md, "ggml ABI: GGML_MAX_NAME").
-set(KGGML_GGML_MAX_NAME 128)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/kggml-ggml-abi.cmake") # KGGML_GGML_MAX_NAME, shared with the GPU add-ons
 foreach (_t IN LISTS KGGML_GGML_TARGETS)
     target_compile_definitions(${_t} PUBLIC GGML_MAX_NAME=${KGGML_GGML_MAX_NAME})
 endforeach()
