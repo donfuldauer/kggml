@@ -5,7 +5,9 @@
 #   - export the ggml backend module entry point ggml_backend_init (GGML_BACKEND_DL),
 #   - link ggml only dynamically through libggml-base.so (resolved to :kggml-runtime's copy at run time) and need
 #     nothing beyond the device's API loader (libvulkan.so / the vendor's libOpenCL.so) and the libraries
-#     :kggml-runtime already ships (no second ggml, no CPU backend, no libggml.so registry).
+#     :kggml-runtime already ships (no second ggml, no CPU backend, no libggml.so registry),
+#   - be compiled with the runtime's GGML_MAX_NAME (kggml-runtime/native/cmake/kggml-ggml-abi.cmake), checked in the
+#     build's compile_commands.json: struct ggml_tensor must have the runtime's layout.
 # Expects kggml-runtime-<kind>/native/scripts/build-android.sh to have staged build/native-android-<kind>-jniLibs/<abi>.
 # Shared by CI (.github/workflows/ci.yml Ubuntu job) and ./scripts/ci-local.sh.
 #
@@ -14,6 +16,10 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO_ROOT}"
+source scripts/ci/python.sh
+kggml_require_python 3.9
+max_name="$(sed -n 's/^set(KGGML_GGML_MAX_NAME \([0-9]*\)).*/\1/p' kggml-runtime/native/cmake/kggml-ggml-abi.cmake)"
+[[ -n "${max_name}" ]] || { echo "FAIL: KGGML_GGML_MAX_NAME not found in kggml-runtime/native/cmake/kggml-ggml-abi.cmake" >&2; exit 1; }
 readelf_bin="$(command -v readelf || command -v llvm-readelf || true)"
 [[ -n "${readelf_bin}" ]] || { echo "FAIL: readelf not found" >&2; exit 1; }
 
@@ -54,7 +60,23 @@ for abi in "${abis[@]}"; do
   fi
   "${readelf_bin}" -lW "${so}" | awk '$1 == "LOAD" { if ($NF != "0x4000") bad = 1 } END { exit bad }' \
     || fail "${abi}: LOAD segments are not 16 KB aligned"
-  echo "${abi}: ${module_name} OK (needs: $(tr '\n' ' ' <<<"${needed}"))"
+  commands="build/native-${kind}-android-${abi}/compile_commands.json"
+  if [[ ! -f "${commands}" ]]; then
+    fail "${abi}: ${commands} missing (the preset exports compile commands)"
+  elif ! abi_report="$(kggml_python - "${commands}" "${max_name}" <<'PY'
+import json, sys
+commands, want = sys.argv[1], sys.argv[2]
+ggml = [c for c in json.load(open(commands)) if "/ggml/src/" in c["file"].replace("\\", "/")]
+bad = [c["file"] for c in ggml if f"-DGGML_MAX_NAME={want}" not in c.get("command", " ".join(c.get("arguments", [])))]
+if not ggml or bad:
+    print(f"{len(bad)} of {len(ggml)} ggml sources lack -DGGML_MAX_NAME={want}: {[c.rsplit('/', 1)[-1] for c in bad[:3]]}")
+    sys.exit(1)
+print(f"{len(ggml)} ggml sources built with GGML_MAX_NAME={want}")
+PY
+  )"; then
+    fail "${abi}: ${abi_report}"
+  fi
+  echo "${abi}: ${module_name} OK (needs: $(tr '\n' ' ' <<<"${needed}"); ${abi_report:-})"
 done
 
 [[ ${problems} -eq 0 ]] || exit 1

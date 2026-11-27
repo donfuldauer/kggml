@@ -64,6 +64,9 @@ set(GGML_NATIVE           OFF CACHE BOOL "" FORCE)
 set(GGML_CCACHE           OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_TESTS      OFF CACHE BOOL "" FORCE)
 set(GGML_BUILD_EXAMPLES   OFF CACHE BOOL "" FORCE)
+# The module runs against :kggml-runtime's libggml-base, so it must share its ggml ABI (struct ggml_tensor layout).
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../kggml-runtime/native/cmake/kggml-ggml-abi.cmake")
+add_compile_definitions(GGML_MAX_NAME=${KGGML_GGML_MAX_NAME})
 add_subdirectory("${KGGML_GGML_SOURCE_DIR}" ggml EXCLUDE_FROM_ALL)
 
 if (NOT TARGET ggml-opencl)
