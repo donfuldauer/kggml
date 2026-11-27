@@ -19,6 +19,7 @@ and `AUTO` prefers it. `KggmlRuntimeVulkan.isRegistered` / `isAvailable` report 
 | Android 9+ device with a Vulkan 1.1+ GPU driver | Vulkan available; engines can run on the GPU |
 | Android 8.x, or no usable driver | Module not loaded / no devices; a logcat warning (`kggml`), engines on the CPU |
 | Emulator (software Vulkan) | Registered with 0 devices (ggml-vulkan ignores CPU Vulkan implementations); CPU |
+| Imagination PowerVR GPU (Pixel 10 and later: Tensor G5+, some MediaTek phones) | Registered with 0 usable devices: the PowerVR driver runs ggml's shaders incorrectly and can hang, so `AUTO` and `GPU_VULKAN` use the CPU. Set the environment variable `KGGML_VULKAN_ALLOW_POWERVR=1` before the runtime loads to test a newer driver |
 | JVM desktop Linux x86_64 with a Vulkan driver (Mesa, NVIDIA, AMD) | Vulkan available; engines can run on the GPU |
 | JVM desktop Linux without a Vulkan loader (`libvulkan.so.1`) or driver | Module not loaded / no devices; a warning (`System.Logger` `com.donfuldauer.kggml`), CPU |
 | JVM desktop with a runtime built with `KGGML_ENABLE_VULKAN=ON` | The add-on is skipped (Vulkan is already linked in) |

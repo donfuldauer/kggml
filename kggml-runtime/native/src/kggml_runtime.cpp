@@ -6,6 +6,7 @@
 #include "kggml_runtime.h"
 
 #include "cpu_topology.hpp"
+#include "device_policy.hpp"
 #include "guard.hpp"
 
 #if defined(KGGML_RUNTIME_TEST_HOOKS)
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <new>
@@ -130,10 +132,31 @@ int32_t registry_device_count(const char * reg_name) {
     return reg == nullptr ? 0 : static_cast<int32_t>(ggml_backend_reg_dev_count(reg));
 }
 
+// Usable Vulkan devices: those vulkan_device_allowed keeps (PowerVR drivers are excluded; see device_policy.hpp).
+int32_t vulkan_device_count() {
+    ggml_backend_reg_t reg = ggml_backend_reg_by_name("Vulkan");
+    if (reg == nullptr) return 0;
+    const char * allow = std::getenv(kggml::runtime::kAllowPowerVrEnv);
+    int32_t usable = 0;
+    for (size_t i = 0; i < ggml_backend_reg_dev_count(reg); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_reg_dev_get(reg, i);
+        if (kggml::runtime::vulkan_device_allowed(ggml_backend_dev_description(dev), allow)) ++usable;
+    }
+    return usable;
+}
+
 // Probes one optional GPU backend; a failing driver means "unavailable", never an error.
 [[maybe_unused]] int32_t probe_devices(const char * reg_name) noexcept {
     try {
         return registry_device_count(reg_name);
+    } catch (...) {
+        return 0;
+    }
+}
+
+int32_t probe_vulkan_devices() noexcept {
+    try {
+        return vulkan_device_count();
     } catch (...) {
         return 0;
     }
@@ -157,7 +180,7 @@ void probe_backends(std::array<kggml_backend_info, KGGML_BACKEND_KIND_COUNT> & o
     // from a backend module (the Android kggml-runtime-vulkan add-on, kggml_runtime_load_backend): ask the registry.
     const bool vulkan_registered = ggml_backend_reg_by_name("Vulkan") != nullptr;
     fill_info(out[KGGML_BACKEND_VULKAN], KGGML_BACKEND_VULKAN, "Vulkan", vulkan_registered,
-              vulkan_registered ? probe_devices("Vulkan") : 0);
+              vulkan_registered ? probe_vulkan_devices() : 0);
 
     // OpenCL is only ever a registered backend module (the Android kggml-runtime-opencl add-on).
     const bool opencl_registered = ggml_backend_reg_by_name("OpenCL") != nullptr;

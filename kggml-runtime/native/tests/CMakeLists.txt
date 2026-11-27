@@ -32,7 +32,9 @@ add_executable(kggml_runtime_tests
     test_errors.cpp
     test_abi.cpp
     # Internal (hidden-visibility) code under test is compiled straight into the test binary.
-    ${PROJECT_SOURCE_DIR}/src/cpu_topology.cpp)
+    ${PROJECT_SOURCE_DIR}/src/cpu_topology.cpp
+    ${PROJECT_SOURCE_DIR}/src/device_policy.cpp
+    test_device_policy.cpp)
 
 target_include_directories(kggml_runtime_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_libraries(kggml_runtime_tests PRIVATE kggml::runtime GTest::gtest_main)
