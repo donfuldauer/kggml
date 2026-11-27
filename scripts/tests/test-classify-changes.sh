@@ -492,6 +492,33 @@ if subprocess.run([sys.executable, str(classifier), "--verify-repo", "--repo", s
 else:
     ko("--verify-repo rejects unknown classify output reference in workflow")
 
+# Unknown top-level files must still trigger ci.yml at the workflow level so classify can fail safe.
+sys.path.insert(0, str(classifier.parent))
+import classify_changes as cc
+
+ci_paths = cc.extract_pull_request_paths(repo_root / ".github" / "workflows" / "ci.yml")
+if cc.matches_gha_paths("some-unknown-top-level.xyz", ci_paths) and not cc.matches_gha_paths("docs/RELEASING.md", ci_paths):
+    ok("ci.yml on.pull_request.paths lets unknown paths reach classify while skipping docs")
+else:
+    ko("ci.yml on.pull_request.paths unknown-path fallback")
+
+# Non-ASCII filenames must not be quoted by git ls-files in --verify-repo.
+r_unicode = make_verify_repo(
+    "unicode-md",
+    {"docs/café.md": "# Café\n"},
+    """on:
+  pull_request:
+    paths:
+      - "**"
+      - "!**/*.md"
+      - "!docs/**"
+""",
+)
+if subprocess.run([sys.executable, str(classifier), "--verify-repo", "--repo", str(r_unicode)], capture_output=True).returncode == 0:
+    ok("--verify-repo handles non-ASCII tracked filenames via git ls-files -z")
+else:
+    ko("--verify-repo handles non-ASCII tracked filenames via git ls-files -z")
+
 print(f"\nclassify-changes tests: {passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)
 PY

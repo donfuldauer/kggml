@@ -585,8 +585,8 @@ def verify_repo(repo: Path) -> int:
     tracked = [
         line
         for line in subprocess.run(
-            ["git", "-C", str(repo), "ls-files"], check=True, capture_output=True, text=True
-        ).stdout.splitlines()
+            ["git", "-C", str(repo), "ls-files", "-z"], check=True, capture_output=True
+        ).stdout.decode("utf-8", errors="surrogateescape").split("\0")
         if line
     ]
     if not tracked:
