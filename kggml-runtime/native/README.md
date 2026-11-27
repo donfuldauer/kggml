@@ -11,12 +11,13 @@ dynamically and never carry their own copy of ggml.
 | Path | Contents |
 | --- | --- |
 | `third_party/ggml/` | Upstream ggml git submodule (`git submodule update --init --recursive`) |
-| `include/kggml_runtime.h` | Public C ABI: init/shutdown (refcounted), backends, P-core count, versions, last error |
+| `include/kggml_runtime.h` | Public C ABI: init/shutdown (refcounted), backends, backend modules (`kggml_runtime_load_backend`), P-core count, versions, last error |
 | `jni/kggml_runtime_jni.cpp` | JNI bridge (`libkggml_runtime_jni`) for the Kotlin bindings on Android + JVM Desktop; links `kggml_runtime` dynamically (`KGGML_RUNTIME_BUILD_JNI`, ON when JNI headers are found / on Android, never on iOS) |
 | `src/` | Implementation. `guard.hpp` holds the FFI exception firewall. `kggml_runtime_testing.h` holds the test-only fault hooks |
 | `tests/` | GoogleTest/CTest suite (`-DKGGML_RUNTIME_BUILD_TESTS=ON`; GoogleTest v1.15.2 via FetchContent) |
+| `cmake/kggml-version.cmake` | `KGGML_VERSION`, read from `VERSION_NAME` in `gradle.properties` (the one place the version is set); the runtime and every engine use it as their CMake project version. `-DKGGML_VERSION=x.y.z` overrides it outside the repository. |
 | `cmake/kggml-runtime-config.cmake.in` | Installed package: `find_package(kggml-runtime)` → `kggml::runtime`, `kggml::ggml` |
-| `scripts/` | `build-host.sh`, `build-android.sh`, `build-ios-xcframework.sh` |
+| `scripts/` | `build-host.sh`, `build-android.sh`, `build-ios-xcframework.sh`, `build-windows-arm64.cmd` |
 
 ## Outputs
 
@@ -24,9 +25,11 @@ dynamically and never carry their own copy of ggml.
 | --- | --- |
 | Linux / macOS / Windows | `libggml-base`, `libggml-cpu`, `libggml` (+ `libggml-metal`/`-blas` on macOS, `libggml-vulkan` when enabled), `libkggml_runtime`, `libkggml_runtime_jni` |
 | Android (`arm64-v8a`, `x86_64`) | Same libraries with unversioned sonames (`libggml.so`, `libkggml_runtime.so`, `libkggml_runtime_jni.so`, …), 16 KB page aligned, `c++_shared` STL |
-| iOS (device, simulator arm64) | `GgmlRuntime.xcframework`. Each slice is one dynamic framework that holds ggml, its backends and `kggml_runtime` (`KGGML_RUNTIME_MONOLITHIC=ON`) |
+| iOS (device, simulator arm64), macOS arm64 | `GgmlRuntime.xcframework`. Each slice is one dynamic framework that holds ggml, its backends and `kggml_runtime` (`KGGML_RUNTIME_MONOLITHIC=ON`); the `macos-arm64` slice serves the Kotlin/Native `macosArm64` target |
 
-`GGML_BACKEND_DL` is always OFF, so backends are linked directly and nothing is loaded with `dlopen`.
+`GGML_BACKEND_DL` is always OFF here, so the runtime's own backends are linked directly. The only modules loaded
+with `dlopen` are the optional GPU add-ons (`:kggml-runtime-vulkan`, `:kggml-runtime-opencl`), which the Kotlin
+loaders register through `kggml_runtime_load_backend`.
 `libkggml_runtime` has `NEEDED` entries on `libggml`, `libggml-base` and `libggml-cpu`, and defines no
 `ggml_*` symbols. CI checks this with `readelf`/`nm`/`otool`.
 
@@ -66,7 +69,7 @@ How it is propagated:
 | `windows-arm64` | Windows on ARM, built with LLVM clang for the MSVC ABI (ggml rejects `cl.exe` for ARM), no tests. Run [`scripts/build-windows-arm64.cmd`](scripts/build-windows-arm64.cmd), which sets up the MSVC arm64 environment |
 | `android-arm64-v8a` | `-march=armv8.2-a+dotprod+fp16`. Needs `ANDROID_NDK_HOME` |
 | `android-x86_64` | SSE4.2 baseline (the x86_64 Android ABI guarantees nothing higher) |
-| `ios-device`, `ios-simulator-arm64` | Xcode generator, monolithic `GgmlRuntime.framework`, Metal (embedded library) + Accelerate |
+| `ios-device`, `ios-simulator-arm64`, `macos-framework` | Xcode generator, monolithic `GgmlRuntime.framework`, Metal (embedded library) + Accelerate. `macos-framework` is the macOS arm64 slice |
 
 Options: `KGGML_ENABLE_VULKAN` (OFF; it is forced OFF when the Vulkan SDK or `glslc` is missing),
 `KGGML_ENABLE_METAL`, `KGGML_ENABLE_BLAS`, `KGGML_ENABLE_COREML` (a compile-time capability flag only),
@@ -98,7 +101,7 @@ cmake --build build/native -j"$(nproc)"
 # Android (stages jniLibs under build/native-android-jniLibs/<abi>/)
 ANDROID_NDK_HOME=/path/to/ndk kggml-runtime/native/scripts/build-android.sh
 
-# iOS (macOS + Xcode) → build/native-ios/GgmlRuntime.xcframework
+# iOS + macOS arm64 (macOS + Xcode) → build/native-ios/GgmlRuntime.xcframework
 kggml-runtime/native/scripts/build-ios-xcframework.sh   # --coreml to advertise the CoreML capability
 
 # Gradle helpers (opt-in, not part of `check`)
@@ -108,7 +111,7 @@ kggml-runtime/native/scripts/build-ios-xcframework.sh   # --coreml to advertise 
 ## Kotlin bindings
 
 `com.donfuldauer.kggml.runtime.KggmlRuntime` (in `kggml-runtime/src/`) exposes the C ABI to Kotlin:
-`acquire()` (ref-counted `RuntimeHandle`), `backends()`, `availableBackends()`, `resolveBackend()`,
+`acquire()` (ref-counted `RuntimeHandle`), `isInitialized()`, `backends()`, `availableBackends()`, `resolveBackend()`,
 `recommendedThreadCount()`, `hardwareThreadCount()` and `info()`. Native status codes become typed
 `InferenceException`s.
 
@@ -116,7 +119,7 @@ kggml-runtime/native/scripts/build-ios-xcframework.sh   # --coreml to advertise 
 | --- | --- | --- |
 | Android | JNI (`jniMain`) | `System.loadLibrary("kggml_runtime_jni")` from the AAR's jniLibs |
 | JVM Desktop | JNI (`jniMain`) | `-Dkggml.native.path=<dir>` (or `KGGML_NATIVE_PATH`), else extracted from the jar's `/kggml/native/<os>-<arch>/` (listed in `index.txt` in load order), else `java.library.path` |
-| iOS | cinterop (`src/nativeInterop/cinterop/kggmlRuntime.def`) | Linked against the dynamic `GgmlRuntime.framework`; the app embeds `GgmlRuntime.xcframework` |
+| iOS, macOS (`appleMain`) | cinterop (`src/nativeInterop/cinterop/kggmlRuntime.def`) | Linked against the dynamic `GgmlRuntime.framework`; the app embeds `GgmlRuntime.xcframework` |
 
 ```bash
 # JVM tests against build/native/lib, including C++ fault injection across JNI.
@@ -130,8 +133,11 @@ ANDROID_HOME=/path/to/sdk ./gradlew :kggml-runtime:assemble -Pkggml.bundleNative
 kggml-runtime/native/scripts/build-ios-xcframework.sh && ./gradlew :kggml-runtime:iosSimulatorArm64Test
 ```
 
-The JVM jar bundles only the host platform it was built on. A jar for several desktop platforms needs the
-staged `kggml/native/<platform>/` directories from each host merged in; that belongs to the publishing work.
+By default the JVM jar bundles only the host platform it was built on. `-Pkggml.extraJvmNativeResources=<dir>[,...]`
+(with `bundleNative`) adds the `kggml/native/<platform>/` directories staged on other hosts, and
+`-Pkggml.nativePlatform=<os>-<arch>` stages a cross-built runtime (`linux-aarch64`, `windows-aarch64`) instead of the
+host's. The release workflow uses both to ship `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64`
+and `macos-aarch64` in one jar.
 
 ## Status codes
 

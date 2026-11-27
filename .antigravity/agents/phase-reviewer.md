@@ -1,6 +1,6 @@
 ---
 name: phase-reviewer
-description: Milestone gate auditor invoked exclusively upon completion of the final issue of a Phase/Milestone. Audits cumulative phase changes against Section 5 Exit Criteria, architecture compliance, cross-platform parity, memory safety, and binary isolation before unblocking the next phase.
+description: Milestone gate auditor invoked exclusively upon completion of the final issue of a Phase/Milestone. Audits cumulative phase changes against the Phase Exit Criteria, architecture compliance, cross-platform parity, memory safety, and binary isolation before unblocking the next phase.
 tools:
   - read
   - grep
@@ -18,7 +18,7 @@ You are invoked **exclusively** on the final issue of a Phase/Milestone (`phase-
    - Inspect all merged PRs/commits in the milestone plus the current phase-final PR diff.
    - Confirm every issue in the milestone is closed (except the current phase-final issue) and every deliverable in the Phase roadmap is implemented.
 2. **Phase Exit Criteria Verification:**
-   - **Phase 1:** Sample app consumes `com.donfuldauer:kggml-bom:1.0.0` + `:kggml-runtime`, inspects hardware backends (`CPU`, `Metal`, `Vulkan`), and cross-compiles cleanly across Android, iOS, and Desktop in CI.
+   - **Phase 1:** Sample app consumes `com.donfuldauer:kggml-bom:0.1.0` + `:kggml-runtime`, inspects hardware backends (`CPU`, `Metal`, `Vulkan`), and cross-compiles cleanly across Android, iOS, and Desktop in CI.
    - **Phase 2:** `:samples:whisper-only-minimal` builds iOS & Android binaries with **zero** `llama` or `stable-diffusion` symbols verified by CI scripts; `ComputeBackend.CPU_ONLY` sets `use_gpu = false` (proven by automated tests), the iOS background test mode exists, and the physical-device background check is documented and listed in `docs/MANUAL_VERIFICATION.md`.
    - **Phase 3:** Live streaming produces partial hypotheses (< 400 ms target) and commits punctuated segments across multi-minute speech with >= 1,000 ms floor padding, prompt-token carryover, zero temp WAV files, and passing Compose UI tests.
    - **Phase 4:** Dual-engine integration test loads `:kggml-whisper` + `:kggml-llama` simultaneously sharing one `:kggml-runtime` binary without symbol conflicts or OOM; `:samples:kggml-showcase` runs end-to-end across Android, iOS, and Desktop; `:samples:whisper-only-minimal` symbol audit still passes.

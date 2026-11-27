@@ -79,8 +79,9 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
 
 1. **Run verification gates locally (mandatory before every push, including auto-fix pushes):**
    ```bash
-   # Runs the same checks as the Linux PR CI jobs (parity, gitleaks, ggml pin, host build + CTest,
-   # linkage audit, jvmTest, Android cross-compile + audit). Must end with no FAIL lines.
+   # Runs the same checks as the Linux PR CI jobs (parity, license/docs audits, gitleaks, upstream pins,
+   # host builds + CTest, linkage audits, jvmTest, Android cross-compile + audits, sample audit,
+   # README snippets, release dry-run). Must end with no FAIL lines.
    ./scripts/ci-local.sh
    # Plus any module-specific commands from AGENTS.md Section 3 that apply, e.g.:
    # ./gradlew check
@@ -104,7 +105,7 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
      --body "Closes #<N>\n\n## Summary\n...\n\n## Verification\n..."
    ```
 3. **Request the macOS / Windows runs only when needed (AGENTS.md "CI Minutes Policy"):**
-   Add the `ci:macos` label if the PR is phase-final (see Step 4) or changes macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Add `ci:windows` if the PR is phase-final or changes Windows-specific code (MSVC flags, `windows-x64` presets, `_WIN32` `#ifdef`s). Otherwise leave them off.
+   Add the `ci:macos` label if the PR is phase-final (see Step 4) or changes macOS/iOS-specific native code (Metal, CoreML, Accelerate, `cinterop`, xcframework packaging, Apple-only `#ifdef`s). Add `ci:windows` if the PR is phase-final or changes Windows-specific code (MSVC flags, `windows-x64` / `windows-arm64` presets, `_WIN32` `#ifdef`s). Otherwise leave them off.
    ```bash
    gh pr edit <PR_NUMBER> --add-label "ci:macos"
    gh pr edit <PR_NUMBER> --add-label "ci:windows"
@@ -138,7 +139,7 @@ gh issue list --state open --label "<phase-label>" --limit 50 --json number,titl
 
 - **Mid-phase PR (other issues in the phase remain open):** Proceed directly to Step 5 once CI checks pass. Do **not** invoke `phase-reviewer`.
 - **Phase-final PR (only `#N` remains open in the phase):**
-  1. Make sure the PR has the `ci:macos` and `ci:windows` labels so the macOS and Windows jobs run, then invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against Section 5 Exit Criteria.
+  1. Make sure the PR has the `ci:macos` and `ci:windows` labels so the macOS and Windows jobs run, then invoke `phase-reviewer` (`.agents/agents/phase-reviewer.md`) to audit cumulative phase diffs against its Phase Exit Criteria.
   2. Fix any blocking findings, push updates, re-run verification, and obtain `APPROVED` from `phase-reviewer` before merging.
 
 ---

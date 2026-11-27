@@ -54,7 +54,7 @@ extern "C" {
 /* Versions & errors                                                                                       */
 /* ------------------------------------------------------------------------------------------------------ */
 
-/** Kggml diffusion module version, e.g. "1.0.0". Static string. */
+/** Kggml diffusion module version, e.g. "0.1.0". Static string. */
 KGGML_DIFFUSION_API const char * kggml_diffusion_version(void);
 
 /** Upstream stable-diffusion.cpp `git describe` of the pin, e.g. "master-612-d7ecbe1-2-g3b4d26f". Static string. */
@@ -98,7 +98,8 @@ typedef struct kggml_diffusion_context_params {
     /**
      * kggml_backend_kind (BackendConfig.backend). KGGML_BACKEND_CPU pins every stable-diffusion.cpp module to the
      * ggml CPU device, so no GPU backend is ever created (Accelerate / NEON only; on iOS this stays legal in the
-     * background). KGGML_BACKEND_METAL / KGGML_BACKEND_VULKAN run on the `gpu_device`-th GPU device of that kind.
+     * background). KGGML_BACKEND_METAL / KGGML_BACKEND_VULKAN / KGGML_BACKEND_OPENCL run on the `gpu_device`-th GPU
+     * device of that kind.
      * KGGML_BACKEND_COREML is not supported by stable-diffusion.cpp and returns KGGML_STATUS_BACKEND_UNAVAILABLE.
      * Default: KGGML_BACKEND_CPU.
      */

@@ -12,7 +12,8 @@ implementation("com.donfuldauer:kggml-runtime-vulkan")
 Nothing to call. When `:kggml-runtime` loads, it looks for the module (Android: `libggml-vulkan.so` in the app; JVM:
 `/kggml/native-addons/<platform>/ggml-vulkan/` in this jar, or the `kggml.native.addons.path` directory) and registers it
 with ggml's backend registry (`kggml_runtime_load_backend`), so every engine sees the GPU: `ComputeBackend.GPU_VULKAN` targets it
-and `AUTO` prefers it. `KggmlRuntimeVulkan.isRegistered` / `isAvailable` report the outcome.
+and `AUTO` prefers it over the CPU (an OpenCL device from `kggml-runtime-opencl` comes first).
+`KggmlRuntimeVulkan.isRegistered` / `isAvailable` report the outcome.
 
 | Situation | Result |
 | --- | --- |

@@ -55,9 +55,9 @@ diffusion model, naming the file), `BackendUnavailableException`, `OutOfMemoryEx
 | `BackendConfig` | stable-diffusion.cpp |
 | --- | --- |
 | `CPU_ONLY` | Every module on the ggml CPU device; no GPU backend is ever created (safe in the iOS background). |
-| `GPU_METAL` / `GPU_VULKAN` | The `DiffusionEngineOptions.gpuDevice`-th device of that kind. `BACKEND_UNAVAILABLE` from native falls back along `ComputeBackend.fallback` (to CPU) unless `allowBackendFallback = false`. |
+| `GPU_METAL` / `GPU_OPENCL` / `GPU_VULKAN` | The `DiffusionEngineOptions.gpuDevice`-th device of that kind (OpenCL and Vulkan need the `:kggml-runtime-opencl` / `:kggml-runtime-vulkan` add-ons). `BACKEND_UNAVAILABLE` from native falls back along `ComputeBackend.fallback` (to CPU) unless `allowBackendFallback = false`. |
 | `NPU_COREML` | Not supported by stable-diffusion.cpp: falls back to Metal / CPU, or fails with `BackendUnavailableException`. |
-| `AUTO` | Metal, then Vulkan, then CPU. |
+| `AUTO` | Metal, then OpenCL, then Vulkan, then CPU. |
 | `gpuLayers = 0` with a GPU backend | `offload_params_to_cpu`: weights stay in host memory and stream to the GPU per graph (stable-diffusion.cpp has no per-layer offload; any other value keeps the weights on the GPU). |
 | `cpuThreads`, `useFlashAttention`, `useMmap` | `n_threads` (`AUTO_THREADS` = performance cores), flash attention in every module, mmap of the weight files. |
 
@@ -121,8 +121,8 @@ Automated tests cannot generate a real image, so this is checked by hand during 
 1. Download a small SD 1.5-class checkpoint (e.g. a q8_0 SD 1.5 GGUF, ~1.6 GB) to the desktop and to a physical
    Android device and iPhone (app sandbox).
 2. Create `DiffusionEngine(modelPath, BackendConfig.DEFAULT)` and `DiffusionEngine(modelPath, BackendConfig.CPU)`;
-   check `activeBackend` / `usesGpu` (Metal on iPhone / Apple Silicon, Vulkan on a supported Android GPU or desktop,
-   CPU otherwise).
+   check `activeBackend` / `usesGpu` (Metal on iPhone / Apple Silicon, OpenCL or Vulkan on a supported Android GPU or
+   Vulkan on desktop Linux with the matching add-on, CPU otherwise).
 3. `generate(DiffusionGenerationParams(prompt = "a lighthouse on a cliff at sunset", sampleSteps = 20, seed = 42))`:
    `Progress` steps `0..20` arrive in order, then a 512×512 `Completed` image that shows the prompt (convert the RGB8
    pixels to a platform bitmap or write a PPM: `P6 512 512 255\n` + `pixels`).

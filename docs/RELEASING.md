@@ -1,14 +1,17 @@
 # Releasing Kggml to Maven Central
 
 Kggml is published to Maven Central under `com.donfuldauer` by [`release.yml`](../.github/workflows/release.yml).
-One release publishes all seven coordinates at the `VERSION_NAME` in [`gradle.properties`](../gradle.properties):
+No version has been published yet; the first release is planned as 0.1.0.
+One release publishes all nine coordinates at the `VERSION_NAME` in [`gradle.properties`](../gradle.properties):
 
 | Coordinate | Contents |
 | --- | --- |
-| `com.donfuldauer:kggml-bom` | BOM (`pom` packaging) constraining the six libraries below |
-| `com.donfuldauer:kggml-core-api` | Kotlin Multiplatform library: root + `-android`, `-jvm`, `-iosarm64`, `-iossimulatorarm64` |
-| `com.donfuldauer:kggml-runtime` | same; the `-jvm` jar carries the runtime for `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64`, `macos-aarch64`; the AAR carries `arm64-v8a` and `x86_64` |
-| `com.donfuldauer:kggml-whisper` | same; the AAR carries the whisper JNI libraries |
+| `com.donfuldauer:kggml-bom` | BOM (`pom` packaging) constraining the eight libraries below |
+| `com.donfuldauer:kggml-core-api` | Kotlin Multiplatform library: root + `-android`, `-jvm`, `-iosarm64`, `-iossimulatorarm64`, `-macosarm64` |
+| `com.donfuldauer:kggml-runtime` | same (with `-macosarm64`); the `-jvm` jar carries the runtime for `linux-x86_64`, `linux-aarch64`, `windows-x86_64`, `windows-aarch64`, `macos-aarch64`; the AAR carries `arm64-v8a` and `x86_64` |
+| `com.donfuldauer:kggml-runtime-vulkan` | root + `-android`, `-jvm`, `-iosarm64`, `-iossimulatorarm64`; optional GPU add-on: the AAR carries `libggml-vulkan.so` (`arm64-v8a`, `x86_64`), the `-jvm` jar the `linux-x86_64` Vulkan module (no Windows module yet); no-op on iOS |
+| `com.donfuldauer:kggml-runtime-opencl` | root + `-android`, `-jvm`, `-iosarm64`, `-iossimulatorarm64`; optional Android GPU add-on: the AAR carries `libggml-opencl.so` (`arm64-v8a`, `x86_64`); no-op on JVM and iOS |
+| `com.donfuldauer:kggml-whisper` | root + `-android`, `-jvm`, `-iosarm64`, `-iossimulatorarm64`; the AAR carries the whisper JNI libraries |
 | `com.donfuldauer:kggml-llama` | same; the AAR carries the llama JNI libraries |
 | `com.donfuldauer:kggml-diffusion` | same; the AAR carries the diffusion JNI libraries |
 | `com.donfuldauer:kggml-model-manager` | same (pure Kotlin) |
@@ -23,7 +26,8 @@ signature (`.asc`) on every file. The iOS xcframeworks (`GgmlRuntime`, `KggmlWhi
 1. **`desktop-natives`** (`ubuntu-latest`, `windows-latest`): builds the release runtime for `linux-x86_64` and
    `windows-x86_64`, cross-compiles it for `linux-aarch64` (GNU aarch64 toolchain) and `windows-aarch64` (LLVM clang,
    MSVC ABI), stages each as JVM resources and checks every library's machine type
-   ([`check_native_arch.py`](../scripts/ci/check_native_arch.py)).
+   ([`check_native_arch.py`](../scripts/ci/check_native_arch.py)). The `linux-x86_64` job also builds the desktop
+   Vulkan add-on module for the `kggml-runtime-vulkan` jar.
 2. **`publish`** (`macos-latest`, the only host that builds every Kotlin target): builds the iOS xcframeworks, then
    runs [`scripts/ci/stage-release.sh`](../scripts/ci/stage-release.sh), which
    - publishes every publication with `-Pkggml.release=true -Pkggml.bundleNative=true` into
@@ -78,8 +82,9 @@ signs (with `SIGNING_KEY` if set, otherwise a throwaway key) and audits the full
 uploaded. To check the bundle with Central's own validation, upload that zip by hand in the portal
 (Publish → Publish Component) and drop the deployment afterwards.
 
-To check the full CI matrix on GitHub-hosted runners, run Actions → **CI** → Run workflow on `main`; a dispatch
-runs the Ubuntu, macOS and Windows jobs.
+To check the full CI matrix on GitHub-hosted runners, run Actions → **CI** → Run workflow on `main` with **runner**
+set to `hosted` (the default, `auto`, uses the owner's self-hosted runners that are on); a dispatch runs the Ubuntu,
+macOS and Windows jobs.
 
 ## Releasing a version
 
@@ -87,8 +92,8 @@ runs the Ubuntu, macOS and Windows jobs.
 2. Tag the merge commit and push the tag:
 
    ```bash
-   git tag -s v1.0.0 -m "Kggml 1.0.0"
-   git push origin v1.0.0
+   git tag -s v0.1.0 -m "Kggml 0.1.0"
+   git push origin v0.1.0
    ```
 
    The workflow fails if the tag and `VERSION_NAME` differ.

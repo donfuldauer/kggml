@@ -31,7 +31,7 @@ import kotlinx.coroutines.job
  * - [ComputeBackend.GPU_METAL] / [ComputeBackend.GPU_VULKAN] set `use_gpu = true` on that device kind.
  * - [ComputeBackend.NPU_COREML] additionally enables the Core ML encoder (iOS builds with `WHISPER_COREML`); it
  *   uses `<model>-encoder.mlmodelc` next to the model when present and otherwise falls back to Metal/CPU.
- * - [ComputeBackend.AUTO] picks the first available of CoreML, Metal, Vulkan, CPU.
+ * - [ComputeBackend.AUTO] picks the first available of CoreML, Metal, OpenCL, Vulkan, CPU.
  *
  * `BackendConfig.useFlashAttention` maps to whisper's flash attention and `cpuThreads` to the decoder thread
  * count ([BackendConfig.AUTO_THREADS] = number of performance cores). `gpuLayers` and `useMmap` do not apply to
@@ -620,7 +620,7 @@ public class WhisperEngine internal constructor(
 /**
  * Version and capability information of the native whisper library.
  *
- * @property moduleVersion Kggml whisper module version, e.g. `"1.0.0"`.
+ * @property moduleVersion Kggml whisper module version, e.g. `"0.1.0"`.
  * @property whisperCppVersion pinned upstream whisper.cpp release, e.g. `"1.8.4"`.
  * @property whisperCppCommit full upstream whisper.cpp commit SHA (see `NOTICE`).
  * @property systemInfo `whisper_print_system_info()` (CPU features of this build).

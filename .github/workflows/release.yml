@@ -14,7 +14,7 @@ name: Release (Maven Central)
 #                    A real release then uploads it with scripts/ci/upload-central-bundle.sh.
 #
 # Triggers:
-#   - push of a tag `v<VERSION_NAME>` (e.g. v1.0.0): real release. The tag must match gradle.properties.
+#   - push of a tag `v<VERSION_NAME>` (e.g. v0.1.0): real release. The tag must match gradle.properties.
 #   - manual dispatch: dry run by default (sign with the configured key, or a throwaway key if none, audit, keep
 #     the bundle as a workflow artifact, upload nothing). A non-dry-run dispatch must target a `v*` tag.
 # Secrets (Settings -> Secrets and variables -> Actions; see docs/RELEASING.md):

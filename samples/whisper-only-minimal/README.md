@@ -4,7 +4,8 @@ Minimal Android + iOS + JVM desktop app that depends **only** on `com.donfuldaue
 `com.donfuldauer:kggml-whisper` (which brings `:kggml-runtime`). It exists for two reasons:
 
 1. **Binary symbol leakage audits** (AGENTS.md §2.1): its shipped binaries must contain zero `llama.cpp`,
-   `libmtmd` or `stable-diffusion.cpp` symbols, and exactly one copy of every `ggml` symbol (in the
+   `libmtmd` or `stable-diffusion.cpp` symbols, no GPU add-on (`ggml-vulkan` / `ggml-opencl` libraries or the
+   `kggml-runtime-vulkan` / `kggml-runtime-opencl` classes), and exactly one copy of every `ggml` symbol (in the
    `:kggml-runtime` libraries). `verifyMinimalDependencies` (part of `check`) fails if `:kggml-llama` or
    `:kggml-diffusion` is ever resolved; `scripts/audit-binary-symbols.sh` checks the built artifacts.
 2. **Manual verification** of `WhisperEngine` on devices: PCM file transcription, the runtime
@@ -16,10 +17,13 @@ The UI uses only platform toolkits (`android.widget`, UIKit, Swing), no Compose/
 | --- | --- | --- | --- |
 | Transcribe a PCM file (16-bit / float WAV, or raw 16 kHz mono s16le `.pcm`) | ✓ | ✓ | ✓ |
 | Pick a whisper model (`.bin`) already in the app's folder, or a custom path | ✓ (radio list) | ✓ (Model menu) | ✓ (radio list, Rescan folder) |
-| Backend toggle: CPU only / GPU (Vulkan on Android, Metal on iOS / macOS, Vulkan on Linux / Windows builds with it) / Auto | ✓ | ✓ | ✓ |
+| Backend toggle: CPU only / GPU (`GPU_METAL` on iOS / macOS, `GPU_VULKAN` elsewhere) / Auto | ✓ | ✓ | ✓ |
 | Backend switch reuses the engine (`WhisperEngine.reinitialize`) | ✓ | ✓ | ✓ |
 | Engine follows the app lifecycle (GPU → `CPU_ONLY` in the background) | — | ✓ (`observeAppLifecycle`) | — |
 | Background transcription test mode | — | ✓ | — |
+
+The sample ships no Vulkan add-on (`kggml-runtime-vulkan`), so on Android and Linux / Windows the GPU option runs on
+the CPU, unless the desktop runtime was built with Vulkan linked in (`build-host.sh --vulkan`).
 
 Shared logic (WAV/PCM parsing, the engine session, the background test runner) lives in `commonMain` and is
 covered by `commonTest` with fake engines.

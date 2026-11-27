@@ -2,7 +2,7 @@
 
 The code examples of the root [`README.md`](../README.md), as Kotlin that the build compiles. Not published.
 
-Each README code block is a region of a file in this module:
+Each README code block in Kotlin, Gradle (`kts` / `groovy`), Java or Swift is a region of a file in this module:
 
 ```kotlin
 // snippet:start whisper-transcribe
@@ -11,7 +11,7 @@ WhisperEngine(modelPath, BackendConfig.DEFAULT).use { engine -> /* ... */ }
 ```
 
 and the README marks the block with `<!-- snippet: whisper-transcribe -->` on the line before its opening fence.
-`scripts/ci/verify-docs.sh` fails if a README Kotlin block has no marker, differs from its region (after removing
+`scripts/ci/verify-docs.sh` fails if such a README block has no marker, differs from its region (after removing
 the common indentation), or if a region is not used by the README.
 
 The module depends on the SDK only through its published coordinates (`com.donfuldauer:kggml-bom` and the engine

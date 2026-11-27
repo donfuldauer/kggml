@@ -46,7 +46,7 @@ public suspend fun DiffusionEngine(
  * - [ComputeBackend.NPU_COREML] is not supported by stable-diffusion.cpp; with
  *   [DiffusionEngineOptions.allowBackendFallback] it falls back to Metal / CPU, otherwise loading fails with
  *   [com.donfuldauer.kggml.core.BackendUnavailableException].
- * - [ComputeBackend.AUTO] picks the first available of Metal, Vulkan, CPU.
+ * - [ComputeBackend.AUTO] picks the first available of Metal, OpenCL, Vulkan, CPU.
  *
  * [BackendConfig.cpuThreads] sets the CPU threads ([BackendConfig.AUTO_THREADS] = performance cores),
  * [BackendConfig.useFlashAttention] flash attention in every module, and [BackendConfig.useMmap] whether the weight

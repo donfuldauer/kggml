@@ -11,8 +11,10 @@
 
 cmake_minimum_required(VERSION 3.24) # $<LINK_LIBRARY:WHOLE_ARCHIVE,...> for the monolithic iOS framework
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/kggml-version.cmake") # KGGML_VERSION from gradle.properties
+
 project(kggml_runtime
-    VERSION 1.0.0
+    VERSION ${KGGML_VERSION}
     DESCRIPTION "Kggml shared ggml runtime"
     LANGUAGES C CXX)
 

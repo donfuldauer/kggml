@@ -29,8 +29,9 @@ for whisper on the CPU, with llama next. WebGPU and diffusion should wait until 
    to inference), and every call is asynchronous.
 2. **One wasm module, not shared libraries.** Our runtime design (one shared ggml loaded by every engine,
    `GGML_BACKEND_DL` add-ons) does not apply: Emscripten links statically. Each app bundle needs one module containing
-   ggml plus the engines it uses (whisper-only, whisper+llama, …), like the monolithic iOS framework but per
-   engine set. Two separately built engine modules would each carry their own ggml and memory.
+   ggml plus the engines it uses (whisper-only, whisper+llama, …). On iOS, ggml is one dynamic framework
+   (`GgmlRuntime.framework`) that each engine framework links; in the browser the engines have to be built into the
+   same module as ggml. Two separately built engine modules would each carry their own ggml and memory.
 3. **Threads need cross-origin isolation.** Multithreaded ggml (pthreads) needs `SharedArrayBuffer`, which needs the
    page served with `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`. Without
    them ggml runs single-threaded (several times slower). The module must run in a Web Worker anyway, so long inference

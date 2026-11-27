@@ -72,7 +72,7 @@ which ggml devices llama.cpp may use:
 | Backend | `llama_model_params` | Context | Notes |
 | --- | --- | --- | --- |
 | `KGGML_BACKEND_CPU` | `devices = {NULL}`, `main_gpu = -1`, `n_gpu_layers = 0` | `offload_kqv = false`, `op_offload = false` | No GPU backend is ever created: weights, KV cache and every op stay on Accelerate / NEON / AVX. Safe for iOS background work (no Metal command buffers). |
-| `KGGML_BACKEND_METAL`, `KGGML_BACKEND_VULKAN` | `devices = {<gpu_device>-th device of that backend, NULL}`, `n_gpu_layers = gpu_layers` (-1 = all) | llama.cpp defaults | `BACKEND_UNAVAILABLE` if the runtime has no such device. |
+| `KGGML_BACKEND_METAL`, `KGGML_BACKEND_VULKAN`, `KGGML_BACKEND_OPENCL` | `devices = {<gpu_device>-th device of that backend, NULL}`, `n_gpu_layers = gpu_layers` (-1 = all) | llama.cpp defaults | `BACKEND_UNAVAILABLE` if the runtime has no such device. |
 | `KGGML_BACKEND_COREML` | — | — | `BACKEND_UNAVAILABLE` (llama.cpp has no CoreML backend). |
 
 `kggml_llama_mtmd_params.backend` does the same for the vision / audio encoder (`mtmd_context_params.use_gpu`); by

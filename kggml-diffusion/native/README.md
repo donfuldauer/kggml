@@ -94,7 +94,7 @@ through Kotlin/Native cinterop. See [`../README.md`](../README.md) for the Kotli
 | Field | stable-diffusion.cpp | Notes |
 | --- | --- | --- |
 | `backend = KGGML_BACKEND_CPU` (default) | `sd_ctx_params_t.backend = "CPU"` (the ggml CPU device, for every module) | No GPU backend is ever created; safe for iOS background work. |
-| `backend = METAL` / `VULKAN`, `gpu_device` | `backend = <name of the gpu_device-th device of that kind>` (e.g. `MTL0`, `Vulkan0`) | `BACKEND_UNAVAILABLE` if the runtime has no such device. |
+| `backend = METAL` / `VULKAN` / `OPENCL`, `gpu_device` | `backend = <name of the gpu_device-th device of that kind>` (e.g. `MTL0`, `Vulkan0`) | `BACKEND_UNAVAILABLE` if the runtime has no such device. |
 | `backend = COREML` | — | `BACKEND_UNAVAILABLE` (stable-diffusion.cpp has no CoreML backend). |
 | `n_threads` (`cpuThreads`) | `n_threads` | `<= 0` = performance cores (`kggml_runtime_performance_thread_count`). |
 | `use_mmap` (`useMmap`) | `enable_mmap` | |
@@ -195,7 +195,9 @@ the C ABI on desktop (CPU, and Metal on macOS / Vulkan where available) and chec
        kggml_diffusion_image_free(&img); kggml_diffusion_context_free(c); return s;
    }
    ```
-3. Run `/tmp/sd-smoke "$MODEL"` (CPU) and, on macOS, `/tmp/sd-smoke "$MODEL" 1` (Metal) / elsewhere `... 2` (Vulkan):
+3. Run `/tmp/sd-smoke "$MODEL"` (CPU) and, on macOS, `/tmp/sd-smoke "$MODEL" 1` (Metal) / elsewhere `... 2` (Vulkan;
+   needs a runtime built with `kggml-runtime/native/scripts/build-host.sh --vulkan`, since this C program does not load
+   the `:kggml-runtime-vulkan` add-on):
    steps 0..20 are printed in order, status is 0, and `/tmp/sd-smoke.ppm` shows the prompt.
 4. Change `stop_at` to `return 1;` after a few steps (e.g. count calls in a static) and rerun: status is 5
    (`KGGML_STATUS_CANCELLED`) within one step's time of the abort, nothing is written past that step, and a second

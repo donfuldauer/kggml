@@ -4,7 +4,7 @@
 Used by scripts/ci/stage-release.sh (release dry-run in CI and ./scripts/ci-local.sh, and the real release in
 .github/workflows/release.yml) on build/kggml-staging-repo before it is bundled and uploaded.
 
-For every published root coordinate (default: the 7 Kggml coordinates under com.donfuldauer) it checks:
+For every published root coordinate (default: the 9 Kggml coordinates under com.donfuldauer) it checks:
   * the root component has a .pom and a Gradle .module file (formatVersion 1.1, matching component coordinates);
   * every platform component a root .module points at (`available-at`) exists, except targets excluded with
     --skip-targets (e.g. `ios` on a Linux host, where Kotlin/Native iOS targets are disabled);

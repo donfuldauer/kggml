@@ -57,7 +57,9 @@ class AppleNativeRuntimeTest {
         val hardware = KggmlRuntime.hardwareThreadCount()
         assertTrue(KggmlRuntime.recommendedThreadCount() in 1..hardware)
         val info = KggmlRuntime.info()
-        assertEquals("1.0.0", info.runtimeVersion)
+        // The version comes from VERSION_NAME in gradle.properties (kggml-version.cmake); JVM and Android tests compare
+        // it exactly, Kotlin/Native tests get no build properties.
+        assertTrue(Regex("""\d+\.\d+\.\d+""").matches(info.runtimeVersion), info.runtimeVersion)
         assertEquals(40, info.ggmlCommit.length)
         assertTrue(info.ggmlVersion.isNotEmpty())
     }

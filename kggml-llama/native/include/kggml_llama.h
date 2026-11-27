@@ -52,7 +52,7 @@ typedef int32_t kggml_llama_token;
 /* Versions & errors                                                                                       */
 /* ------------------------------------------------------------------------------------------------------ */
 
-/** Kggml llama module version, e.g. "1.0.0". Static string. */
+/** Kggml llama module version, e.g. "0.1.0". Static string. */
 KGGML_LLAMA_API const char * kggml_llama_version(void);
 
 /** Upstream llama.cpp release tag this build was pinned to, e.g. "b8598" (libmtmd comes from the same commit). */

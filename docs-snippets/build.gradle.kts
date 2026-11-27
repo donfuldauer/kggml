@@ -25,7 +25,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             // One version for every Kggml module.
-            implementation(project.dependencies.platform("com.donfuldauer:kggml-bom:1.0.0"))
+            implementation(project.dependencies.platform("com.donfuldauer:kggml-bom:0.1.0"))
 
             // Pick only the engines you ship; unused engines add no native code to your app.
             implementation("com.donfuldauer:kggml-whisper")        // speech-to-text
