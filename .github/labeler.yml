@@ -1,0 +1,51 @@
+# Path-based PR labeling configuration for actions/labeler (v5+ schema).
+# Every label listed here matches an existing repository label.
+
+'mod:bom':
+  - changed-files:
+      - any-glob-to-any-file: 'kggml-bom/**'
+
+'mod:core-api':
+  - changed-files:
+      - any-glob-to-any-file: 'kggml-core-api/**'
+
+'mod:runtime':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'kggml-runtime/**'
+          - 'kggml-runtime-vulkan/**'
+          - 'kggml-runtime-opencl/**'
+
+'mod:whisper':
+  - changed-files:
+      - any-glob-to-any-file: 'kggml-whisper/**'
+
+'mod:llama':
+  - changed-files:
+      - any-glob-to-any-file: 'kggml-llama/**'
+
+'mod:diffusion':
+  - changed-files:
+      - any-glob-to-any-file: 'kggml-diffusion/**'
+
+'mod:model-manager':
+  - changed-files:
+      - any-glob-to-any-file: 'kggml-model-manager/**'
+
+'mod:samples':
+  - changed-files:
+      - any-glob-to-any-file: 'samples/**'
+
+'infra:ci':
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'scripts/ci/**'
+          - 'scripts/ci-local.sh'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - 'docs-snippets/**'
+          - '*.md'
