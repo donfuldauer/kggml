@@ -1,9 +1,12 @@
 name: Repo Hygiene & Agent Parity
 
-# Cheap Linux checks on every PR. Not re-run on pushes to main: PRs merge with a merge commit after
-# these passed on the PR head.
+# Fast Ubuntu repository audits on ready PRs, routed by scripts/ci/classify_changes.py (see docs/CI_WORKFLOWS.md)
+# so only the checks relevant to the changed files run. `secret-scan` runs in parallel on every ready PR because any
+# commit, file, or commit message can leak secrets, keys, oversized blobs, or developer-machine paths.
+# Not run on draft PRs or pushes to main (PRs merge with a merge commit after passing on the PR head).
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:
@@ -16,8 +19,52 @@ permissions:
   pull-requests: read
 
 jobs:
+  classify:
+    name: Classify changed files
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      agent_parity: ${{ steps.classify.outputs.agent_parity }}
+      workflow_audit: ${{ steps.classify.outputs.workflow_audit }}
+      license_audit: ${{ steps.classify.outputs.license_audit }}
+      docs_audit: ${{ steps.classify.outputs.docs_audit }}
+      script_tests: ${{ steps.classify.outputs.script_tests }}
+      test_wait_pr_checks: ${{ steps.classify.outputs.test_wait_pr_checks }}
+      test_verify_release: ${{ steps.classify.outputs.test_verify_release }}
+      test_check_native_arch: ${{ steps.classify.outputs.test_check_native_arch }}
+      test_audit_history: ${{ steps.classify.outputs.test_audit_history }}
+      test_audit_binary_symbols: ${{ steps.classify.outputs.test_audit_binary_symbols }}
+      test_classify_changes: ${{ steps.classify.outputs.test_classify_changes }}
+    steps:
+      - name: Checkout repository (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed files (scripts/ci/classify_changes.py)
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            python3 scripts/ci/classify_changes.py --all \
+              --github-output "${GITHUB_OUTPUT}" --summary "${GITHUB_STEP_SUMMARY}"
+          elif git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            python3 scripts/ci/classify_changes.py --base "${BASE_SHA}" --head "${HEAD_SHA}" \
+              --github-output "${GITHUB_OUTPUT}" --summary "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "classify: base/head SHA unavailable locally; failing safe (--all)" >&2
+            python3 scripts/ci/classify_changes.py --all \
+              --github-output "${GITHUB_OUTPUT}" --summary "${GITHUB_STEP_SUMMARY}"
+          fi
+
   agent-parity:
     name: Verify Multi-Harness Agent & Skill Parity
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.agent_parity == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -27,8 +74,15 @@ jobs:
       - name: Verify parity across AGENTS.md, .agents, .claude, .gemini, .antigravity, and .codex
         run: ./scripts/verify-agent-parity.sh
 
-      - name: Test the agent CI waiter (scripts/ci/wait-pr-checks.sh)
-        run: ./scripts/tests/test-wait-pr-checks.sh
+  workflow-audit:
+    name: Workflow Hosted-Runner Security Audit
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.workflow_audit == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       # Fails if any job can run on a self-hosted runner: in a public repository a fork PR could run code on it.
       - name: Verify every workflow job runs on a GitHub-hosted runner
@@ -37,14 +91,10 @@ jobs:
       - name: Test the hosted-runner audit (scripts/ci/verify-hosted-runners.sh)
         run: ./scripts/tests/test-verify-hosted-runners.sh
 
-      - name: Test the Maven Central release audit (scripts/ci/verify_release.py)
-        run: ./scripts/tests/test-verify-release.sh
-
-      - name: Test the desktop runtime architecture check (scripts/ci/check_native_arch.py)
-        run: ./scripts/tests/test-check-native-arch.sh
-
   license-audit:
     name: License, NOTICE & Fixture Audit
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.license_audit == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -59,6 +109,8 @@ jobs:
 
   docs-audit:
     name: Docs, Links, README Snippets & KDoc Audit
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.docs_audit == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -73,11 +125,43 @@ jobs:
       - name: Test the docs audit (scripts/ci/verify-docs.sh)
         run: ./scripts/tests/test-verify-docs.sh
 
+  script-tests:
+    name: CI Script Unit Tests
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.script_tests == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Test the agent CI waiter (scripts/ci/wait-pr-checks.sh)
+        if: ${{ needs.classify.outputs.test_wait_pr_checks == 'true' }}
+        run: ./scripts/tests/test-wait-pr-checks.sh
+
+      - name: Test the Maven Central release audit (scripts/ci/verify_release.py)
+        if: ${{ needs.classify.outputs.test_verify_release == 'true' }}
+        run: ./scripts/tests/test-verify-release.sh
+
+      - name: Test the desktop runtime architecture check (scripts/ci/check_native_arch.py)
+        if: ${{ needs.classify.outputs.test_check_native_arch == 'true' }}
+        run: ./scripts/tests/test-check-native-arch.sh
+
       - name: Test the full-history audit (scripts/ci/audit-history.sh)
+        if: ${{ needs.classify.outputs.test_audit_history == 'true' }}
         run: ./scripts/tests/test-audit-history.sh
+
+      - name: Test the binary symbol audit (scripts/audit-binary-symbols.sh)
+        if: ${{ needs.classify.outputs.test_audit_binary_symbols == 'true' }}
+        run: ./scripts/tests/test-audit-binary-symbols.sh
+
+      - name: Test the workflow change classifier & ci.yml paths parity (scripts/ci/classify_changes.py)
+        if: ${{ needs.classify.outputs.test_classify_changes == 'true' }}
+        run: ./scripts/tests/test-classify-changes.sh
 
   secret-scan:
     name: Gitleaks Secret Scan
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
