@@ -36,22 +36,16 @@ jobs:
           submodules: recursive
 
       - name: Gather upstream & KMP/SPM context
-        id: repo_context
         run: |
           mkdir -p .audit-tmp
 
-          # 1. Capture git submodule / vendor commit pins
           git submodule status > .audit-tmp/submodules.txt 2>/dev/null || echo "No submodules configured" > .audit-tmp/submodules.txt
-
-          # 2. Capture recent Kggml commits (last 14 days)
           git log --since="14 days ago" --oneline > .audit-tmp/recent_commits.txt
 
-          # 3. Inventory KMP public APIs, cinterop defs, SPM manifests, and sample apps
           find . -maxdepth 6 \
             \( -name "Package.swift" -o -name "*.def" -o -name "*whisper*.kt" -o -name "*ggml*.kt" -o -name "*Backend*.kt" -o -path "*/samples/*" \) \
             -not -path '*/.*' -not -path '*/build/*' > .audit-tmp/api_surface_files.txt
 
-          # 4. If submodules exist, inspect local HEAD vs upstream remote HEAD
           if [ -s .audit-tmp/submodules.txt ] && ! grep -q "No submodules" .audit-tmp/submodules.txt; then
             git submodule foreach --quiet '
               echo "=== Submodule: $name ($sm_path) ==="
@@ -67,49 +61,149 @@ jobs:
             echo "No git submodules found; inspect CMakeLists.txt, gradle/libs.versions.toml, or vendor scripts." > .audit-tmp/upstream_delta.txt
           fi
 
-      - name: Run Claude API Drift Audit & Draft KMP/SPM/Sample Fixes
-        uses: anthropics/claude-code-action@v1
+      - name: Exchange GitHub OIDC Token for Anthropic WIF Token
+        id: wif
         env:
+          FEDERATION_RULE_ID: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          ORGANIZATION_ID: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          SERVICE_ACCOUNT_ID: svac_01YWPGGmSSQzsDvxSvxprN5y
+          WORKSPACE_ID: wrkspc_01BszhTkQCM1Gj4TDefVSCfh
+        run: |
+          OIDC_JWT=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r '.value')
+
+          TOKEN_RESPONSE=$(curl -sS https://api.anthropic.com/v1/oauth/token \
+            -H "content-type: application/json" \
+            --data "$(jq -n \
+              --arg assertion "$OIDC_JWT" \
+              --arg rule "$FEDERATION_RULE_ID" \
+              --arg org "$ORGANIZATION_ID" \
+              --arg sa "$SERVICE_ACCOUNT_ID" \
+              --arg ws "$WORKSPACE_ID" \
+              '{
+                grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                assertion: $assertion,
+                federation_rule_id: $rule,
+                organization_id: $org,
+                service_account_id: $sa,
+                workspace_id: $ws
+              }')")
+
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r '.access_token // empty')
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "WIF token exchange failed: $TOKEN_RESPONSE" >&2
+            exit 1
+          fi
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "access_token=$ACCESS_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Run Direct Messages API Drift Audit (Prompt Cached)
+        env:
+          ANTHROPIC_AUTH_TOKEN: ${{ steps.wif.outputs.access_token }}
           UPSTREAM_REF: ${{ github.event.inputs.upstream_ref }}
-          ANTHROPIC_WORKSPACE_ID: wrkspc_01BszhTkQCM1Gj4TDefVSCfh
-          KGGML_COAUTHOR: "Don Fuldauer <13605136+donfuldauer@users.noreply.github.com>"
-        with:
-          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
-          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
-          show_full_output: true
-          claude_args: '--model claude-opus-5-5 --max-turns 12 --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git status:*),Bash(git diff:*)"'
-          prompt: |
-            You are auditing the Kggml Kotlin Multiplatform repository (com.donfuldauer.kggml)
-            for two categories of technical drift:
+        run: |
+          python3 -m pip install --quiet anthropic
+          python3 - <<'PY'
+          import json
+          import os
+          import pathlib
+          import anthropic
 
-            1. **Upstream `ggml` / `whisper.cpp` Drift (Report Only):**
-               - Read `.audit-tmp/submodules.txt`, `.audit-tmp/upstream_delta.txt`, `gradle/libs.versions.toml`,
-                 and any CMake/native build files.
-               - If `UPSTREAM_REF` ("$UPSTREAM_REF") is non-empty, compare against that ref.
-               - Identify breaking C API changes, renamed context/state structs, quantization format updates,
-                 or Metal/CPU backend flag changes affecting Kggml's JNI/cinterop bindings or streaming
-                 Whisper pipeline. Do NOT mutate upstream submodule checkouts.
+          def read_safe(path, limit=25000):
+              p = pathlib.Path(path)
+              if not p.exists():
+                  return ""
+              return p.read_text(errors="replace")[:limit]
 
-            2. **KMP / Swift Package Manager (SPM) / Sample API Drift (Propose Fixes):**
-               - Read `.audit-tmp/api_surface_files.txt` and `.audit-tmp/recent_commits.txt`.
-               - Cross-check `commonMain`, `androidMain`, `iosMain`, `Package.swift`, `.def` cinterop files,
-                 and sample apps to detect:
-                 * Mismatched `expect`/`actual` signatures, iOS CPU/GPU backend options, or streaming
-                   Whisper API types across KMP targets.
-                 * Stale `Package.swift` targets, products, or exported symbols vs. current KMP modules.
-                 * Sample applications calling outdated public APIs or backend selectors.
-               - When KMP, SPM, or sample API drift is detected, apply clean, minimal edits directly in
-                 the working tree to fix the KMP/SPM/sample drift, and record `kmp_spm_drift_detected=true`
-                 in `.audit-tmp/drift_status.env`.
-               - If no KMP/SPM/sample drift is found, do NOT modify any tracked files and record
-                 `kmp_spm_drift_detected=false` in `.audit-tmp/drift_status.env`.
+          surface_list = [
+              line.strip()
+              for line in read_safe(".audit-tmp/api_surface_files.txt").splitlines()
+              if line.strip()
+          ][:40]
 
-            Write a concise, actionable Markdown report to `.audit-tmp/audit-report.md` with these sections:
-            - `## Executive Summary` (severity: None / Low / Medium / High; note if a draft fix PR was generated)
-            - `## Upstream ggml / whisper.cpp Delta`
-            - `## KMP & SPM API Surface Drift`
-            - `## Proposed Fixes Summary` (list modified files and rationale, or "None required")
-            - `## Recommended Action Items` (checkbox list with exact file paths and symbol names)
+          surface_blobs = []
+          for rel in surface_list:
+              content = read_safe(rel, limit=8000)
+              if content:
+                  surface_blobs.append(f"### FILE: {rel}\n```\n{content}\n```")
+
+          static_context = f"""You are auditing the Kggml Kotlin Multiplatform repository (com.donfuldauer.kggml).
+
+          === SUBMODULES ===
+          {read_safe(".audit-tmp/submodules.txt")}
+
+          === UPSTREAM DELTA ===
+          {read_safe(".audit-tmp/upstream_delta.txt")}
+
+          === RECENT COMMITS ===
+          {read_safe(".audit-tmp/recent_commits.txt")}
+
+          === GRADLE VERSIONS ===
+          {read_safe("gradle/libs.versions.toml", limit=12000)}
+
+          === KMP / SPM / SAMPLE API SURFACE ===
+          {chr(10).join(surface_blobs)}
+          """
+
+          dynamic_task = f"""Upstream Ref Override: {os.environ.get("UPSTREAM_REF") or "(none)"}
+
+          Return ONLY valid JSON with this exact schema:
+          {{
+            "audit_report_markdown": "Markdown report with sections: ## Executive Summary, ## Upstream ggml / whisper.cpp Delta, ## KMP & SPM API Surface Drift, ## Proposed Fixes Summary, ## Recommended Action Items",
+            "kmp_spm_drift_detected": true or false,
+            "file_edits": [
+              {{
+                "path": "relative/path/to/file",
+                "content": "full updated file content"
+              }}
+            ]
+          }}
+          Rules:
+          - Only propose file_edits for KMP, SPM (Package.swift / .def), or sample API drift—never modify submodules.
+          - If no KMP/SPM/sample edits are needed, set kmp_spm_drift_detected to false and file_edits to [].
+          """
+
+          client = anthropic.Anthropic(auth_token=os.environ["ANTHROPIC_AUTH_TOKEN"])
+          msg = client.messages.create(
+              model="claude-opus-4-6",
+              max_tokens=8192,
+              messages=[
+                  {
+                      "role": "user",
+                      "content": [
+                          {
+                              "type": "text",
+                              "text": static_context,
+                              "cache_control": {"type": "ephemeral"},
+                          },
+                          {
+                              "type": "text",
+                              "text": dynamic_task,
+                          },
+                      ],
+                  }
+              ],
+          )
+
+          print("Usage:", msg.usage)
+
+          raw = "".join(block.text for block in msg.content if block.type == "text").strip()
+          if raw.startswith("```"):
+              raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+
+          data = json.loads(raw)
+          pathlib.Path(".audit-tmp/audit-report.md").write_text(data["audit_report_markdown"])
+
+          drift = bool(data.get("kmp_spm_drift_detected")) and bool(data.get("file_edits"))
+          for edit in data.get("file_edits", []):
+              target = pathlib.Path(edit["path"])
+              target.parent.mkdir(parents=True, exist_ok=True)
+              target.write_text(edit["content"])
+
+          pathlib.Path(".audit-tmp/drift_status.env").write_text(
+              f"kmp_spm_drift_detected={'true' if drift else 'false'}\n"
+          )
+          PY
 
       - name: Open or Update GitHub Tracking Issue
         env:
@@ -139,19 +233,21 @@ jobs:
         if: ${{ github.event.inputs.create_fix_pr != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KGGML_COAUTHOR: "Don Fuldauer <13605136+donfuldauer@users.noreply.github.com>"
         run: |
           [ -f .audit-tmp/drift_status.env ] && source .audit-tmp/drift_status.env
           rm -rf .audit-tmp
 
-          # Check if Claude modified any tracked repository files
           if [ "${kmp_spm_drift_detected:-false}" != "true" ] || [ -z "$(git status --porcelain)" ]; then
             echo "No KMP/SPM/sample drift fixes to commit; skipping draft PR."
             exit 0
           fi
 
+          ./scripts/install-git-hooks.sh || true
+
           BRANCH_NAME="chore/kggml-kmp-spm-drift-fix"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "Claude"
+          git config user.email "noreply@anthropic.com"
 
           git checkout -B "$BRANCH_NAME"
           git add -A
