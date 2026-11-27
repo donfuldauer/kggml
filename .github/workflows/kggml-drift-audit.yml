@@ -111,14 +111,14 @@ jobs:
 
           def read_safe(path, limit=25000):
               p = pathlib.Path(path)
-              if not p.exists():
+              if not p.is_file():
                   return ""
               return p.read_text(errors="replace")[:limit]
 
           surface_list = [
               line.strip()
               for line in read_safe(".audit-tmp/api_surface_files.txt").splitlines()
-              if line.strip()
+              if line.strip() and pathlib.Path(line.strip()).is_file()
           ][:40]
 
           surface_blobs = []
