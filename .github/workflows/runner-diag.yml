@@ -1,0 +1,36 @@
+name: Runner diagnostics (temporary, read-only)
+# Temporary: prints how the self-hosted Linux runner is set up, for the runner rebuild doc. Never merged.
+on:
+  pull_request:
+    paths: [".github/workflows/runner-diag.yml"]
+permissions:
+  contents: read
+jobs:
+  linux:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, local-linux]
+    timeout-minutes: 10
+    steps:
+      - name: Print runner facts (no credentials)
+        run: |
+          set +e
+          sec() { echo; echo "=== $*"; }
+          sec identity; whoami; id; hostname; uptime
+          sec os; cat /etc/os-release | head -4; uname -r; systemd-detect-virt 2>&1; nproc; free -g | head -2; df -h / /home 2>/dev/null
+          sec runner-dir; d="$(dirname "$(dirname "$(readlink -f "$(command -v Runner.Listener 2>/dev/null || echo /proc/$PPID/exe)")")")"
+          ps -eo pid,ppid,user,args | grep -E 'Runner\.(Listener|Worker)|run\.sh|runsvc|actions' | grep -v grep
+          for p in $(pgrep -f Runner.Listener); do echo "listener $p cwd: $(readlink /proc/$p/cwd)"; ps -o pid,ppid,args -p $(ps -o ppid= -p $p) 2>/dev/null; pp=$(ps -o ppid= -p $p | tr -d ' '); ps -o pid,ppid,args -p $(ps -o ppid= -p $pp) 2>/dev/null; cat /proc/$p/cgroup 2>/dev/null | head -2; done
+          R="$(readlink /proc/$(pgrep -f Runner.Listener | head -1)/cwd)"; R="${R%/bin}"; echo "runner root: $R"; ls -la "$R" | grep -v credentials
+          sec runner-env; [ -f "$R/.env" ] && sed -E 's/((TOKEN|SECRET|PASSWORD|KEY)[A-Z_]*=).*/\1<redacted>/I' "$R/.env"
+          sec runner-path; [ -f "$R/.path" ] && cat "$R/.path"
+          sec runner-config; [ -f "$R/.runner" ] && grep -v -i token "$R/.runner"
+          sec start-scripts; ls -la "$R"/*.sh 2>/dev/null; for f in "$R"/start*.sh "$R"/launch*.sh "$R"/*runner*.sh; do [ -f "$f" ] && case "$f" in */run.sh|*/config.sh|*/env.sh|*/svc.sh|*/run-helper.sh|*/safe_sleep.sh) ;; *) echo "--- $f"; sed -E 's/(gh[pousr]_)[A-Za-z0-9]+/\1<redacted>/g' "$f";; esac; done
+          sec systemd; systemctl list-units --all --no-pager 2>/dev/null | grep -i -E 'actions|runner|github' ; for u in $(systemctl list-unit-files --no-pager 2>/dev/null | awk '/actions|runner|github/{print $1}'); do echo "--- $u"; systemctl cat "$u" --no-pager 2>/dev/null | sed -E 's/(gh[pousr]_)[A-Za-z0-9]+/\1<redacted>/g'; done
+          systemctl --user list-units --all --no-pager 2>/dev/null | grep -i -E 'actions|runner|github'; loginctl show-user "$(whoami)" -p Linger 2>/dev/null
+          sec cron; crontab -l 2>&1 | sed -E 's/(gh[pousr]_)[A-Za-z0-9]+/\1<redacted>/g'; ls /etc/cron.d 2>/dev/null
+          sec sudo; sudo -n -l 2>&1 | tail -6
+          sec gh; command -v gh && gh --version | head -1; gh auth status 2>&1 | sed -E 's/(gh[pousr]_)[A-Za-z0-9]+/\1<redacted>/g' | head -8
+          sec tools; for t in cmake ninja ccache python3 git java gcc clang qemu-aarch64 aarch64-linux-gnu-gcc glslc; do printf '%-22s ' "$t"; (command -v $t >/dev/null && $t --version 2>&1 | head -1) || echo missing; done
+          sec android; echo "ANDROID_HOME=$ANDROID_HOME ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT ANDROID_NDK_HOME=$ANDROID_NDK_HOME ANDROID_NDK_LATEST_HOME=$ANDROID_NDK_LATEST_HOME"; ls /opt/android-sdk /opt/android-sdk/ndk /opt/android-sdk/build-tools /opt/android-sdk/platforms 2>/dev/null | tr '\n' ' '; echo; ls /usr/lib/jvm 2>/dev/null
+          sec env-files; grep -l -i -E 'android|runner' /etc/environment /etc/profile.d/* 2>/dev/null | while read f; do echo "--- $f"; grep -i -E 'android|runner|ndk|java' "$f"; done
+          sec power; systemctl is-enabled sleep.target suspend.target 2>&1; cat /proc/sys/kernel/hostname
