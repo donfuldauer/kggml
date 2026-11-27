@@ -1,6 +1,10 @@
 name: CI (Phase 1 cross-platform matrix)
 
-# Every ready pull request runs all three platform jobs on GitHub-hosted runners:
+# Pull requests run only the platforms affected by the diff (classified by scripts/ci/classify_changes.py;
+# see docs/CI_WORKFLOWS.md). Workflow-level `paths:` skips this workflow altogether (0 runners) when only
+# documentation, agent/harness configs, repo metadata, or non-CI scripts change; `classify` then gates each
+# platform job individually (e.g. Apple/iOS-only -> macOS; Android/Vulkan/OpenCL/docs-snippets -> Ubuntu;
+# Windows scripts/toolchains -> Windows; shared KMP/C++/CMake/Gradle -> all three).
 #   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + llama (llama.cpp + libmtmd) + diffusion
 #              (stable-diffusion.cpp) + CTest + ggml / upstream pins + host linkage audits, the linux-aarch64 cross
 #              build with CTest under qemu, `./gradlew check` (commonTest, jvmTest, testAndroidHostTest, BOM checks, sample
@@ -18,7 +22,7 @@ name: CI (Phase 1 cross-platform matrix)
 # Android instrumented suites need an emulator and are run by hand (scripts/ci/run-android-instrumented.sh).
 # Checkouts fetch first-level submodules only (`submodules: true`): stable-diffusion.cpp's own nested submodules
 # (its ggml copy, libwebp, libwebm, web UI) are never built, and none of the other upstreams has nested ones.
-# Not run: draft PRs, docs/agent-instruction-only PRs (paths-ignore below), and pushes to main (PRs
+# Not run: draft PRs, non-build/docs/workflow-doc-only PRs (paths filter below), and pushes to main (PRs
 # merge with a merge commit after this workflow passed on the PR head, so a main run repeats it).
 # Every job and slow step has a timeout, so a check always ends (AGENTS.md "When a runner fails or hangs").
 # Every Ubuntu step is reproducible locally with `./scripts/ci-local.sh --full`.
@@ -26,15 +30,47 @@ name: CI (Phase 1 cross-platform matrix)
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - ".agents/**"
-      - ".claude/**"
-      - ".gemini/**"
-      - ".antigravity/**"
-      - ".codex/**"
-      - "LICENSE"
+    paths:
+      # Start with all paths so unknown/new files fail safe and reach the `classify` job;
+      # exclude only known non-CI docs, agent configs, repo metadata, non-CI workflows, and helper scripts.
+      # `scripts/ci/classify_changes.py --verify-repo` enforces 100% parity against every tracked file.
+      - "**"
+      - "!**/*.md"
+      - "!docs/**"
+      - "!.agents/**"
+      - "!.antigravity/**"
+      - "!.claude/**"
+      - "!.codex/**"
+      - "!.gemini/**"
+      - "!LICENSE"
+      - "!NOTICE"
+      - "!.gitignore"
+      - "!.coderabbit.yaml"
+      - "!.gitleaks.toml"
+      - "!.githooks/**"
+      - "!.github/ISSUE_TEMPLATE/**"
+      - "!.github/dependabot.yml"
+      - "!.github/dependabot.yaml"
+      - "!.github/labeler.yml"
+      - "!.github/labeler.yaml"
+      - "!.github/CODEOWNERS"
+      - "!.github/FUNDING.yml"
+      - "!.github/FUNDING.yaml"
+      - "!.github/workflows/*.yml"
+      - "!.github/workflows/*.yaml"
+      - ".github/workflows/ci.yml"
+      - "!scripts/tests/**"
+      - "!scripts/*.sh"
+      - "scripts/audit-binary-symbols.sh"
+      - "!scripts/ci/verify-docs.sh"
+      - "!scripts/ci/verify_docs.py"
+      - "!scripts/ci/verify-licenses.sh"
+      - "!scripts/ci/verify-hosted-runners.sh"
+      - "!scripts/ci/audit-history.sh"
+      - "!scripts/ci/wait-pr-checks.sh"
+      - "!scripts/ci/coverage.sh"
+      - "!scripts/ci/run-android-instrumented.sh"
+      - "!scripts/ci/upload-central-bundle.sh"
   workflow_dispatch:
 
 permissions:
@@ -52,10 +88,46 @@ env:
   NATIVE_GRADLE_ARGS: -Pkggml.requireNative=true -x :kggml-runtime:buildNativeHost -x :kggml-whisper:buildNativeHost -x :kggml-llama:buildNativeHost -x :kggml-diffusion:buildNativeHost --console=plain
 
 jobs:
-  linux:
-    name: Ubuntu (Linux JVM, Android, CTest)
+  classify:
+    name: Classify changed files
     # Draft PRs start no runner; marking the PR ready runs it.
     if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ci_linux: ${{ steps.classify.outputs.ci_linux }}
+      ci_macos: ${{ steps.classify.outputs.ci_macos }}
+      ci_windows: ${{ steps.classify.outputs.ci_windows }}
+      ci_any: ${{ steps.classify.outputs.ci_any }}
+    steps:
+      - name: Checkout repository (full history for diff, no submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed files (scripts/ci/classify_changes.py)
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            python3 scripts/ci/classify_changes.py --all \
+              --github-output "${GITHUB_OUTPUT}" --summary "${GITHUB_STEP_SUMMARY}"
+          elif git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            python3 scripts/ci/classify_changes.py --base "${BASE_SHA}" --head "${HEAD_SHA}" \
+              --github-output "${GITHUB_OUTPUT}" --summary "${GITHUB_STEP_SUMMARY}"
+          else
+            echo "classify: base/head SHA unavailable locally; failing safe (--all)" >&2
+            python3 scripts/ci/classify_changes.py --all \
+              --github-output "${GITHUB_OUTPUT}" --summary "${GITHUB_STEP_SUMMARY}"
+          fi
+
+  linux:
+    name: Ubuntu (Linux JVM, Android, CTest)
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.ci_linux == 'true' }}
     runs-on: ubuntu-latest
     # llama.cpp + libmtmd and stable-diffusion.cpp (host + 2 Android ABIs each) more than double the cold native
     # compile time; ccache keeps warm runs well below this.
@@ -203,7 +275,8 @@ jobs:
 
   macos:
     name: macOS (macOS JVM, iOS XCFramework + simulator tests, CTest)
-    if: ${{ !github.event.pull_request.draft }}
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.ci_macos == 'true' }}
     runs-on: macos-latest
     # Every step below has its own timeout so a hang fails in minutes with a named step instead of holding the
     # PR (and the agent waiting on it) for hours; the job cap is only a backstop. Agents treat a timed-out or
@@ -362,7 +435,8 @@ jobs:
 
   windows:
     name: Windows (Windows x64 native, JVM, CTest)
-    if: ${{ !github.event.pull_request.draft }}
+    needs: classify
+    if: ${{ !github.event.pull_request.draft && needs.classify.outputs.ci_windows == 'true' }}
     runs-on: windows-latest
     timeout-minutes: 60
     defaults:

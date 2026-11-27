@@ -218,7 +218,8 @@ for step in "${all_steps[@]}"; do
       run_step l-test ./scripts/tests/test-verify-licenses.sh
       run_step docs ./scripts/ci/verify-docs.sh
       run_step docs-test ./scripts/tests/test-verify-docs.sh
-      run_step h-test ./scripts/tests/test-audit-history.sh ;;
+      run_step h-test ./scripts/tests/test-audit-history.sh
+      run_step cls-test ./scripts/tests/test-classify-changes.sh ;;
     gitleaks)
       if command -v gitleaks >/dev/null 2>&1; then
         run_step gitleaks gitleaks git --redact --no-banner --config .gitleaks.toml

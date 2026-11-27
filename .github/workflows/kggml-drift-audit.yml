@@ -1,0 +1,173 @@
+name: Kggml Upstream & KMP/SPM Drift Audit
+
+on:
+  schedule:
+    # Runs every Monday and Thursday at 09:00 UTC (04:00 EST)
+    - cron: '0 9 * * 1,4'
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: 'Optional upstream ggml/whisper.cpp tag or SHA to compare against'
+        required: false
+        default: ''
+      create_fix_pr:
+        description: 'Create a draft PR with proposed KMP/SPM/sample fixes when drift is detected'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+concurrency:
+  group: kggml-drift-audit
+  cancel-in-progress: true
+
+jobs:
+  audit-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Kggml repository (with submodules)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+          submodules: recursive
+
+      - name: Gather upstream & KMP/SPM context
+        id: repo_context
+        run: |
+          mkdir -p .audit-tmp
+
+          # 1. Capture git submodule / vendor commit pins
+          git submodule status > .audit-tmp/submodules.txt 2>/dev/null || echo "No submodules configured" > .audit-tmp/submodules.txt
+
+          # 2. Capture recent Kggml commits (last 14 days)
+          git log --since="14 days ago" --oneline > .audit-tmp/recent_commits.txt
+
+          # 3. Inventory KMP public APIs, cinterop defs, SPM manifests, and sample apps
+          find . -maxdepth 6 \
+            \( -name "Package.swift" -o -name "*.def" -o -name "*whisper*.kt" -o -name "*ggml*.kt" -o -name "*Backend*.kt" -o -path "*/samples/*" \) \
+            -not -path '*/.*' -not -path '*/build/*' > .audit-tmp/api_surface_files.txt
+
+          # 4. If submodules exist, inspect local HEAD vs upstream remote HEAD
+          if [ -s .audit-tmp/submodules.txt ] && ! grep -q "No submodules" .audit-tmp/submodules.txt; then
+            git submodule foreach --quiet '
+              echo "=== Submodule: $name ($sm_path) ==="
+              git fetch --tags --quiet origin 2>/dev/null || true
+              LOCAL_SHA=$(git rev-parse HEAD)
+              REMOTE_SHA=$(git rev-parse origin/HEAD 2>/dev/null || git rev-parse origin/master 2>/dev/null || echo "unknown")
+              echo "Pinned: $LOCAL_SHA | Upstream HEAD: $REMOTE_SHA"
+              if [ "$LOCAL_SHA" != "$REMOTE_SHA" ] && [ "$REMOTE_SHA" != "unknown" ]; then
+                git log --oneline "$LOCAL_SHA..$REMOTE_SHA" | head -n 40
+              fi
+            ' > .audit-tmp/upstream_delta.txt
+          else
+            echo "No git submodules found; inspect CMakeLists.txt, gradle/libs.versions.toml, or vendor scripts." > .audit-tmp/upstream_delta.txt
+          fi
+
+      - name: Run Claude API Drift Audit & Draft KMP/SPM/Sample Fixes
+        uses: anthropics/claude-code-action@v1
+        env:
+          UPSTREAM_REF: ${{ github.event.inputs.upstream_ref }}
+          ANTHROPIC_WORKSPACE_ID: wrkspc_01BszhTkQCM1Gj4TDefVSCfh
+          KGGML_COAUTHOR: "Don Fuldauer <13605136+donfuldauer@users.noreply.github.com>"
+        with:
+          anthropic_federation_rule_id: ${{ vars.ANTHROPIC_FEDERATION_RULE_ID }}
+          anthropic_organization_id: ${{ vars.ANTHROPIC_ORGANIZATION_ID }}
+          show_full_output: true
+          claude_args: '--model claude-opus-5-5 --max-turns 12 --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git status:*),Bash(git diff:*)"'
+          prompt: |
+            You are auditing the Kggml Kotlin Multiplatform repository (com.donfuldauer.kggml)
+            for two categories of technical drift:
+
+            1. **Upstream `ggml` / `whisper.cpp` Drift (Report Only):**
+               - Read `.audit-tmp/submodules.txt`, `.audit-tmp/upstream_delta.txt`, `gradle/libs.versions.toml`,
+                 and any CMake/native build files.
+               - If `UPSTREAM_REF` ("$UPSTREAM_REF") is non-empty, compare against that ref.
+               - Identify breaking C API changes, renamed context/state structs, quantization format updates,
+                 or Metal/CPU backend flag changes affecting Kggml's JNI/cinterop bindings or streaming
+                 Whisper pipeline. Do NOT mutate upstream submodule checkouts.
+
+            2. **KMP / Swift Package Manager (SPM) / Sample API Drift (Propose Fixes):**
+               - Read `.audit-tmp/api_surface_files.txt` and `.audit-tmp/recent_commits.txt`.
+               - Cross-check `commonMain`, `androidMain`, `iosMain`, `Package.swift`, `.def` cinterop files,
+                 and sample apps to detect:
+                 * Mismatched `expect`/`actual` signatures, iOS CPU/GPU backend options, or streaming
+                   Whisper API types across KMP targets.
+                 * Stale `Package.swift` targets, products, or exported symbols vs. current KMP modules.
+                 * Sample applications calling outdated public APIs or backend selectors.
+               - When KMP, SPM, or sample API drift is detected, apply clean, minimal edits directly in
+                 the working tree to fix the KMP/SPM/sample drift, and record `kmp_spm_drift_detected=true`
+                 in `.audit-tmp/drift_status.env`.
+               - If no KMP/SPM/sample drift is found, do NOT modify any tracked files and record
+                 `kmp_spm_drift_detected=false` in `.audit-tmp/drift_status.env`.
+
+            Write a concise, actionable Markdown report to `.audit-tmp/audit-report.md` with these sections:
+            - `## Executive Summary` (severity: None / Low / Medium / High; note if a draft fix PR was generated)
+            - `## Upstream ggml / whisper.cpp Delta`
+            - `## KMP & SPM API Surface Drift`
+            - `## Proposed Fixes Summary` (list modified files and rationale, or "None required")
+            - `## Recommended Action Items` (checkbox list with exact file paths and symbol names)
+
+      - name: Open or Update GitHub Tracking Issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f .audit-tmp/audit-report.md ]; then
+            echo "No audit report generated; skipping issue update."
+            exit 0
+          fi
+
+          gh label create "drift-audit" --color "5319E7" --description "Automated upstream & KMP/SPM drift report" --force
+
+          ISSUE_TITLE="Kggml Automated Drift Audit (ggml/Whisper & KMP/SPM)"
+          EXISTING_ISSUE=$(gh issue list --label "drift-audit" --state open --json number --jq '.[0].number')
+
+          if [ -n "$EXISTING_ISSUE" ]; then
+            gh issue edit "$EXISTING_ISSUE" --body-file .audit-tmp/audit-report.md
+            gh issue comment "$EXISTING_ISSUE" --body "Automated audit refreshed on $(date -u +'%Y-%m-%d %H:%M UTC')."
+          else
+            gh issue create \
+              --title "$ISSUE_TITLE" \
+              --label "drift-audit" \
+              --body-file .audit-tmp/audit-report.md
+          fi
+
+      - name: Create Draft PR for KMP / SPM / Sample Drift Fixes
+        if: ${{ github.event.inputs.create_fix_pr != 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          [ -f .audit-tmp/drift_status.env ] && source .audit-tmp/drift_status.env
+          rm -rf .audit-tmp
+
+          # Check if Claude modified any tracked repository files
+          if [ "${kmp_spm_drift_detected:-false}" != "true" ] || [ -z "$(git status --porcelain)" ]; then
+            echo "No KMP/SPM/sample drift fixes to commit; skipping draft PR."
+            exit 0
+          fi
+
+          BRANCH_NAME="chore/kggml-kmp-spm-drift-fix"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$BRANCH_NAME"
+          git add -A
+          git commit -m "chore(kggml): align KMP, SPM, and sample APIs with current surface"
+          git push --force-with-lease origin "$BRANCH_NAME"
+
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state open --json number --jq '.[0].number')
+          PR_BODY="Automated draft PR generated from the Kggml drift audit workflow to resolve detected KMP, Swift Package Manager (SPM), or sample app API mismatches. Please review diffs and run KMP/iOS/sample test suites before marking ready for review."
+
+          if [ -n "$EXISTING_PR" ]; then
+            gh pr comment "$EXISTING_PR" --body "Updated proposed fixes on $(date -u +'%Y-%m-%d %H:%M UTC')."
+          else
+            gh pr create \
+              --draft \
+              --base main \
+              --head "$BRANCH_NAME" \
+              --title "chore(kggml): fix KMP/SPM/sample API drift" \
+              --body "$PR_BODY"
+          fi
