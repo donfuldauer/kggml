@@ -6,6 +6,10 @@ on:
     - cron: '0 9 * * 1,4'
   workflow_dispatch:
     inputs:
+      model:
+        description: 'Optional Claude model override (defaults to vars.ANTHROPIC_AUDIT_MODEL or claude-opus-5-5)'
+        required: false
+        default: ''
       upstream_ref:
         description: 'Optional upstream ggml/whisper.cpp tag or SHA to compare against'
         required: false
@@ -100,6 +104,7 @@ jobs:
       - name: Run Direct Messages API Drift Audit (Prompt Cached)
         env:
           ANTHROPIC_AUTH_TOKEN: ${{ steps.wif.outputs.access_token }}
+          ANTHROPIC_MODEL: ${{ github.event.inputs.model || vars.ANTHROPIC_AUDIT_MODEL || 'claude-opus-5-5' }}
           UPSTREAM_REF: ${{ github.event.inputs.upstream_ref }}
         run: |
           python3 -m pip install --quiet anthropic
@@ -163,9 +168,12 @@ jobs:
           - If no KMP/Xcode/sample edits are needed, set kmp_xcode_drift_detected to false and file_edits to [].
           """
 
+          model = os.environ["ANTHROPIC_MODEL"]
+          print("Using model:", model)
+
           client = anthropic.Anthropic(auth_token=os.environ["ANTHROPIC_AUTH_TOKEN"])
           msg = client.messages.create(
-              model="claude-opus-4-6",
+              model=model,
               max_tokens=8192,
               messages=[
                   {
