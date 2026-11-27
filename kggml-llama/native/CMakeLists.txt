@@ -15,8 +15,10 @@
 
 cmake_minimum_required(VERSION 3.24)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/../../kggml-runtime/native/cmake/kggml-version.cmake") # KGGML_VERSION
+
 project(kggml_llama
-    VERSION 0.1.0
+    VERSION ${KGGML_VERSION}
     DESCRIPTION "Kggml llama.cpp + libmtmd engine"
     LANGUAGES C CXX)
 
@@ -89,7 +91,7 @@ endif()
 # ---------------------------------------------------------------------------------------------------------
 
 find_package(Threads REQUIRED)
-find_package(kggml-runtime 0.1 CONFIG REQUIRED)
+find_package(kggml-runtime ${KGGML_VERSION} CONFIG REQUIRED)
 
 if (NOT TARGET kggml::runtime OR NOT TARGET kggml::ggml)
     message(FATAL_ERROR "kggml-runtime package does not provide kggml::runtime / kggml::ggml")
