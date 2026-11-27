@@ -9,11 +9,15 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -247,5 +251,39 @@ class SerialExecutorTest {
             second.close()
         }
         assertFailsWith<IllegalStateException> { first.execute { } }
+    }
+
+    @Test
+    fun closeRacingWithDispatchTranslatesDispatcherRejectionToIllegalStateException() = runTest {
+        val delegate = StandardTestDispatcher(testScheduler)
+        var executorRef: SerialExecutor? = null
+        // Mimics JVM ExecutorCoroutineDispatcherImpl when close() shuts down the backing ExecutorService right
+        // between SerialExecutor's checkOpen() and withContext(ownedDispatcher, block): dispatch() cancels the
+        // dispatched context and delegates the cancellation completion to a fallback dispatcher.
+        val racingDispatcher = object : CoroutineDispatcher(), AutoCloseable {
+            private var closed = false
+            private var triggered = false
+
+            override fun dispatch(context: CoroutineContext, block: Runnable) {
+                if (!triggered && !closed) {
+                    triggered = true
+                    executorRef!!.close()
+                }
+                if (closed) {
+                    context.cancel(CancellationException("The task was rejected"))
+                }
+                delegate.dispatch(context, block)
+            }
+
+            override fun close() {
+                closed = true
+            }
+        }
+        val executor = SerialExecutor("racing-close") { racingDispatcher }
+        executorRef = executor
+
+        val e = assertFailsWith<IllegalStateException> { executor.execute { "never" } }
+        assertTrue(e.message!!.contains("racing-close"))
+        assertTrue(currentCoroutineContext().isActive, "caller coroutine must remain active after closed rejection")
     }
 }
