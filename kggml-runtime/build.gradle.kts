@@ -215,8 +215,9 @@ tasks.named<Test>("jvmTest") {
     inputs.property("kggml.requireNative", requireNative)
     // Issue #92: -Pkggml.test.vulkanAddonDir=<dir holding the desktop ggml-vulkan module> registers it and expects
     // a usable Vulkan device (CI: Mesa lavapipe, which ggml only uses when GGML_VK_VISIBLE_DEVICES selects it).
-    providers.gradleProperty("kggml.test.vulkanAddonDir").orNull?.let { dir ->
-        systemProperty("kggml.native.addons.path", file(dir).absolutePath)
+    // Relative paths are from the repository root (where CI runs ./gradlew), not from this module.
+    providers.gradleProperty("kggml.test.vulkanAddonDir").orNull?.let { arg -> rootProject.file(arg) }?.let { dir ->
+        systemProperty("kggml.native.addons.path", dir.absolutePath)
         systemProperty("kggml.test.expectVulkanAddon", "true")
         environment("GGML_VK_VISIBLE_DEVICES", providers.gradleProperty("kggml.test.vulkanDevices").getOrElse("0"))
         inputs.files(fileTree(dir)).withPropertyName("vulkanAddonDir").withPathSensitivity(PathSensitivity.RELATIVE)
