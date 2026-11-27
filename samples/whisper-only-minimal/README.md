@@ -125,7 +125,7 @@ A Swing window (`WhisperSamplePanel`) with the same controls; the model folder i
 ## Tests
 
 ```bash
-./gradlew :samples:whisper-only-minimal:check                    # commonTest + MainActivityTest (Robolectric) + desktopTest + dependency audit
+./gradlew :samples:whisper-only-minimal:check :samples:whisper-only-minimal:androidApp:check  # commonTest + MainActivityTest (Robolectric) + desktopTest + dependency audits
 ./gradlew :samples:whisper-only-minimal:iosSimulatorArm64Test    # macOS, needs both xcframeworks
 ./scripts/ci/run-android-instrumented.sh                         # on a device / emulator, real native libraries
 ./scripts/tests/test-audit-binary-symbols.sh                     # audit script incl. negative (forbidden symbol) cases
@@ -134,7 +134,7 @@ A Swing window (`WhisperSamplePanel`) with the same controls; the model folder i
 - `RealWhisperSampleTest` (commonTest) runs `WhisperSampleSession` on the real engine with the synthetic
   `TinyWhisperModel`: CPU-only runs, engine reuse vs. replacement, a 44.1 kHz stereo WAV, typed load errors. It runs on
   the iOS simulator, Android devices and desktop (host builds), and skips in Android local unit tests.
-- `MainActivityTest` (`src/androidSharedTest`, Espresso) runs under Robolectric (native runtime unavailable: the
+- `MainActivityTest` (`androidApp/src/sharedTest`, Espresso) runs under Robolectric (native runtime unavailable: the
   status and transcription failures are shown, never a crash) and on a device (real transcription from intent extras
   and from edited paths). Test dependencies never reach the audited app APK.
 - `WhisperSamplePanelTest` (`src/desktopTest`) drives the Swing panel headlessly: runtime status, model picker (hint,

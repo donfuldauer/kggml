@@ -125,9 +125,10 @@ class WhisperSampleSessionTest {
         var engine: FakeSpeechEngine? = null
         val session = WhisperSampleSession(factory = { path, config -> FakeSpeechEngine(path, config).also { engine = it } })
         session.transcribe("a.bin", audio, ComputeBackend.CPU_ONLY)
-        engine!!.failNext = InvalidInputException("bad audio")
+        val activeEngine = checkNotNull(engine)
+        activeEngine.failNext = InvalidInputException("bad audio")
         assertFailsWith<InvalidInputException> { session.transcribe("a.bin", audio, ComputeBackend.CPU_ONLY) }
-        assertFalse(engine.closed)
+        assertFalse(activeEngine.closed)
         session.transcribe("a.bin", audio, ComputeBackend.CPU_ONLY)
     }
 

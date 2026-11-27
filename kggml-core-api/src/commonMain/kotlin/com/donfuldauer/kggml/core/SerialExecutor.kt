@@ -2,12 +2,9 @@ package com.donfuldauer.kggml.core
 
 import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Runnable
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -74,20 +71,7 @@ public class SerialExecutor(
         checkOpen()
         return mutex.withLock {
             checkOpen()
-            val started = AtomicBoolean(false)
-            try {
-                withContext(ownedDispatcher) {
-                    started.store(true)
-                    block()
-                }
-            } catch (e: CancellationException) {
-                // If the caller was cancelled, propagate CancellationException; if instead close() raced with
-                // dispatch and shut down ownedDispatcher before the block started (which cancels only the child
-                // DispatchedCoroutine on RejectedExecutionException), translate to the documented IllegalStateException.
-                currentCoroutineContext().ensureActive()
-                if (!started.load()) checkOpen()
-                throw e
-            }
+            withContext(ownedDispatcher, block)
         }
     }
 
