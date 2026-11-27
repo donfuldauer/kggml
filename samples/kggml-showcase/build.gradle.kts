@@ -202,7 +202,9 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "KggmlShowcase"
-            packageVersion = sampleVersion
+            // The desktop installers (DMG, MSI, DEB) need a version of 1.0.0 or above, which a 0.x SDK version is
+            // not; the sample is never distributed, so its installers use a fixed version.
+            packageVersion = "1.0.0"
         }
     }
 }
