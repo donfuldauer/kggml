@@ -98,7 +98,7 @@ endif()
 # ---------------------------------------------------------------------------------------------------------
 
 find_package(Threads REQUIRED)
-find_package(kggml-runtime 1.0 CONFIG REQUIRED)
+find_package(kggml-runtime 0.1 CONFIG REQUIRED)
 
 if (NOT TARGET kggml::runtime OR NOT TARGET kggml::ggml)
     message(FATAL_ERROR "kggml-runtime package does not provide kggml::runtime / kggml::ggml")
