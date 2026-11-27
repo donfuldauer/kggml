@@ -11,6 +11,9 @@ androidx-activity = "1.10.1"
 kover = "0.9.11"
 # Test-only: Android local (Robolectric) and instrumented tests of the samples.
 robolectric = "4.17"
+# Pre-instrumented Android API 34 jar matching `sdk=34` in samples' robolectric.properties; resolved by Gradle so
+# Robolectric runs offline (robolectric.offline=true) instead of hitting repo1.maven.org at test time (HTTP 429).
+robolectric-android-all = "14-robolectric-10818077-i7"
 androidx-test-core = "1.6.1"
 androidx-test-runner = "1.6.2"
 androidx-test-rules = "1.6.1"
@@ -34,6 +37,7 @@ compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-mu
 compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "compose-multiplatform" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+robolectric-android-all-instrumented = { module = "org.robolectric:android-all-instrumented", version.ref = "robolectric-android-all" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-test-core" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
 androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidx-test-rules" }

@@ -41,11 +41,36 @@ val iosSimulatorDevice: Provider<String> = providers.gradleProperty("kggml.iosSi
 // Override per run with -Pkggml.iosTestTimeoutMinutes=<n>.
 val iosTestTimeoutMinutes: Provider<Long> =
     providers.gradleProperty("kggml.iosTestTimeoutMinutes").map { it.toLong() }.orElse(20L)
+// Pre-stage Robolectric's API 34 android-all-instrumented jar via Gradle's cached dependency resolution so
+// Robolectric runs offline (`robolectric.offline=true`) instead of fetching from repo1.maven.org over raw
+// HttpURLConnection inside test JVMs (which hits Maven Central HTTP 429 rate limits on GitHub Actions runners).
+val robolectricSdk: Configuration by configurations.creating {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    isTransitive = false
+}
+dependencies {
+    robolectricSdk(libs.robolectric.android.all.instrumented)
+}
+val robolectricSdkDir = layout.buildDirectory.dir("robolectric-sdk")
+val syncRobolectricSdk by tasks.registering(Sync::class) {
+    description = "Stages Robolectric's pre-instrumented Android SDK jar from Gradle's dependency cache."
+    from(robolectricSdk)
+    into(robolectricSdkDir)
+}
+
 // Every JVM test process gets its own java.io.tmpdir (build/tmp/<task>): Gradle runs test tasks of different modules in
 // parallel, and tests that assert "no temporary files left behind" (e.g. JvmNativeWhisperStreamTest) must not see the
 // files another module's tests are creating at the same moment in the shared system temp directory.
 subprojects {
+    val isSampleProject = path.startsWith(":samples:")
     tasks.withType<Test>().configureEach {
+        if (isSampleProject && (name == "testAndroidHostTest" || (name.startsWith("test") && name.endsWith("UnitTest")))) {
+            dependsOn(syncRobolectricSdk)
+            inputs.dir(robolectricSdkDir).withPathSensitivity(PathSensitivity.RELATIVE)
+            systemProperty("robolectric.offline", "true")
+            systemProperty("robolectric.dependency.dir", robolectricSdkDir.get().asFile.absolutePath)
+        }
         doFirst {
             val dir = temporaryDir.resolve("java-tmp").apply { mkdirs() }
             systemProperty("java.io.tmpdir", dir.absolutePath)

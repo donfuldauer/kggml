@@ -286,4 +286,15 @@ class SerialExecutorTest {
         assertTrue(e.message!!.contains("racing-close"))
         assertTrue(currentCoroutineContext().isActive, "caller coroutine must remain active after closed rejection")
     }
+
+    @Test
+    fun startedBlockCancellationRemainsCancellationExceptionEvenAfterClose() = runTest {
+        val executor = SerialExecutor("started-cancel", FakeFactory(this))
+        assertFailsWith<CancellationException> {
+            executor.execute {
+                executor.close()
+                throw CancellationException("block cancelled itself")
+            }
+        }
+    }
 }

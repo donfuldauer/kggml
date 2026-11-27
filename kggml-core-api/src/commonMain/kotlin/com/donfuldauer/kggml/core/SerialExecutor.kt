@@ -74,14 +74,18 @@ public class SerialExecutor(
         checkOpen()
         return mutex.withLock {
             checkOpen()
+            val started = AtomicBoolean(false)
             try {
-                withContext(ownedDispatcher, block)
+                withContext(ownedDispatcher) {
+                    started.store(true)
+                    block()
+                }
             } catch (e: CancellationException) {
                 // If the caller was cancelled, propagate CancellationException; if instead close() raced with
-                // dispatch and shut down ownedDispatcher (which cancels only the child DispatchedCoroutine on
-                // RejectedExecutionException), translate to the documented IllegalStateException.
+                // dispatch and shut down ownedDispatcher before the block started (which cancels only the child
+                // DispatchedCoroutine on RejectedExecutionException), translate to the documented IllegalStateException.
                 currentCoroutineContext().ensureActive()
-                checkOpen()
+                if (!started.load()) checkOpen()
                 throw e
             }
         }
