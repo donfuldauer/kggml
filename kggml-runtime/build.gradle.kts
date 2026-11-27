@@ -1,3 +1,6 @@
+import com.android.build.api.dsl.KotlinMultiplatformAndroidDeviceTestCompilation
+import com.android.build.api.withAndroid
+import com.donfuldauer.kggml.buildlogic.wireAndroidJniLibs
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.konan.target.KonanTarget
@@ -51,6 +54,19 @@ val ggmlPinnedVersion = cmakePin("KGGML_GGML_PINNED_VERSION")
 val ggmlPinnedCommit = cmakePin("KGGML_GGML_PINNED_COMMIT")
 
 kotlin {
+    android {
+        namespace = "com.donfuldauer.kggml.runtime"
+        // The same pinned versions for the on-device runtime test (AndroidNativeRuntimeTest, InstrumentationRegistry arguments).
+        compilations.withType<KotlinMultiplatformAndroidDeviceTestCompilation>().configureEach {
+            instrumentationRunnerArguments.putAll(
+                mapOf(
+                    "kggml.expectedRuntimeVersion" to project.version.toString(),
+                    "kggml.expectedGgmlVersion" to ggmlPinnedVersion,
+                    "kggml.expectedGgmlCommit" to ggmlPinnedCommit,
+                ),
+            )
+        }
+    }
     // Kotlin/Native macOS (issue #93): links the macos-arm64 slice of GgmlRuntime.xcframework (Metal + Accelerate).
     macosArm64()
 
@@ -59,7 +75,7 @@ kotlin {
     applyDefaultHierarchyTemplate {
         common {
             group("jni") {
-                withAndroidTarget()
+                withAndroid()
                 withJvm()
             }
         }
@@ -91,10 +107,6 @@ kotlin {
             linkerOpts("-F", frameworkSearchPath, "-rpath", frameworkSearchPath)
         }
     }
-}
-
-android {
-    namespace = "com.donfuldauer.kggml.runtime"
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -207,8 +219,7 @@ if (bundleNative) {
         require(platforms.isNotEmpty()) { "kggml.extraJvmNativeResources: no kggml/native/<platform>/index.txt under $dir" }
         kotlin.sourceSets.getByName("jvmMain").resources.srcDir(dir)
     }
-    android.sourceSets.getByName("main").jniLibs.srcDir(androidJniLibsDir)
-    tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeAndroid) }
+    wireAndroidJniLibs(buildNativeAndroid, androidJniLibsDir)
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -256,12 +267,3 @@ tasks.matching {
         iosFrameworkPresent
     }
 }
-
-// The same pinned versions for the on-device runtime test (AndroidNativeRuntimeTest, InstrumentationRegistry arguments).
-android.defaultConfig.testInstrumentationRunnerArguments.putAll(
-    mapOf(
-        "kggml.expectedRuntimeVersion" to project.version.toString(),
-        "kggml.expectedGgmlVersion" to ggmlPinnedVersion,
-        "kggml.expectedGgmlCommit" to ggmlPinnedCommit,
-    ),
-)

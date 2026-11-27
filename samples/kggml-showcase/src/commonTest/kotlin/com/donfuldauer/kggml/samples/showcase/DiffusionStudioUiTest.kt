@@ -10,7 +10,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import com.donfuldauer.kggml.core.OutOfMemoryException
 import com.donfuldauer.kggml.samples.showcase.diffusion.DiffusionStudioTags
 import com.donfuldauer.kggml.samples.showcase.diffusion.FakeImageGeneratorFactory

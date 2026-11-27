@@ -1,20 +1,18 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetTree
 
-// Kggml showcase: Compose Multiplatform app (Android, iOS, JVM Desktop) consuming the SDK exclusively through
-// the `kggml-bom` platform (no Kggml module versions are repeated here). Samples are never published.
+// Kggml showcase shared module (KMP library for Android, iOS static framework, JVM Desktop app) consuming the SDK
+// exclusively through the `kggml-bom` platform (no Kggml module versions are repeated here). The Android app entry
+// point lives in `:samples:kggml-showcase:androidApp` (AGP 9 forbids combining `com.android.application` with KMP in
+// one module). Samples are never published.
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.application)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.kotlin.compose)
 }
 
 val jvmTargetVersion: String = libs.versions.jvmTarget.get()
-// Samples are not published, so they do not get `project.version`; reuse the SDK version for app metadata.
-val sampleVersion: String = providers.gradleProperty("VERSION_NAME").get()
 // Built by the kggml-{runtime,whisper,llama,diffusion}/native/scripts/build-ios-xcframework.sh scripts (macOS only).
 val iosXcframeworkDir: File = rootProject.layout.projectDirectory.dir("build/native-ios/GgmlRuntime.xcframework").asFile
 val iosWhisperXcframeworkDir: File =
@@ -37,19 +35,32 @@ val engineFixtureSources: List<File> = listOf(
     "kggml-whisper/src/commonTest/kotlin/com/donfuldauer/kggml/whisper/TinyWhisperModel.kt",
     "kggml-llama/src/commonTest/kotlin/com/donfuldauer/kggml/llama/TinyLlamaModel.kt",
 ).map { rootProject.layout.projectDirectory.file(it).asFile }
-val syncEngineFixtures by tasks.registering(Sync::class) {
+val syncEngineFixtures = tasks.register<Sync>("syncEngineFixtures") {
     description = "Copies the engines' synthetic model fixtures (TinyWhisperModel, TinyLlamaModel) into this module's tests."
     from(engineFixtureSources)
     into(layout.buildDirectory.dir("generated/engine-fixtures/kotlin"))
 }
+tasks.matching { it.name.contains("Lint") }.configureEach { dependsOn(syncEngineFixtures) }
 
 kotlin {
-    androidTarget {
+    android {
+        namespace = "com.donfuldauer.kggml.samples.showcase.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+        androidResources { enable = true }
         compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
+        withHostTest {
+            isIncludeAndroidResources = true
+        }
         // commonTest (fake-driven controller + Compose UI tests, real-engine end-to-end tests) runs everywhere:
-        // desktop, iOS simulator, Android local unit tests (Robolectric) AND on an Android device / emulator.
-        @OptIn(ExperimentalKotlinGradlePluginApi::class)
-        instrumentedTestVariant.sourceSetTree.set(KotlinSourceSetTree.test)
+        // desktop, iOS simulator, Android host unit tests (Robolectric) AND on an Android device / emulator.
+        withDeviceTestBuilder {
+            sourceSetTreeName = "test"
+        }.configure {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+            // Read by the instrumented tests (InstrumentationRegistry arguments).
+            instrumentationRunnerArguments["kggml.requireNative"] = requireNative.toString()
+        }
     }
     jvm("desktop") {
         compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
@@ -80,10 +91,10 @@ kotlin {
             implementation(project(":kggml-diffusion"))
             implementation(project(":kggml-model-manager"))
 
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material3)
-            implementation(compose.ui)
+            implementation(libs.compose.runtime)
+            implementation(libs.compose.foundation)
+            implementation(libs.compose.material3)
+            implementation(libs.compose.ui)
             implementation(libs.kotlinx.coroutines.core)
         }
         commonTest {
@@ -92,17 +103,16 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
-            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
-            implementation(compose.uiTest)
+            implementation(libs.compose.ui.test)
         }
         androidMain.dependencies {
-            // Android GPU add-on: ggml's Vulkan backend, registered by the runtime when packaged (CPU fallback otherwise).
+            // Android GPU add-ons: ggml's Vulkan and OpenCL backends, registered by the runtime when packaged.
             implementation(project(":kggml-runtime-vulkan"))
             implementation(project(":kggml-runtime-opencl"))
             implementation(libs.androidx.activity.compose)
         }
         // Robolectric runs the Android variant of commonTest (and the Android-only tests) on the host JVM.
-        val androidUnitTest by getting {
+        val androidHostTest by getting {
             kotlin.srcDir("src/androidSharedTest/kotlin")
             dependencies {
                 implementation(libs.robolectric)
@@ -110,9 +120,10 @@ kotlin {
                 implementation(libs.androidx.test.core)
                 implementation(libs.androidx.test.ext.junit)
                 implementation(libs.androidx.compose.ui.test.junit4)
+                implementation(libs.androidx.compose.ui.test.manifest)
             }
         }
-        val androidInstrumentedTest by getting {
+        val androidDeviceTest by getting {
             kotlin.srcDir("src/androidSharedTest/kotlin")
             dependencies {
                 implementation(libs.junit4)
@@ -121,6 +132,7 @@ kotlin {
                 implementation(libs.androidx.test.rules)
                 implementation(libs.androidx.test.ext.junit)
                 implementation(libs.androidx.compose.ui.test.junit4)
+                implementation(libs.androidx.compose.ui.test.manifest)
             }
         }
         val desktopMain by getting {
@@ -132,50 +144,10 @@ kotlin {
         val desktopTest by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
-                @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
-                implementation(compose.uiTest)
+                implementation(libs.compose.ui.test)
             }
         }
     }
-}
-
-android {
-    namespace = "com.donfuldauer.kggml.samples.showcase"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-    defaultConfig {
-        applicationId = "com.donfuldauer.kggml.samples.showcase"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.compileSdk.get().toInt()
-        versionCode = 1
-        versionName = sampleVersion
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Read by the instrumented tests (InstrumentationRegistry arguments).
-        testInstrumentationRunnerArguments["kggml.requireNative"] = requireNative.toString()
-    }
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.toVersion(jvmTargetVersion)
-        targetCompatibility = JavaVersion.toVersion(jvmTargetVersion)
-    }
-    packaging {
-        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
-    }
-}
-
-// Local unit tests (Robolectric) run on the debug variant only: the release variant has the same code but not the
-// test activity from ui-test-manifest, which must stay out of release APKs.
-androidComponents {
-    beforeVariants(selector().withBuildType("release")) { variant ->
-        (variant as com.android.build.api.variant.HasUnitTestBuilder).enableUnitTest = false
-    }
-}
-
-dependencies {
-    // Declares the empty ComponentActivity that runComposeUiTest / createComposeRule host content in (debug only,
-    // never in release APKs).
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
 
 // Host runtime / engines built by build-host.sh: shared libraries land in build/native(-whisper|-llama|-diffusion)/lib,

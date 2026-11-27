@@ -264,7 +264,7 @@ for step in "${all_steps[@]}"; do
         missing android "Android NDK not found (set ANDROID_NDK_HOME or ANDROID_HOME)"
       fi ;;
     sample)
-      run_step s-check ./gradlew :samples:whisper-only-minimal:check --console=plain
+      run_step s-check ./gradlew :samples:whisper-only-minimal:check :samples:whisper-only-minimal:androidApp:check --console=plain
       run_step sd-audit ./scripts/ci/audit-minimal-sample.sh desktop
       if ndk="$(find_ndk)"; then
         export ANDROID_NDK_HOME="${ndk}"
@@ -284,8 +284,8 @@ for step in "${all_steps[@]}"; do
       if sdk="$(find_sdk)"; then
         export ANDROID_HOME="${sdk}"
         run_step g-check ./gradlew check --console=plain ${mac_check_args[@]+"${mac_check_args[@]}"}
-        run_step g-assemble ./gradlew --console=plain :samples:kggml-showcase:assembleDebug \
-          :samples:kggml-showcase:desktopJar :samples:whisper-only-minimal:assembleDebug
+        run_step g-assemble ./gradlew --console=plain :samples:kggml-showcase:androidApp:assembleDebug \
+          :samples:kggml-showcase:desktopJar :samples:whisper-only-minimal:androidApp:assembleDebug
       else
         missing check "Android SDK not found (./gradlew check needs ANDROID_HOME)"
       fi ;;

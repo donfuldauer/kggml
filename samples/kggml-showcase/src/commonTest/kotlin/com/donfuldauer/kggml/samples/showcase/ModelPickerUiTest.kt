@@ -13,7 +13,7 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import com.donfuldauer.kggml.models.DownloadEvent
 import com.donfuldauer.kggml.samples.showcase.diffusion.DiffusionStudioTags
 import com.donfuldauer.kggml.samples.showcase.llm.LlmChatTags

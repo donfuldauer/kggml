@@ -1,3 +1,5 @@
+import com.android.build.api.withAndroid
+import com.donfuldauer.kggml.buildlogic.wireAndroidJniLibs
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.konan.target.KonanTarget
@@ -32,12 +34,23 @@ val buildHostScript = nativeDir.file("scripts/build-host.sh").asFile.absolutePat
 val buildAndroidScript = nativeDir.file("scripts/build-android.sh").asFile.absolutePath
 
 kotlin {
+    android {
+        namespace = "com.donfuldauer.kggml.whisper"
+        // Keeps the JNI entry points and the streaming segment-listener callback (called by name from C++).
+        optimization {
+            consumerKeepRules.apply {
+                publish = true
+                file("consumer-rules.pro")
+            }
+        }
+    }
+
     // `jniMain` is shared by androidMain + jvmMain (the JNI bridge); iosMain uses cinterop instead.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
         common {
             group("jni") {
-                withAndroidTarget()
+                withAndroid()
                 withJvm()
             }
         }
@@ -80,12 +93,6 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.donfuldauer.kggml.whisper"
-    // Keeps the JNI entry points and the streaming segment-listener callback (called by name from C++).
-    defaultConfig { consumerProguardFiles("consumer-rules.pro") }
-}
-
 // ---------------------------------------------------------------------------------------------------------
 // Native (CMake) layer: kggml-whisper/native. Opt-in helper tasks, not wired into `check` / `assemble` unless
 // one of the properties above is set.
@@ -120,8 +127,7 @@ val buildNativeAndroid by tasks.registering(Exec::class) {
 }
 
 if (bundleNative) {
-    android.sourceSets.getByName("main").jniLibs.srcDir(androidJniLibsDir)
-    tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeAndroid) }
+    wireAndroidJniLibs(buildNativeAndroid, androidJniLibsDir)
 }
 
 // ---------------------------------------------------------------------------------------------------------
