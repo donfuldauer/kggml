@@ -7,6 +7,8 @@ import kotlinx.coroutines.runBlocking
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -28,6 +30,9 @@ class JvmIntegrationTest {
     private val requests = AtomicInteger()
     private val dropNext = AtomicInteger() // number of upcoming requests to cut off mid-body
     @Volatile private var ignoreRange = false
+    // Range requests starting at or after this offset wait for `gate`, so a test can stop a download part-way.
+    @Volatile private var holdFrom = Int.MAX_VALUE
+    private val gate = CountDownLatch(1)
 
     @BeforeTest
     fun start() {
@@ -42,6 +47,7 @@ class JvmIntegrationTest {
                 return@createContext
             }
             val first = range.groupValues[1].toInt()
+            if (first >= holdFrom) gate.await(30, TimeUnit.SECONDS)
             if (first >= content.size) {
                 ex.responseHeaders.add("Content-Range", "bytes */${content.size}")
                 ex.sendResponseHeaders(416, -1)
@@ -69,6 +75,7 @@ class JvmIntegrationTest {
 
     @AfterTest
     fun stop() {
+        gate.countDown()
         server.stop(0)
         dir.deleteRecursively()
     }
@@ -99,7 +106,17 @@ class JvmIntegrationTest {
     fun cancelledDownloadResumesFromPartialFile() = runBlocking {
         val dest = File(dir, "model.bin").path
         val request = DownloadRequest(url, dest, sha)
-        downloader().download(request).filterIsInstance<DownloadEvent.Progress>().first { it.downloadedBytes >= 100_000 }
+        // download() runs on the I/O dispatcher ahead of this collector (flowOn buffers its events), so without a
+        // hold it can finish the whole file before the collector cancels. The server holds every request from the
+        // third 64 KiB chunk on, so the download can never get past 128 KiB. `first` returns only once the cancelled
+        // download has finished, which needs the held request answered: release it shortly after cancelling.
+        holdFrom = 2 * 64 * 1024
+        downloader().download(request).filterIsInstance<DownloadEvent.Progress>().first {
+            (it.downloadedBytes >= 100_000).also { reached ->
+                if (reached) Thread { Thread.sleep(200); gate.countDown() }.apply { isDaemon = true }.start()
+            }
+        }
+        holdFrom = Int.MAX_VALUE
         val partial = File("$dest.part").length()
         assertTrue(partial in 100_000 until content.size)
         val completed = downloader().downloadTo(request)
