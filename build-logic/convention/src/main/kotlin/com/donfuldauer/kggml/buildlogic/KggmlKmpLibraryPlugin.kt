@@ -16,7 +16,8 @@ import org.jetbrains.kotlin.gradle.plugin.KotlinSourceSetTree
  * `kggml.kmp.library` — the single source of truth for Kggml SDK library modules:
  *
  * - Kotlin Multiplatform targets: `androidTarget`, `iosArm64`, `iosSimulatorArm64`, `jvm`
- *   (iOS targets compile only on macOS hosts; they are skipped elsewhere).
+ *   (iOS targets compile only on macOS hosts; they are skipped elsewhere). Modules that already support Kotlin/Native
+ *   macOS add `macosArm64()` themselves (issue #93: core-api and runtime so far); it moves here once every module does.
  * - Explicit API mode (strict), JVM 17 bytecode, `expect`/`actual` classes enabled.
  * - `kotlin-test` wired into `commonTest`; JVM tests run on the JUnit Platform.
  * - Android instrumented tests (`connectedDebugAndroidTest`) join the test source-set tree: `commonTest` (incl. the

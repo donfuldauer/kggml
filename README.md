@@ -39,6 +39,7 @@ Kotlin API on top of the [ggml](https://github.com/ggml-org/ggml) ecosystem:
 | --- | --- | --- | --- |
 | Android 8.0+ (API 26) | `androidTarget` | `arm64-v8a`, `x86_64` | CPU (ARM NEON). GPU with the optional add-ons on Android 9+: Vulkan (`kggml-runtime-vulkan`, any Vulkan 1.1 driver) and OpenCL (`kggml-runtime-opencl`, devices whose vendor ships OpenCL, e.g. Adreno); CPU otherwise. |
 | iOS | `iosArm64`, `iosSimulatorArm64` | device and Apple-silicon simulator | CPU (Accelerate / NEON), Metal, Core ML (Whisper encoder) |
+| macOS 13.3+ (Kotlin/Native) | `macosArm64` (`kggml-core-api` and `kggml-runtime` so far; the engines follow, issue #93) | Apple silicon | CPU (Accelerate / NEON), Metal. Link the `macos-arm64` slice of `GgmlRuntime.xcframework` |
 | JVM Desktop (JDK 17+) | `jvm` | macOS arm64, Linux x86_64, Windows x86_64 | CPU on all three; Metal on macOS; Vulkan when built with `KGGML_ENABLE_VULKAN=ON` |
 
 What each engine can use:

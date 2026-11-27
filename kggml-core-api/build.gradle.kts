@@ -5,6 +5,9 @@ plugins {
 description = "Kggml core API: InferenceEngine, BackendConfig, event and exception types (pure Kotlin, no native code)."
 
 kotlin {
+    // Kotlin/Native macOS (issue #93), on top of the convention plugin's targets; shared Apple code lives in appleMain.
+    macosArm64()
+
     sourceSets {
         all {
             languageSettings.optIn("kotlin.concurrent.atomics.ExperimentalAtomicApi")
