@@ -127,7 +127,7 @@ class WhisperSampleSessionTest {
         session.transcribe("a.bin", audio, ComputeBackend.CPU_ONLY)
         engine!!.failNext = InvalidInputException("bad audio")
         assertFailsWith<InvalidInputException> { session.transcribe("a.bin", audio, ComputeBackend.CPU_ONLY) }
-        assertFalse(engine!!.closed)
+        assertFalse(engine.closed)
         session.transcribe("a.bin", audio, ComputeBackend.CPU_ONLY)
     }
 

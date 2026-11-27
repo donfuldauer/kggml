@@ -5,6 +5,9 @@ plugins {
 description = "Kggml core API: InferenceEngine, BackendConfig, event and exception types (pure Kotlin, no native code)."
 
 kotlin {
+    android {
+        namespace = "com.donfuldauer.kggml.core"
+    }
     // Kotlin/Native macOS (issue #93), on top of the convention plugin's targets; shared Apple code lives in appleMain.
     macosArm64()
 
@@ -24,8 +27,4 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
         }
     }
-}
-
-android {
-    namespace = "com.donfuldauer.kggml.core"
 }

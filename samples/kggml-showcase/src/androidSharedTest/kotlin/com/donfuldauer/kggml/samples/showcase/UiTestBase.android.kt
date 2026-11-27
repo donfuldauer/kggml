@@ -6,7 +6,7 @@ import org.junit.Before
 import org.junit.runner.RunWith
 
 /**
- * Shared by `androidUnitTest` (Robolectric) and `androidInstrumentedTest` (device): `AndroidJUnit4` picks the right
+ * Shared by `androidHostTest` (Robolectric) and `androidDeviceTest` (device): `AndroidJUnit4` picks the right
  * runner for each. `@RunWith` is `@Inherited`, so every subclass runs with it.
  */
 @RunWith(AndroidJUnit4::class)

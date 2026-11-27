@@ -41,7 +41,7 @@ use and can be edited.
 ## Android
 
 ```bash
-./gradlew :samples:whisper-only-minimal:installDebug -Pkggml.bundleNative=true   # needs ANDROID_NDK_HOME
+./gradlew :samples:whisper-only-minimal:androidApp:installDebug -Pkggml.bundleNative=true   # needs ANDROID_NDK_HOME
 adb push ggml-tiny.en.bin jfk.wav /sdcard/Android/data/com.donfuldauer.kggml.samples.whisper/files/
 # Optional scripted run:
 adb shell am start -n com.donfuldauer.kggml.samples.whisper/.MainActivity --es backend CPU_ONLY --ez autostart true

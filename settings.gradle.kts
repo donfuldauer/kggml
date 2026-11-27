@@ -56,8 +56,11 @@ include(":integration-tests")
 // Unpublished README snippet compile check: consumes the SDK through the BOM like an external app.
 include(":docs-snippets")
 
-// Samples (never published).
+// Samples (never published). Android apps live in separate androidApp modules (AGP 9 forbids combining
+// com.android.application with org.jetbrains.kotlin.multiplatform in one module).
 include(
     ":samples:kggml-showcase",
+    ":samples:kggml-showcase:androidApp",
     ":samples:whisper-only-minimal",
+    ":samples:whisper-only-minimal:androidApp",
 )

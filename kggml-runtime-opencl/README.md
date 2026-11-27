@@ -34,5 +34,5 @@ pinned Khronos `OpenCL-ICD-Loader` is built only as the link-time `libOpenCL.so`
 ```bash
 ./kggml-runtime-opencl/native/scripts/build-android.sh arm64-v8a x86_64   # -> build/native-android-opencl-jniLibs
 ./scripts/ci/audit-gpu-addon.sh opencl arm64-v8a x86_64                   # dependencies, exports, 16 KB alignment
-./gradlew :kggml-runtime-opencl:connectedDebugAndroidTest -Pkggml.bundleNative=true -Pkggml.requireNative=true
+./gradlew :kggml-runtime-opencl:connectedAndroidDeviceTest -Pkggml.bundleNative=true -Pkggml.requireNative=true
 ```

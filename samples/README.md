@@ -16,7 +16,7 @@ module dependencies). They are never published.
 ./gradlew :samples:whisper-only-minimal:runDesktop   # Swing app; needs the kggml-whisper host build too
 
 # Android APKs (add -Pkggml.bundleNative=true to package the native runtime for arm64-v8a / x86_64)
-./gradlew :samples:kggml-showcase:assembleDebug :samples:whisper-only-minimal:assembleDebug
+./gradlew :samples:kggml-showcase:androidApp:assembleDebug :samples:whisper-only-minimal:androidApp:assembleDebug
 
 # iOS static frameworks (macOS). The Xcode host app embeds GgmlRuntime.xcframework and KggmlWhisper.xcframework
 # (*/native/scripts/build-ios-xcframework.sh) next to KggmlShowcase.framework / WhisperOnlyMinimal.framework.
@@ -28,7 +28,8 @@ Without native libraries the inspector shows a "Native runtime unavailable" stat
 ## Tests
 
 ```bash
-./gradlew :samples:kggml-showcase:desktopTest          # state + Compose UI tests (+ real JNI runtime if built)
-./gradlew :samples:kggml-showcase:testDebugUnitTest    # common state tests on Android
-./gradlew :samples:whisper-only-minimal:check          # unit tests + dependency audit
+./gradlew :samples:kggml-showcase:desktopTest                  # state + Compose UI tests (+ real JNI runtime if built)
+./gradlew :samples:kggml-showcase:testAndroidHostTest          # common state + Compose UI tests on Android (Robolectric)
+./gradlew :samples:kggml-showcase:androidApp:testDebugUnitTest # Android MainActivity tests (Robolectric)
+./gradlew :samples:whisper-only-minimal:check :samples:whisper-only-minimal:androidApp:check   # unit tests + dependency audit
 ```

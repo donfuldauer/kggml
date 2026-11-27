@@ -8,7 +8,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.AnnotatedString
 import com.donfuldauer.kggml.samples.showcase.diffusion.DiffusionStudioTags
 import com.donfuldauer.kggml.samples.showcase.llm.LlmChatTags

@@ -24,8 +24,8 @@ shift || true
 case "${mode}" in
   android)
     ./scripts/tests/test-audit-binary-symbols.sh
-    ./gradlew :samples:whisper-only-minimal:assembleRelease -Pkggml.bundleNative=true --console=plain "$@"
-    "${AUDIT}" apk samples/whisper-only-minimal/build/outputs/apk/release/whisper-only-minimal-release-unsigned.apk
+    ./gradlew :samples:whisper-only-minimal:androidApp:assembleRelease -Pkggml.bundleNative=true --console=plain "$@"
+    "${AUDIT}" apk samples/whisper-only-minimal/androidApp/build/outputs/apk/release/androidApp-release-unsigned.apk
     ;;
   desktop)
     # --console=plain unless the caller passed its own (Gradle rejects a repeated --console, as CI's

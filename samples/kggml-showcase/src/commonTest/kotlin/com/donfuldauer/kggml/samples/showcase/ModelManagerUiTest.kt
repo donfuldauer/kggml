@@ -7,7 +7,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import com.donfuldauer.kggml.models.ChecksumMismatchException
 import com.donfuldauer.kggml.models.DownloadEvent
 import com.donfuldauer.kggml.samples.showcase.llm.LlmChatTags
