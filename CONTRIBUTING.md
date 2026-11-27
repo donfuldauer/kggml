@@ -13,7 +13,7 @@ privately, as described in [SECURITY.md](SECURITY.md), not in public issues.
 - **Suggest a feature** with the
   [feature request form](https://github.com/donfuldauer/kggml/issues/new?template=feature-request.md).
 - **Send a pull request.** For anything bigger than a small fix, open an issue first so the design can be agreed
-  before you write the code. Issues labelled `status:ready` are ready to be worked on.
+  before you write the code. Issues whose status is **Todo** are ready to be worked on; **Backlog** issues are planned but not scheduled yet.
 
 ## Setting up
 

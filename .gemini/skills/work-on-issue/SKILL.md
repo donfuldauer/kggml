@@ -9,12 +9,14 @@ Execute a Kggml GitHub issue from selection through implementation, verification
 
 ## Trigger Forms
 
-- `"work on next issue"` — select the highest-priority open issue labeled `status:ready` with zero unresolved `Blocked by` dependencies.
-- `"work on issue #X"` — verify issue `#X` is open, labeled `status:ready`, and has all `Blocked by` prerequisites closed.
+- `"work on next issue"` — select the highest-priority open issue whose status is **Todo** with zero unresolved `Blocked by` dependencies. Issues in **Backlog** (or any other status) are ignored.
+- `"work on issue #X"` — verify issue `#X` is open, in **Todo**, and has all `Blocked by` prerequisites closed.
+
+The status is the issue's GitHub status field (Backlog, Todo, In progress, In review, Done, Not planned, Duplicate), not a label. Read and set it with `scripts/issue-status.sh` (`get <N>`, `set <N> "<status>"`, `list "<status>"`).
 
 ## Standing Authorization (all harnesses)
 
-Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, and relabeling/unblocking downstream issues. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
+Invoking this skill is the user's explicit, standing authorization to run the **entire** workflow end to end, including pushing the feature branch, opening the PR, **merging it into `main` with a merge commit**, and moving the issue through its statuses. Do **not** stop to ask for confirmation before merging. The agent performs the merge itself as soon as every gate in Step 5 passes.
 
 Stop and report to the user instead of merging **only** when:
 - a required CI check is failing and cannot be fixed within the issue's scope (runners that fail, hang or time out are not failures to escalate: follow AGENTS.md "When a runner fails or hangs");
@@ -30,11 +32,13 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
 
 1. **Select the target issue:**
    ```bash
-   # For "work on next issue": list ready issues ordered by phase priority then issue number
-   gh issue list --state open --label "status:ready" --limit 50 \
+   # For "work on next issue": open issues in Todo (Backlog is ignored), with their labels
+   gh issue list --state open --search 'status:Todo' --limit 50 \
      --json number,title,labels,milestone,assignees
+   # For "work on issue #X": it must be in Todo
+   ./scripts/issue-status.sh get <N>
    ```
-   Pick the lowest-priority-phase (`phase-1` < `phase-2` < `phase-3` < `phase-4` < `phase-oss`), lowest issue number issue with zero open `Blocked by #Y` dependencies.
+   If `#X` is not in Todo, stop and report its status instead of working on it. Pick the lowest-priority-phase (`phase-1` < `phase-2` < `phase-3` < `phase-4` < `phase-oss`), lowest issue number issue with zero open `Blocked by #Y` dependencies.
 
 2. **Verify dependencies:**
    ```bash
@@ -44,14 +48,12 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
    ```bash
    gh issue view <DEP> --json state --jq .state
    ```
-   If any blocker is still `OPEN`, stop and report the blocker without modifying labels.
+   If any blocker is still `OPEN`, skip the issue (for `"work on next issue"`, try the next one) or stop and report the blocker, without changing its status.
 
 3. **Claim the issue atomically:**
    ```bash
-   gh issue edit <N> \
-     --add-assignee @me \
-     --remove-label "status:ready" \
-     --add-label "status:in-progress"
+   gh issue edit <N> --add-assignee @me
+   ./scripts/issue-status.sh set <N> "In progress"
    gh issue comment <N> --body "Claimed issue #<N>. Starting triage and implementation on branch \`feat/issue-<N>-<slug>\`."
    ```
 
@@ -115,9 +117,9 @@ Never stop, wait, or leave a PR open for manual or physical-device testing (AGEN
      - `3` no `gh`: poll the GitHub MCP `get_check_runs` every 1–2 min, paced by a background `sleep 90`.
      Do not use 30-minute safety-net check-ins. If a turn has to end with checks pending, schedule one check-in at most 10 minutes out and confirm it exists (`CronList`).
    - Auto-fix pushes only to the PR's own feature branch; it never skips or disables tests to get green, and never force-pushes. Re-run `./scripts/ci-local.sh` before each auto-fix push and batch related fixes into a single push. Auto-fix only makes the PR mergeable; the merge itself happens in Step 5. Unsubscribe (`unsubscribe_pr_activity`) once the PR is merged or closed.
-4. **Transition issue status to `status:in-review`:**
+4. **Move the issue to In review:**
    ```bash
-   gh issue edit <N> --remove-label "status:in-progress" --add-label "status:in-review"
+   ./scripts/issue-status.sh set <N> "In review"
    gh issue comment <N> --body "Opened PR #<PR_NUMBER> with implementation and verification results."
    ```
 
@@ -157,16 +159,6 @@ Perform this step autonomously (see **Standing Authorization**): once the gates 
 3. **Verify issue auto-closed & post completion summary:**
    ```bash
    gh issue view <N> --json state --jq .state
-   gh issue edit <N> --remove-label "status:in-review"
+   ./scripts/issue-status.sh get <N>   # closing the issue moves it to Done; if not, set it: set <N> Done
    ```
-4. **Unblock downstream issues in the DAG:**
-   Query all open issues labeled `status:blocked` whose body mentions `Blocked by #<N>`:
-   ```bash
-   gh issue list --state open --label "status:blocked" --limit 100 \
-     --json number,title,body
-   ```
-   For each candidate issue `#M`, inspect **all** `Blocked by #<DEP>` references in its `## Dependencies` section. If **every** `<DEP>` is now `CLOSED`, promote `#M` to `status:ready`:
-   ```bash
-   gh issue edit <M> --remove-label "status:blocked" --add-label "status:ready"
-   gh issue comment <M> --body "All prerequisites are now closed (unblocked by #<N>). Promoted from \`status:blocked\` to \`status:ready\`."
-   ```
+4. **Downstream issues:** nothing to relabel. Issues that list `Blocked by #<N>` become eligible on their own once all their blockers are closed, because Step 1 checks the blockers of every Todo issue. If one of them is in Backlog only because it waited for `#<N>`, mention that in the completion summary instead of moving it; the owner decides what goes into Todo.
