@@ -76,41 +76,44 @@ class JvmNativeLlamaTest : NativeLlamaEngineContract() {
     @Test
     fun projectorAndImageChunksAreReleasedDeterministically() = runBlocking {
         assumeTrue(KggmlLlamaJni.nativeTestHooksAvailable(), "host build without KGGML_LLAMA_TEST_HOOKS")
-        val baseline = KggmlLlamaJni.nativeTestLiveObjects()
+        // Prior tests close their engines asynchronously on each engine's executor thread; drain them before asserting.
+        awaitLiveObjects(0)
         val engine = visionEngine()
-        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects(), "model + context + projector")
+        assertEquals(3, KggmlLlamaJni.nativeTestLiveObjects(), "model + context + projector")
         val image = LlamaImage.Rgb(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, TinyMmproj.rgbPattern(TinyMmproj.IMAGE_SIZE, TinyMmproj.IMAGE_SIZE, 1))
         // Completion, invalid input, abort: the chunks (preprocessed images) and samplers never outlive the call.
         engine.generateText("ab", listOf(image), GenerationOptions.GREEDY.copy(maxTokens = 3))
-        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects())
+        assertEquals(3, KggmlLlamaJni.nativeTestLiveObjects())
         engine.generate("${LlamaEngine.MEDIA_MARKER}${LlamaEngine.MEDIA_MARKER}", listOf(image)).toList()
         engine.generate("ab", List(80) { image }).toList()
-        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects())
+        assertEquals(3, KggmlLlamaJni.nativeTestLiveObjects())
         val context = contextHandleOf(engine)
         assertEquals(LlamaStatus.OK, KggmlLlamaJni.nativeTestAbortAfterPolls(context, 1))
         val aborted = engine.generate("ab", listOf(image), GenerationOptions.GREEDY.copy(maxTokens = 50)).toList()
         assertIs<TokenEvent.Error>(aborted.last())
-        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects())
+        assertEquals(3, KggmlLlamaJni.nativeTestLiveObjects())
         engine.close()
-        val deadline = System.nanoTime() + 10_000_000_000L
-        while (KggmlLlamaJni.nativeTestLiveObjects() != baseline && System.nanoTime() < deadline) Thread.sleep(5)
-        assertEquals(baseline, KggmlLlamaJni.nativeTestLiveObjects())
+        awaitLiveObjects(0)
     }
 
     @Test
     fun abortCallbackIsPolledAndEveryNativeObjectIsReleased() = runBlocking {
         assumeTrue(KggmlLlamaJni.nativeTestHooksAvailable(), "host build without KGGML_LLAMA_TEST_HOOKS")
-        val baseline = KggmlLlamaJni.nativeTestLiveObjects()
+        awaitLiveObjects(0)
         val engine = LlamaEngine(modelPath, BackendConfig(ComputeBackend.CPU_ONLY, gpuLayers = 0, cpuThreads = 2), SMALL)
         engine.generateText("ab z", GenerationOptions.GREEDY.copy(maxTokens = 4))
         engine.embed("ab")
-        assertEquals(baseline + 3, KggmlLlamaJni.nativeTestLiveObjects(), "model + generation context + embedding context")
+        assertEquals(3, KggmlLlamaJni.nativeTestLiveObjects(), "model + generation context + embedding context")
         val context = contextHandleOf(engine)
         assertTrue(KggmlLlamaJni.nativeTestAbortPollCount(context) > 0, "llama_set_abort_callback is polled during decode")
         engine.close()
+        awaitLiveObjects(0)
+    }
+
+    private fun awaitLiveObjects(expected: Long) {
         val deadline = System.nanoTime() + 10_000_000_000L
-        while (KggmlLlamaJni.nativeTestLiveObjects() != baseline && System.nanoTime() < deadline) Thread.sleep(5)
-        assertEquals(baseline, KggmlLlamaJni.nativeTestLiveObjects())
+        while (KggmlLlamaJni.nativeTestLiveObjects() != expected && System.nanoTime() < deadline) Thread.sleep(5)
+        assertEquals(expected, KggmlLlamaJni.nativeTestLiveObjects())
     }
 
     private fun contextHandleOf(engine: LlamaEngine): Long =
