@@ -71,7 +71,9 @@ How it is propagated:
 | `android-x86_64` | SSE4.2 baseline (the x86_64 Android ABI guarantees nothing higher) |
 | `ios-device`, `ios-simulator-arm64`, `macos-framework` | Xcode generator, monolithic `GgmlRuntime.framework`, Metal (embedded library) + Accelerate. `macos-framework` is the macOS arm64 slice |
 
-Options: `KGGML_ENABLE_VULKAN` (OFF; it is forced OFF when the Vulkan SDK or `glslc` is missing),
+Options: `KGGML_ENABLE_VULKAN` (OFF in every preset, and forced OFF when the Vulkan SDK or `glslc` is missing;
+`build-host.sh --vulkan` turns it on for a host build. Published artifacts get Vulkan from the `kggml-runtime-vulkan`
+add-on module instead),
 `KGGML_ENABLE_METAL`, `KGGML_ENABLE_BLAS`, `KGGML_ENABLE_COREML` (a compile-time capability flag only),
 `KGGML_ARM_ARCH`, `KGGML_ARM_I8MM` (OFF: there is no runtime CPU dispatch without `GGML_BACKEND_DL`, so `+i8mm`
 would raise SIGILL on cores such as Cortex-A76 and Apple M1), `KGGML_X86_LEVEL`, and `KGGML_RUNTIME_PORTABLE_CPU`

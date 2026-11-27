@@ -81,6 +81,9 @@ when it has been run; a failed check becomes a new issue.
 - [ ] Android instrumented suites on an emulator or phone before each release (CI runs no Android emulator):
   `./scripts/ci-local.sh --only instrumented` (or `./scripts/ci/run-android-instrumented.sh`) with an arm64 or x86_64 AVD passes, with the real native libraries
   bundled and required.
+- [ ] Owner, right after the repository is made public: private vulnerability reporting enabled (Settings → Advanced
+  Security → "Private vulnerability reporting"), so the `SECURITY.md` and issue-template report links open the
+  advisory form; Security → "Report a vulnerability" opens it.
 - [ ] [#23] Owner: Central Portal namespace `com.donfuldauer` verified, release secrets added, public signing key on a
   keyserver, then a `release.yml` dry-run dispatch from `main` is green and its bundle validates in the portal —
   procedure in `docs/RELEASING.md` ("Before the first release" and "Dry run").

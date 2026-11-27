@@ -9,8 +9,10 @@ artifacts receives fixes.
 
 Please **do not** report security problems in public issues, discussions or pull requests.
 
-Report them privately through GitHub's
-[private vulnerability reporting](https://github.com/donfuldauer/kggml/security/advisories/new) for this repository.
+Report them privately through GitHub's private vulnerability reporting: open the repository's **Security** tab and
+choose **Report a vulnerability**, or go straight to the
+[new advisory form](https://github.com/donfuldauer/kggml/security/advisories/new). If the form is not available, open
+a public issue that only asks the maintainer for a private contact, with no details of the problem.
 Include:
 
 - the affected module(s) (`kggml-whisper`, `kggml-llama`, ...) and platform(s) (Android, iOS, JVM Desktop);
