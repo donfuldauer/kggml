@@ -99,7 +99,9 @@ when it is heavy, depends on the device's drivers, or many apps would rather ski
 - **Vulkan on Android** is the add-on `kggml-runtime-vulkan`: ggml's Vulkan backend carries tens of MB of precompiled
   shaders per ABI, and phone GPU drivers vary. Add the dependency and the runtime registers it when it loads; on
   devices without a usable Vulkan 1.1 driver (or Android 8.x) the engines keep running on the CPU. Emulators expose only
-  software Vulkan, which ggml ignores, so there `AUTO` stays on the CPU.
+  software Vulkan, which ggml ignores, so there `AUTO` stays on the CPU. Imagination PowerVR GPUs (Pixel 10 and later)
+  are excluded too: their Vulkan driver computes ggml's shaders incorrectly and can hang a model load, so those phones
+  use the CPU unless `KGGML_VULKAN_ALLOW_POWERVR=1` is set.
 - **OpenCL on Android** is the add-on `kggml-runtime-opencl` (`ComputeBackend.GPU_OPENCL`): ggml's OpenCL backend with
   the matmul kernels Qualcomm tuned for Adreno, through the device vendor's `libOpenCL.so` (declared optional in the
   add-on's manifest). It loads only where the vendor ships OpenCL (in practice Adreno phones; not Pixel or emulators),

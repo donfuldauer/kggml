@@ -232,7 +232,8 @@ endif()
 
 add_library(kggml_runtime SHARED
     src/kggml_runtime.cpp
-    src/cpu_topology.cpp)
+    src/cpu_topology.cpp
+    src/device_policy.cpp)
 add_library(kggml::runtime ALIAS kggml_runtime)
 
 target_include_directories(kggml_runtime
