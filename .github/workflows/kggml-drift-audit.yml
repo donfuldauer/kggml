@@ -1,4 +1,4 @@
-name: Kggml Upstream & KMP/SPM Drift Audit
+name: Kggml Upstream & KMP/Xcode Drift Audit
 
 on:
   schedule:
@@ -11,7 +11,7 @@ on:
         required: false
         default: ''
       create_fix_pr:
-        description: 'Create a draft PR with proposed KMP/SPM/sample fixes when drift is detected'
+        description: 'Create a draft PR with proposed KMP/Xcode/sample fixes when drift is detected'
         type: boolean
         default: true
 
@@ -35,7 +35,7 @@ jobs:
           fetch-depth: 50
           submodules: recursive
 
-      - name: Gather upstream & KMP/SPM context
+      - name: Gather upstream & KMP/Xcode context
         run: |
           mkdir -p .audit-tmp
 
@@ -43,7 +43,7 @@ jobs:
           git log --since="14 days ago" --oneline > .audit-tmp/recent_commits.txt
 
           find . -maxdepth 6 \
-            \( -name "Package.swift" -o -name "*.def" -o -name "*whisper*.kt" -o -name "*ggml*.kt" -o -name "*Backend*.kt" -o -path "*/samples/*" \) \
+            \( -name "CMakeLists.txt" -o -name "project.pbxproj" -o -name "*.def" -o -name "*whisper*.kt" -o -name "*ggml*.kt" -o -name "*Backend*.kt" -o -path "*/samples/*" \) \
             -not -path '*/.*' -not -path '*/build/*' > .audit-tmp/api_surface_files.txt
 
           if [ -s .audit-tmp/submodules.txt ] && ! grep -q "No submodules" .audit-tmp/submodules.txt; then
@@ -127,7 +127,7 @@ jobs:
               if content:
                   surface_blobs.append(f"### FILE: {rel}\n```\n{content}\n```")
 
-          static_context = f"""You are auditing the Kggml Kotlin Multiplatform repository (com.donfuldauer.kggml).
+          static_context = f"""You are auditing the Kggml Kotlin Multiplatform repository (com.donfuldauer.kggml), which uses Gradle, CMake, and Xcode projects (.pbxproj) for native/iOS builds rather than Swift Package Manager.
 
           === SUBMODULES ===
           {read_safe(".audit-tmp/submodules.txt")}
@@ -141,7 +141,7 @@ jobs:
           === GRADLE VERSIONS ===
           {read_safe("gradle/libs.versions.toml", limit=12000)}
 
-          === KMP / SPM / SAMPLE API SURFACE ===
+          === KMP / XCODE / SAMPLE API SURFACE ===
           {chr(10).join(surface_blobs)}
           """
 
@@ -149,8 +149,8 @@ jobs:
 
           Return ONLY valid JSON with this exact schema:
           {{
-            "audit_report_markdown": "Markdown report with sections: ## Executive Summary, ## Upstream ggml / whisper.cpp Delta, ## KMP & SPM API Surface Drift, ## Proposed Fixes Summary, ## Recommended Action Items",
-            "kmp_spm_drift_detected": true or false,
+            "audit_report_markdown": "Markdown report with sections: ## Executive Summary, ## Upstream ggml / whisper.cpp Delta, ## KMP & Xcode API Surface Drift, ## Proposed Fixes Summary, ## Recommended Action Items",
+            "kmp_xcode_drift_detected": true or false,
             "file_edits": [
               {{
                 "path": "relative/path/to/file",
@@ -159,8 +159,8 @@ jobs:
             ]
           }}
           Rules:
-          - Only propose file_edits for KMP, SPM (Package.swift / .def), or sample API drift—never modify submodules.
-          - If no KMP/SPM/sample edits are needed, set kmp_spm_drift_detected to false and file_edits to [].
+          - Only propose file_edits for KMP, CMake / .def cinterop, Xcode (.pbxproj), or sample API drift—never modify submodules.
+          - If no KMP/Xcode/sample edits are needed, set kmp_xcode_drift_detected to false and file_edits to [].
           """
 
           client = anthropic.Anthropic(auth_token=os.environ["ANTHROPIC_AUTH_TOKEN"])
@@ -194,14 +194,14 @@ jobs:
           data = json.loads(raw)
           pathlib.Path(".audit-tmp/audit-report.md").write_text(data["audit_report_markdown"])
 
-          drift = bool(data.get("kmp_spm_drift_detected")) and bool(data.get("file_edits"))
+          drift = bool(data.get("kmp_xcode_drift_detected")) and bool(data.get("file_edits"))
           for edit in data.get("file_edits", []):
               target = pathlib.Path(edit["path"])
               target.parent.mkdir(parents=True, exist_ok=True)
               target.write_text(edit["content"])
 
           pathlib.Path(".audit-tmp/drift_status.env").write_text(
-              f"kmp_spm_drift_detected={'true' if drift else 'false'}\n"
+              f"kmp_xcode_drift_detected={'true' if drift else 'false'}\n"
           )
           PY
 
@@ -214,9 +214,9 @@ jobs:
             exit 0
           fi
 
-          gh label create "drift-audit" --color "5319E7" --description "Automated upstream & KMP/SPM drift report" --force
+          gh label create "drift-audit" --color "5319E7" --description "Automated upstream & KMP/Xcode drift report" --force
 
-          ISSUE_TITLE="Kggml Automated Drift Audit (ggml/Whisper & KMP/SPM)"
+          ISSUE_TITLE="Kggml Automated Drift Audit (ggml/Whisper & KMP/Xcode)"
           EXISTING_ISSUE=$(gh issue list --label "drift-audit" --state open --json number --jq '.[0].number')
 
           if [ -n "$EXISTING_ISSUE" ]; then
@@ -229,7 +229,7 @@ jobs:
               --body-file .audit-tmp/audit-report.md
           fi
 
-      - name: Create Draft PR for KMP / SPM / Sample Drift Fixes
+      - name: Create Draft PR for KMP / Xcode / Sample Drift Fixes
         if: ${{ github.event.inputs.create_fix_pr != 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -238,24 +238,24 @@ jobs:
           [ -f .audit-tmp/drift_status.env ] && source .audit-tmp/drift_status.env
           rm -rf .audit-tmp
 
-          if [ "${kmp_spm_drift_detected:-false}" != "true" ] || [ -z "$(git status --porcelain)" ]; then
-            echo "No KMP/SPM/sample drift fixes to commit; skipping draft PR."
+          if [ "${kmp_xcode_drift_detected:-false}" != "true" ] || [ -z "$(git status --porcelain)" ]; then
+            echo "No KMP/Xcode/sample drift fixes to commit; skipping draft PR."
             exit 0
           fi
 
           ./scripts/install-git-hooks.sh || true
 
-          BRANCH_NAME="chore/kggml-kmp-spm-drift-fix"
+          BRANCH_NAME="chore/kggml-kmp-xcode-drift-fix"
           git config user.name "Claude"
           git config user.email "noreply@anthropic.com"
 
           git checkout -B "$BRANCH_NAME"
           git add -A
-          git commit -m "chore(kggml): align KMP, SPM, and sample APIs with current surface"
+          git commit -m "chore(kggml): align KMP, Xcode, and sample APIs with current surface"
           git push --force-with-lease origin "$BRANCH_NAME"
 
           EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --state open --json number --jq '.[0].number')
-          PR_BODY="Automated draft PR generated from the Kggml drift audit workflow to resolve detected KMP, Swift Package Manager (SPM), or sample app API mismatches. Please review diffs and run KMP/iOS/sample test suites before marking ready for review."
+          PR_BODY="Automated draft PR generated from the Kggml drift audit workflow to resolve detected KMP, Xcode (.pbxproj), or sample app API mismatches. Please review diffs and run KMP/iOS/sample test suites before marking ready for review."
 
           if [ -n "$EXISTING_PR" ]; then
             gh pr comment "$EXISTING_PR" --body "Updated proposed fixes on $(date -u +'%Y-%m-%d %H:%M UTC')."
@@ -264,6 +264,6 @@ jobs:
               --draft \
               --base main \
               --head "$BRANCH_NAME" \
-              --title "chore(kggml): fix KMP/SPM/sample API drift" \
+              --title "chore(kggml): fix KMP/Xcode/sample API drift" \
               --body "$PR_BODY"
           fi
