@@ -182,9 +182,10 @@ jobs:
           [[ ${#pkgs[@]} -eq 0 ]] || { sudo apt-get update && sudo apt-get install -y "${pkgs[@]}"; }
           ./kggml-runtime-vulkan/native/scripts/build-host.sh
           ./scripts/ci/audit-gpu-addon.sh vulkan --desktop linux-x86_64
-          ./gradlew :kggml-runtime:jvmTest --tests '*JvmNativeRuntimeTest*' $NATIVE_GRADLE_ARGS \
-            -Pkggml.test.vulkanAddonDir=build/native-vulkan-jvm/kggml/native-addons/linux-x86_64/ggml-vulkan
           report=kggml-runtime/build/test-results/jvmTest/TEST-com.donfuldauer.kggml.runtime.JvmNativeRuntimeTest.xml
+          ./gradlew :kggml-runtime:jvmTest --tests '*JvmNativeRuntimeTest*' $NATIVE_GRADLE_ARGS \
+            -Pkggml.test.vulkanAddonDir=build/native-vulkan-jvm/kggml/native-addons/linux-x86_64/ggml-vulkan \
+            || { grep -A8 '<failure' "${report}" >&2 || true; exit 1; }
           grep -q 'testcase name="theDesktopVulkanAddonRegistersWhenConfigured' "${report}"
           ! grep -A1 'testcase name="theDesktopVulkanAddonRegistersWhenConfigured' "${report}" | grep -q '<skipped' \
             || { echo "the Vulkan add-on test was skipped" >&2; exit 1; }

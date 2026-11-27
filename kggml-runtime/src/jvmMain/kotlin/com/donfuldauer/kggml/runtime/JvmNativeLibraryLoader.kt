@@ -113,24 +113,36 @@ internal object JvmNativeLibraryLoader {
         fileName == System.mapLibraryName(name) || fileName == "$name.dll" ||
             fileName.startsWith("lib$name.so") || Regex("""^lib${Regex.escape(name)}(\.\d+)*\.dylib$""").matches(fileName)
 
+    /** What happened to each GPU add-on module at load: `<module>: registered <path>` / `not found` / the failure. */
+    @Volatile
+    var addonReport: List<String> = emptyList()
+        private set
+
     private fun registerAddons(runtimeFiles: List<String>) {
         val dir = System.getProperty(ADDONS_PATH_PROPERTY)?.takeIf { it.isNotBlank() }
             ?: System.getenv(ADDONS_PATH_ENV)?.takeIf { it.isNotBlank() }
         val platform = platformId()
-        registerBackendModules(
-            modules = addonModules(runtimeFiles),
+        val report = mutableListOf<String>()
+        val modules = addonModules(runtimeFiles)
+        BACKEND_MODULES.filter { it !in modules }.forEach { report += "$it: linked into the runtime" }
+        val registered = registerBackendModules(
+            modules = modules,
             findLibrary = { module ->
                 findAddon(module, dir?.let(::File), platform, javaClass::getResourceAsStream)?.absolutePath
+                    .also { if (it == null) report += "$module: not found (dir=${dir ?: "-"}, platform=$platform)" }
             },
             loadBackend = KggmlRuntimeJni::nativeLoadBackend,
             onFailure = { path, status ->
+                val reason = "${KggmlRuntimeJni.nativeStatusName(status)}: ${KggmlRuntimeJni.nativeLastError()}"
+                report += "$path: not loaded ($reason)"
                 System.getLogger("com.donfuldauer.kggml").log(
                     System.Logger.Level.WARNING,
-                    "GPU backend add-on $path not loaded (${KggmlRuntimeJni.nativeStatusName(status)}: " +
-                        "${KggmlRuntimeJni.nativeLastError()}); using the CPU",
+                    "GPU backend add-on $path not loaded ($reason); using the CPU",
                 )
             },
         )
+        registered.forEach { report += "registered $it" }
+        addonReport = report
     }
 
     /**

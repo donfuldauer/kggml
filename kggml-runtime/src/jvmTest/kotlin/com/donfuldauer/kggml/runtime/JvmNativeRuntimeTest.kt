@@ -129,7 +129,10 @@ class JvmNativeRuntimeTest {
     fun theDesktopVulkanAddonRegistersWhenConfigured() {
         assumeTrue(System.getProperty("kggml.test.expectVulkanAddon").toBoolean(), "Vulkan add-on not configured")
         val vulkan = KggmlRuntime.backends().single { it.backend == ComputeBackend.GPU_VULKAN }
-        assertTrue(vulkan.compiled, "the Vulkan backend module was not registered: $vulkan")
+        assertTrue(
+            vulkan.compiled,
+            "the Vulkan backend module was not registered: $vulkan; add-ons: ${JvmNativeLibraryLoader.addonReport}",
+        )
         assertTrue(vulkan.deviceCount >= 1, "no Vulkan device (driver missing?): $vulkan")
         assertTrue(ComputeBackend.GPU_VULKAN in KggmlRuntime.availableBackends())
         assertEquals(ComputeBackend.GPU_VULKAN, KggmlRuntime.resolveBackend(ComputeBackend.AUTO))
