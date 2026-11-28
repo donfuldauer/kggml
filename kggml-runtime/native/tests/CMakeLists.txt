@@ -7,10 +7,10 @@ option(KGGML_RUNTIME_USE_SYSTEM_GTEST "kggml: use an installed GTest package ins
 if (KGGML_RUNTIME_USE_SYSTEM_GTEST)
     find_package(GTest 1.15 REQUIRED)
 else()
-    # googletest v1.15.2, pinned by commit SHA (test-only dependency, never shipped).
+    # googletest v1.18.0, pinned by commit SHA (test-only dependency, never shipped).
     FetchContent_Declare(googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG        b514bdc898e2951020cbdca1304b75f5950d1f59 # v1.15.2
+        GIT_TAG        063de7e9578f82b369302001269680b4b1553359 # v1.18.0
         EXCLUDE_FROM_ALL)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE) # MSVC: match the runtime's /MD CRT
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
