@@ -12,7 +12,11 @@ val requireNative = providers.gradleProperty("kggml.requireNative").map(String::
 
 android {
     namespace = "com.donfuldauer.kggml.samples.showcase"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
+    compileSdk {
+        version = release(libs.versions.android.compileSdk.get().toInt()) {
+            minorApiLevel = libs.versions.android.compileSdkMinor.get().toInt()
+        }
+    }
     defaultConfig {
         applicationId = "com.donfuldauer.kggml.samples.showcase"
         minSdk = libs.versions.android.minSdk.get().toInt()
