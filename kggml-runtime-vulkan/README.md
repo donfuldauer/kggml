@@ -34,12 +34,13 @@ initialises the device's Vulkan driver, which CPU-only and whisper-only apps sho
 
 `native/` configures the runtime's pinned ggml with `GGML_BACKEND_DL=ON`, `GGML_CPU=OFF`, `GGML_VULKAN=ON`, so it builds
 only the Vulkan backend as a loadable module that links `libggml-base.so` (resolved to `:kggml-runtime`'s copy at run
-time; the libggml-base built here is never shipped). Vulkan headers come from the pinned Khronos `Vulkan-Headers`
-submodule (the NDK has no `vulkan.hpp`), the loader is the device's `libvulkan.so` (linked against the NDK's API 28
-stub, the first that exports Vulkan 1.1), and shaders are compiled with the NDK's `glslc`.
+time; the libggml-base built here is never shipped). Vulkan and SPIR-V headers come from the pinned Khronos
+`Vulkan-Headers` and `SPIRV-Headers` submodules (the NDK has no `vulkan.hpp` or `SPIRV-HeadersConfig.cmake`), the
+loader is the device's `libvulkan.so` (linked against the NDK's API 28 stub, the first that exports Vulkan 1.1), and
+shaders are compiled with the NDK's `glslc`.
 
 Desktop (Linux) uses the same pinned headers with the machine's Vulkan loader (`libvulkan-dev`) and `glslc` (the
-`glslc` package, or the NDK's when `ANDROID_NDK_HOME` is set); the module links the runtime's `libggml-base.so.0` and the
+`glslc` package, or the NDK's when `ANDROID_NDK_HOME` is set); the module links the runtime's `libggml-base.so.1` and the
 user's `libvulkan.so.1`. Ggml ignores CPU-type Vulkan devices unless `GGML_VK_VISIBLE_DEVICES` selects one, which is how
 CI tests the module on Mesa's lavapipe.
 

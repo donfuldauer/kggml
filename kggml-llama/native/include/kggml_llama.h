@@ -55,7 +55,7 @@ typedef int32_t kggml_llama_token;
 /** Kggml llama module version, e.g. "0.1.0". Static string. */
 KGGML_LLAMA_API const char * kggml_llama_version(void);
 
-/** Upstream llama.cpp release tag this build was pinned to, e.g. "b8598" (libmtmd comes from the same commit). */
+/** Upstream llama.cpp release tag this build was pinned to, e.g. "b12816" (libmtmd comes from the same commit). */
 KGGML_LLAMA_API const char * kggml_llama_upstream_version(void);
 
 /** Full 40-char upstream llama.cpp commit SHA (see NOTICE). Static string. */

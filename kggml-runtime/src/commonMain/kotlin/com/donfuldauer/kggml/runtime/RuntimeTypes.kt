@@ -24,7 +24,7 @@ public data class BackendInfo(
  * Version metadata of the loaded native runtime.
  *
  * @property runtimeVersion Kggml runtime version, e.g. `"0.1.0"`.
- * @property ggmlVersion version reported by the linked ggml, e.g. `"0.9.9"`.
+ * @property ggmlVersion version reported by the linked ggml, e.g. `"1.1.1"`.
  * @property ggmlCommit full 40-character upstream ggml commit SHA the runtime is pinned to (see `NOTICE`).
  * @property ggmlBuildCommit commit string compiled into ggml itself (short SHA or `"unknown"`).
  * @property hasCoreMl `true` if this build advertises the Core ML capability (iOS builds with CoreML enabled).

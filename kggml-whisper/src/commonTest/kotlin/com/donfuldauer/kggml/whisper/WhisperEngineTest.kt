@@ -457,7 +457,7 @@ class WhisperEngineTest {
     @Test
     fun nativeInfoIsReadFromTheBridge() {
         val info = WhisperEngine.nativeInfo(FakeWhisperBridge(coreMl = true))
-        assertEquals("1.8.4", info.whisperCppVersion)
+        assertEquals("1.9.6", info.whisperCppVersion)
         assertEquals(40, info.whisperCppCommit.length)
         assertTrue(info.hasCoreMl)
     }

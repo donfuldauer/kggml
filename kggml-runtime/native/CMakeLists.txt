@@ -26,9 +26,9 @@ if (MSVC OR CMAKE_CXX_SIMULATE_ID STREQUAL "MSVC")
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
-# Exact upstream ggml pin (tag v0.9.9). Keep in sync with the submodule gitlink and NOTICE.
-set(KGGML_GGML_PINNED_COMMIT "a04eea0761a85d18f3f504d6ab970c5c9dce705f")
-set(KGGML_GGML_PINNED_VERSION "0.9.9")
+# Exact upstream ggml pin (tag v1.1.1). Keep in sync with the submodule gitlink and NOTICE.
+set(KGGML_GGML_PINNED_COMMIT "bb877c0c51f38c52ee2d5e41d58e3d0c20f3fed4")
+set(KGGML_GGML_PINNED_VERSION "1.1.1")
 set(KGGML_GGML_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/ggml")
 
 if (NOT EXISTS "${KGGML_GGML_SOURCE_DIR}/CMakeLists.txt")
@@ -82,6 +82,21 @@ if (KGGML_ENABLE_VULKAN)
     if (NOT Vulkan_FOUND OR NOT KGGML_GLSLC_EXECUTABLE)
         message(WARNING "KGGML_ENABLE_VULKAN=ON but Vulkan SDK/glslc not found; building without ggml-vulkan")
         set(KGGML_ENABLE_VULKAN OFF CACHE BOOL "" FORCE)
+    elseif (NOT SPIRV-Headers_DIR)
+        set(_kggml_spirv_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../kggml-runtime-vulkan/native/third_party/SPIRV-Headers")
+        if (EXISTS "${_kggml_spirv_dir}/include/spirv/unified1/spirv.hpp")
+            set(_kggml_spirv_cmake_dir "${CMAKE_CURRENT_BINARY_DIR}/spirv-headers-cmake")
+            file(MAKE_DIRECTORY "${_kggml_spirv_cmake_dir}")
+            file(CONFIGURE OUTPUT "${_kggml_spirv_cmake_dir}/SPIRV-HeadersConfig.cmake" CONTENT
+"if (NOT TARGET SPIRV-Headers::SPIRV-Headers)
+    add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED)
+    set_target_properties(SPIRV-Headers::SPIRV-Headers PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES \"${_kggml_spirv_dir}/include\")
+endif()
+set(SPIRV-Headers_FOUND TRUE)
+")
+            set(SPIRV-Headers_DIR "${_kggml_spirv_cmake_dir}" CACHE PATH "" FORCE)
+        endif()
     endif()
 endif()
 

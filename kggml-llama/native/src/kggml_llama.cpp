@@ -409,8 +409,15 @@ KGGML_LLAMA_API kggml_status kggml_llama_model_load(const char * model_path, con
         mparams.split_mode = LLAMA_SPLIT_MODE_NONE;
         // Index into `devices`; -1 (CPU) makes llama.cpp drop every device, so nothing is ever offloaded.
         mparams.main_gpu = p.backend == KGGML_BACKEND_CPU ? -1 : 0;
-        mparams.use_mmap = p.use_mmap != 0;
-        mparams.use_mlock = p.use_mlock != 0;
+        if (p.use_mmap != 0 && p.use_mlock != 0) {
+            mparams.load_mode = LLAMA_LOAD_MODE_MMAP_MLOCK;
+        } else if (p.use_mmap != 0) {
+            mparams.load_mode = LLAMA_LOAD_MODE_MMAP;
+        } else if (p.use_mlock != 0) {
+            mparams.load_mode = LLAMA_LOAD_MODE_MLOCK;
+        } else {
+            mparams.load_mode = LLAMA_LOAD_MODE_NONE;
+        }
         mparams.vocab_only = p.vocab_only != 0;
 
         kggml::llama::ProgressBridge bridge{p.progress_callback, p.progress_user_data};
@@ -904,7 +911,10 @@ KGGML_LLAMA_API kggml_status kggml_llama_sampler_create(const kggml_llama_model 
         sampler->chain = llama_sampler_chain_init(chain_params);
         if (sampler->chain == nullptr) return fail(KGGML_STATUS_NATIVE_FAILURE, "llama_sampler_chain_init failed");
         if (p.repeat_penalty != 1.0f && p.repeat_last_n != 0) {
-            llama_sampler_chain_add(sampler->chain, llama_sampler_init_penalties(p.repeat_last_n, p.repeat_penalty, 0.0f, 0.0f));
+            llama_sampler_chain_add(
+                sampler->chain,
+                llama_sampler_init_penalties(
+                    llama_vocab_n_tokens(model->vocab), p.repeat_last_n, p.repeat_penalty, 0.0f, 0.0f));
         }
         if (p.temperature <= 0.0f) {
             llama_sampler_chain_add(sampler->chain, llama_sampler_init_greedy());

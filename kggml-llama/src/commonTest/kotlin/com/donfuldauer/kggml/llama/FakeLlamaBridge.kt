@@ -96,8 +96,8 @@ internal class FakeLlamaBridge(
     private fun checkLive(h: Long, kind: String) = check(live[h] == kind) { "$kind $h is not live" }
 
     override fun moduleVersion(): String = "1.0.0"
-    override fun upstreamVersion(): String = "b8598"
-    override fun upstreamCommit(): String = "9281dd135d6f175ceacca7d3a3ec440012264cfe"
+    override fun upstreamVersion(): String = "b12816"
+    override fun upstreamCommit(): String = "7b74cb92d67384373e87512f4ffd2dbef756b944"
     override fun systemInfo(): String = "FAKE"
     override fun statusName(status: Int): String = "STATUS_$status"
     override fun lastError(): String = lastErrorText
