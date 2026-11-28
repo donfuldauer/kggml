@@ -116,7 +116,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
         }
         // Robolectric runs the Android variant of commonTest (and the Android-only tests) on the host JVM.
-        val androidHostTest by getting {
+        getByName("androidHostTest") {
             kotlin.srcDir("src/androidSharedTest/kotlin")
             dependencies {
                 implementation(libs.robolectric)
@@ -127,7 +127,7 @@ kotlin {
                 implementation(libs.androidx.compose.ui.test.manifest)
             }
         }
-        val androidDeviceTest by getting {
+        getByName("androidDeviceTest") {
             kotlin.srcDir("src/androidSharedTest/kotlin")
             dependencies {
                 implementation(libs.junit4)
@@ -139,13 +139,13 @@ kotlin {
                 implementation(libs.androidx.compose.ui.test.manifest)
             }
         }
-        val desktopMain by getting {
+        getByName("desktopMain") {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.kotlinx.coroutines.swing)
             }
         }
-        val desktopTest by getting {
+        getByName("desktopTest") {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(libs.compose.ui.test)

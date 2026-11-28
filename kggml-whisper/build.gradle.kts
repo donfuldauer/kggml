@@ -98,7 +98,7 @@ kotlin {
 // one of the properties above is set.
 // ---------------------------------------------------------------------------------------------------------
 
-val buildNativeHost by tasks.registering(Exec::class) {
+val buildNativeHost = tasks.register<Exec>("buildNativeHost") {
     group = "kggml native"
     description = "Builds kggml-whisper/native (whisper.cpp + kggml_whisper + JNI + tests) into <root>/build/native-whisper."
     workingDir(rootProject.layout.projectDirectory)
@@ -108,7 +108,7 @@ val buildNativeHost by tasks.registering(Exec::class) {
     dependsOn(":kggml-runtime:buildNativeHost")
 }
 
-val nativeCtest by tasks.registering(Exec::class) {
+val nativeCtest = tasks.register<Exec>("nativeCtest") {
     group = "kggml native"
     description = "Runs the kggml-whisper native CTest suite (ctest --test-dir build/native-whisper --output-on-failure)."
     dependsOn(buildNativeHost)
@@ -116,7 +116,7 @@ val nativeCtest by tasks.registering(Exec::class) {
     commandLine("ctest", "--test-dir", rootBuildDir.dir("native-whisper").asFile.absolutePath, "--output-on-failure")
 }
 
-val buildNativeAndroid by tasks.registering(Exec::class) {
+val buildNativeAndroid = tasks.register<Exec>("buildNativeAndroid") {
     group = "kggml native"
     description = "Cross-compiles whisper for Android (arm64-v8a, x86_64) into <root>/build/native-android-whisper-jniLibs."
     workingDir(rootProject.layout.projectDirectory)

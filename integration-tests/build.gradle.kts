@@ -22,7 +22,7 @@ val fixtureSources: List<File> = listOf(
     "kggml-llama/src/commonTest/kotlin/com/donfuldauer/kggml/llama/TinyLlamaModel.kt",
 ).map { rootProject.layout.projectDirectory.file(it).asFile }
 val fixtureDir = layout.buildDirectory.dir("generated/engine-fixtures/kotlin")
-val syncEngineFixtures by tasks.registering(Sync::class) {
+val syncEngineFixtures = tasks.register<Sync>("syncEngineFixtures") {
     description = "Copies the engines' synthetic model fixtures (TinyWhisperModel, TinyLlamaModel) into this module's tests."
     from(fixtureSources)
     into(fixtureDir)
