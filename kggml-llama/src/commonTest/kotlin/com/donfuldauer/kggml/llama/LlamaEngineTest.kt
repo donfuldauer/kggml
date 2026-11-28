@@ -537,7 +537,7 @@ class LlamaEngineTest {
     @Test
     fun nativeInfoReportsThePinnedUpstream() {
         val info = LlamaEngine.nativeInfo(FakeLlamaBridge())
-        assertEquals("b8598", info.llamaCppVersion)
-        assertEquals("9281dd135d6f175ceacca7d3a3ec440012264cfe", info.llamaCppCommit)
+        assertEquals("b12816", info.llamaCppVersion)
+        assertEquals("7b74cb92d67384373e87512f4ffd2dbef756b944", info.llamaCppCommit)
     }
 }

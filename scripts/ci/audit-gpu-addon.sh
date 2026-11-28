@@ -15,7 +15,7 @@
 #        scripts/ci/audit-gpu-addon.sh vulkan --desktop linux-x86_64
 #   --desktop: the JVM desktop module staged by kggml-runtime-vulkan/native/scripts/build-host.sh (issue #92) under
 #   build/native-vulkan-jvm/kggml/native-addons/<platform>/ggml-vulkan/: it must export ggml_backend_init, link the
-#   runtime's versioned libggml-base.so.0 and the system Vulkan loader libvulkan.so.1, and define no ggml core.
+#   runtime's versioned libggml-base.so.<major> and the system Vulkan loader libvulkan.so.1, and define no ggml core.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -54,9 +54,11 @@ if [[ "${1:-}" == --desktop ]]; then
   [[ "${kind}" == vulkan && "${platform}" == linux-* ]] || { echo "--desktop audits the Linux Vulkan module only" >&2; exit 2; }
   so="build/native-vulkan-jvm/kggml/native-addons/${platform}/ggml-vulkan/${module_name}"
   [[ -f "${so}" ]] || { echo "FAIL: ${so} missing" >&2; exit 1; }
+  ggml_major="$(sed -n 's/^set(KGGML_GGML_PINNED_VERSION "\([0-9]*\)\..*")$/\1/p' kggml-runtime/native/CMakeLists.txt)"
+  [[ -n "${ggml_major}" ]] || { echo "FAIL: KGGML_GGML_PINNED_VERSION not found in kggml-runtime/native/CMakeLists.txt" >&2; exit 1; }
   needed="$("${readelf_bin}" -d "${so}" | sed -n 's/.*(NEEDED).*\[\(.*\)\].*/\1/p')"
   bad=0
-  grep -qx 'libggml-base.so.0' <<<"${needed}" || { echo "FAIL: ${so} does not link libggml-base.so.0" >&2; bad=1; }
+  grep -qx "libggml-base.so.${ggml_major}" <<<"${needed}" || { echo "FAIL: ${so} does not link libggml-base.so.${ggml_major}" >&2; bad=1; }
   grep -qx 'libvulkan.so.1' <<<"${needed}" || { echo "FAIL: ${so} does not link the Vulkan loader libvulkan.so.1" >&2; bad=1; }
   if grep -Eq '^libggml(-cpu)?\.so' <<<"${needed}"; then echo "FAIL: ${so} links libggml / ggml-cpu" >&2; bad=1; fi
   symbols="$("${readelf_bin}" -Ws --dyn-syms "${so}")"

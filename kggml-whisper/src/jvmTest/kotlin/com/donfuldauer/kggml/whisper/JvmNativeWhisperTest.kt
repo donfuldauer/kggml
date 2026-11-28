@@ -73,8 +73,8 @@ class JvmNativeWhisperTest {
     @Test
     fun nativeInfoMatchesThePinnedUpstream() {
         val info = WhisperEngine.nativeInfo()
-        assertEquals("1.8.4", info.whisperCppVersion)
-        assertEquals("9386f239401074690479731c1e41683fbbeac557", info.whisperCppCommit)
+        assertEquals("1.9.6", info.whisperCppVersion)
+        assertEquals("79b11911d9d38c4be2fc7dc8b4efeff3324c090f", info.whisperCppCommit)
         assertFalse(info.hasCoreMl, "CoreML is only compiled into iOS builds")
         assertTrue(info.systemInfo.isNotEmpty())
     }

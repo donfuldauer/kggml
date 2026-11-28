@@ -26,9 +26,9 @@ if (MSVC)
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
-# Exact upstream whisper.cpp pin (tag v1.8.4). Keep in sync with the submodule gitlink and NOTICE.
-set(KGGML_WHISPER_UPSTREAM_COMMIT "9386f239401074690479731c1e41683fbbeac557")
-set(KGGML_WHISPER_UPSTREAM_VERSION "1.8.4")
+# Exact upstream whisper.cpp pin (v1.9.6-181-g79b11911). Keep in sync with the submodule gitlink and NOTICE.
+set(KGGML_WHISPER_UPSTREAM_COMMIT "79b11911d9d38c4be2fc7dc8b4efeff3324c090f")
+set(KGGML_WHISPER_UPSTREAM_VERSION "1.9.6")
 set(KGGML_WHISPER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/whisper.cpp")
 
 if (NOT EXISTS "${KGGML_WHISPER_SOURCE_DIR}/src/whisper.cpp")
@@ -151,7 +151,8 @@ set(KGGML_WHISPER_SOURCES
     src/resampler.cpp
     src/errors.cpp
     src/coreml_gate.cpp
-    "${KGGML_WHISPER_SOURCE_DIR}/src/whisper.cpp")
+    "${KGGML_WHISPER_SOURCE_DIR}/src/whisper.cpp"
+    "${KGGML_WHISPER_SOURCE_DIR}/src/aneforge/whisper-aneforge.cpp")
 
 if (KGGML_WHISPER_COREML)
     set(_kggml_coreml_dir "${KGGML_WHISPER_SOURCE_DIR}/src/coreml")

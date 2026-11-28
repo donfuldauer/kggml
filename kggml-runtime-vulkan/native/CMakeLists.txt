@@ -26,9 +26,12 @@ endif()
 
 set(KGGML_GGML_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../kggml-runtime/native/third_party/ggml")
 set(KGGML_VULKAN_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/Vulkan-Headers")
-foreach(_required IN ITEMS "${KGGML_GGML_SOURCE_DIR}/CMakeLists.txt" "${KGGML_VULKAN_HEADERS_DIR}/include/vulkan/vulkan.hpp")
+set(KGGML_SPIRV_HEADERS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/SPIRV-Headers")
+foreach(_required IN ITEMS "${KGGML_GGML_SOURCE_DIR}/CMakeLists.txt"
+                           "${KGGML_VULKAN_HEADERS_DIR}/include/vulkan/vulkan.hpp"
+                           "${KGGML_SPIRV_HEADERS_DIR}/include/spirv/unified1/spirv.hpp")
     if (NOT EXISTS "${_required}")
-        message(FATAL_ERROR "missing ${_required}: run `git submodule update --init` (ggml and Vulkan-Headers)")
+        message(FATAL_ERROR "missing ${_required}: run `git submodule update --init` (ggml, Vulkan-Headers, SPIRV-Headers)")
     endif()
 endforeach()
 
@@ -76,6 +79,21 @@ if (NOT Vulkan_LIBRARY OR NOT Vulkan_GLSLC_EXECUTABLE)
                         "Found library='${Vulkan_LIBRARY}' glslc='${Vulkan_GLSLC_EXECUTABLE}'")
 endif()
 endif()
+
+# ggml-vulkan (since ggml v1.1.0) requires find_package(SPIRV-Headers CONFIG REQUIRED) for spirv/unified1/spirv.hpp.
+# Provide a local CMake config backed by the pinned Khronos SPIRV-Headers submodule so Android NDK, Linux, and Windows
+# builds all resolve the exact same headers without relying on an OS package.
+set(_spirv_cmake_dir "${CMAKE_CURRENT_BINARY_DIR}/spirv-headers-cmake")
+file(MAKE_DIRECTORY "${_spirv_cmake_dir}")
+file(CONFIGURE OUTPUT "${_spirv_cmake_dir}/SPIRV-HeadersConfig.cmake" CONTENT
+"if (NOT TARGET SPIRV-Headers::SPIRV-Headers)
+    add_library(SPIRV-Headers::SPIRV-Headers INTERFACE IMPORTED)
+    set_target_properties(SPIRV-Headers::SPIRV-Headers PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES \"${KGGML_SPIRV_HEADERS_DIR}/include\")
+endif()
+set(SPIRV-Headers_FOUND TRUE)
+")
+set(SPIRV-Headers_DIR "${_spirv_cmake_dir}" CACHE PATH "" FORCE)
 
 # ggml: only the Vulkan backend, as a GGML_BACKEND_DL module.
 set(BUILD_SHARED_LIBS     ON  CACHE BOOL "" FORCE)

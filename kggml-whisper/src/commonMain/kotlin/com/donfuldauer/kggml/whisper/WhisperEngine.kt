@@ -621,7 +621,7 @@ public class WhisperEngine internal constructor(
  * Version and capability information of the native whisper library.
  *
  * @property moduleVersion Kggml whisper module version, e.g. `"0.1.0"`.
- * @property whisperCppVersion pinned upstream whisper.cpp release, e.g. `"1.8.4"`.
+ * @property whisperCppVersion pinned upstream whisper.cpp release, e.g. `"1.9.6"`.
  * @property whisperCppCommit full upstream whisper.cpp commit SHA (see `NOTICE`).
  * @property systemInfo `whisper_print_system_info()` (CPU features of this build).
  * @property hasCoreMl `true` if the Core ML encoder is compiled in (iOS builds).
