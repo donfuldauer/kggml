@@ -4,9 +4,10 @@
 
 - `stable-diffusion.cpp` at **`3b4d26f3d92c8db0199d7326f66260f4c18f4b41`** (2026-05-17, no release tag; `git describe`
   = `master-612-d7ecbe1-2-g3b4d26f`; git submodule `third_party/stable-diffusion.cpp`, recorded in `NOTICE`). It is
-  the newest commit whose own `ggml` submodule is still **upstream** ggml (`404fcb9d`, two commits behind the
-  `:kggml-runtime` pin ggml v0.9.9 `a04eea07`); later commits switch to leejet's ggml fork with custom ops that the
-  shared runtime does not have. Every translation unit of upstream's `stable-diffusion` library target is compiled
+  the newest commit whose own `ggml` submodule is still **upstream** ggml (`404fcb9d`); later commits switch to
+  leejet's ggml fork (`ggml-ext.h` / custom ops) that the shared runtime does not have. A generated build-time header
+  shim (`sd_ggml_compat.h`) maps the removed `ggml_*_set_prec` helpers to `ggml_prec_set_acc` so it links cleanly
+  against `:kggml-runtime` ggml v1.1.1 (`bb877c0c`). Every translation unit of upstream's `stable-diffusion` library target is compiled
   (`src/*.cpp`, `src/model_io/*.cpp`, `src/tokenizers/*.cpp`, `src/tokenizers/vocab/*.cpp`, the same GLOB as its
   `CMakeLists.txt`) plus `thirdparty/zip.c` (kuba--/zip + miniz, for `.ckpt` files); `json.hpp` and `darts.h` are
   header-only. `sd_version()` / `sd_commit()` are baked from the pin, not from the checkout.

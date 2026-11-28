@@ -87,9 +87,9 @@ internal class FakeRuntimeBridge(
 
     override fun runtimeVersion(): String = "1.0.0"
 
-    override fun ggmlVersion(): String = "0.9.9"
+    override fun ggmlVersion(): String = "1.1.1"
 
-    override fun ggmlCommit(): String = "a04eea0761a85d18f3f504d6ab970c5c9dce705f"
+    override fun ggmlCommit(): String = "bb877c0c51f38c52ee2d5e41d58e3d0c20f3fed4"
 
     override fun ggmlBuildCommit(): String = "unknown"
 

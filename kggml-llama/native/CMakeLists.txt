@@ -27,10 +27,10 @@ if (MSVC)
     add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
-# Exact upstream llama.cpp pin (release tag b8598, "sync : ggml" = ggml v0.9.9, the :kggml-runtime pin).
+# Exact upstream llama.cpp pin (release tag b12816, matching ggml v1.1.1, the :kggml-runtime pin).
 # libmtmd is built from the same commit (tools/mtmd). Keep in sync with the submodule gitlink and NOTICE.
-set(KGGML_LLAMA_UPSTREAM_COMMIT "9281dd135d6f175ceacca7d3a3ec440012264cfe")
-set(KGGML_LLAMA_UPSTREAM_VERSION "b8598")
+set(KGGML_LLAMA_UPSTREAM_COMMIT "7b74cb92d67384373e87512f4ffd2dbef756b944")
+set(KGGML_LLAMA_UPSTREAM_VERSION "b12816")
 set(KGGML_LLAMA_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/llama.cpp")
 
 if (NOT EXISTS "${KGGML_LLAMA_SOURCE_DIR}/src/llama.cpp" OR NOT EXISTS "${KGGML_LLAMA_SOURCE_DIR}/tools/mtmd/mtmd.cpp")
@@ -131,7 +131,7 @@ endif()
 
 # libllama: every translation unit of upstream src/CMakeLists.txt (src/*.cpp + src/models/*.cpp; verified equal
 # to the upstream list at the pinned commit). libmtmd: the library sources of upstream tools/mtmd/CMakeLists.txt
-# (the CLI / debug executables are not built).
+# (the CLI / debug executables and ffmpeg video helper are not built).
 file(GLOB _kggml_llama_src CONFIGURE_DEPENDS
     "${KGGML_LLAMA_SOURCE_DIR}/src/*.cpp"
     "${KGGML_LLAMA_SOURCE_DIR}/src/models/*.cpp")
@@ -142,8 +142,21 @@ set(_kggml_mtmd_src
     "${_kggml_mtmd_dir}/mtmd-audio.cpp"
     "${_kggml_mtmd_dir}/mtmd-image.cpp"
     "${_kggml_mtmd_dir}/mtmd-helper.cpp"
-    "${_kggml_mtmd_dir}/clip.cpp"
+    "${_kggml_mtmd_dir}/mtmd-helper-gen.cpp"
+    "${_kggml_mtmd_dir}/mtmd-model.cpp"
+    "${_kggml_mtmd_dir}/mtmd-subcontext.cpp"
+    "${_kggml_mtmd_dir}/mtmd-graph.cpp"
+    "${KGGML_LLAMA_SOURCE_DIR}/vendor/hash/hash.cpp"
+    "${KGGML_LLAMA_SOURCE_DIR}/vendor/hash/sha256/sha256.c"
     ${_kggml_mtmd_models})
+
+# Upstream src/llama.cpp includes the configured llama-version.h (from src/llama-version.h.in).
+set(LLAMA_VERSION "${KGGML_LLAMA_UPSTREAM_VERSION}")
+string(SUBSTRING "${KGGML_LLAMA_UPSTREAM_COMMIT}" 0 9 LLAMA_BUILD_COMMIT)
+configure_file(
+    "${KGGML_LLAMA_SOURCE_DIR}/src/llama-version.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/llama-version.h"
+    @ONLY)
 
 set(_kggml_own_sources
     src/kggml_llama.cpp
@@ -161,9 +174,11 @@ target_include_directories(kggml_llama
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_BINARY_DIR}
         ${KGGML_LLAMA_SOURCE_DIR}/src
         ${KGGML_LLAMA_SOURCE_DIR}
-        ${KGGML_LLAMA_SOURCE_DIR}/vendor)
+        ${KGGML_LLAMA_SOURCE_DIR}/vendor
+        ${KGGML_LLAMA_SOURCE_DIR}/vendor/hash)
 
 target_compile_definitions(kggml_llama
     PRIVATE
@@ -172,6 +187,7 @@ target_compile_definitions(kggml_llama
         KGGML_LLAMA_VERSION_STRING="${PROJECT_VERSION}"
         KGGML_LLAMA_UPSTREAM_VERSION="${KGGML_LLAMA_UPSTREAM_VERSION}"
         KGGML_LLAMA_UPSTREAM_COMMIT="${KGGML_LLAMA_UPSTREAM_COMMIT}"
+        _USE_MATH_DEFINES
         $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS>
         $<$<BOOL:${KGGML_LLAMA_TEST_HOOKS}>:KGGML_LLAMA_TEST_HOOKS=1>
     PUBLIC

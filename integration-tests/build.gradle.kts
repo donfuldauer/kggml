@@ -70,6 +70,12 @@ tasks.named<Test>("jvmTest") {
     hostLibDirs.values.forEach { (dir, _) -> inputs.files(fileTree(dir)).withPropertyName("nativeLibs-${dir.parentFile.name}").optional() }
     // One test JVM loads every engine: one process == the one shared ggml runtime under test.
     maxParallelForks = 1
+    // Cap glibc per-thread malloc arenas on Linux: each EngineCoexistenceTest cycle spawns fresh single-threaded
+    // engine executors that allocate and free ~32 MB of ggml compute buffers (below glibc's 32 MB dynamic mmap
+    // threshold), which otherwise retains freed pages across up to 8*nproc arenas and looks like RSS growth.
+    if (System.getenv("MALLOC_ARENA_MAX") == null) {
+        environment("MALLOC_ARENA_MAX", "2")
+    }
     systemProperty("kggml.test.requireNative", requireNative.toString())
     inputs.property("kggml.requireNative", requireNative)
     testLogging {

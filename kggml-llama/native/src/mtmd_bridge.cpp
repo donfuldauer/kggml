@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -86,13 +87,19 @@ kggml_status make_bitmap(mtmd_context * ctx, const kggml_llama_image & image, in
             out.reset(mtmd_bitmap_init(image.width, image.height, image.data));
             break;
         }
-        case KGGML_LLAMA_IMAGE_ENCODED:
-            out.reset(mtmd_helper_bitmap_init_from_buf(ctx, image.data, image.size));
+        case KGGML_LLAMA_IMAGE_ENCODED: {
+            const mtmd_helper_bitmap_wrapper wrapped = mtmd_helper_bitmap_init_from_buf(
+                ctx, image.data, image.size, false, mtmd_helper_init_opt_default());
+            if (wrapped.video_ctx != nullptr) {
+                mtmd_helper_video_free(wrapped.video_ctx);
+            }
+            out.reset(wrapped.bitmap);
             if (!out) {
                 return fail(KGGML_STATUS_INVALID_ARGUMENT,
                             (where + "could not decode the encoded image / audio bytes").c_str());
             }
             break;
+        }
         default:
             return fail(KGGML_STATUS_INVALID_ARGUMENT,
                         (where + "unknown format " + std::to_string(image.format)).c_str());
@@ -237,14 +244,23 @@ KGGML_LLAMA_API kggml_status kggml_llama_mtmd_tokenize(kggml_llama_mtmd * mtmd, 
         result->n_images = n_images;
         result->chunks.reset(mtmd_input_chunks_init());
         if (!result->chunks) return fail(KGGML_STATUS_OUT_OF_MEMORY, "mtmd_input_chunks_init failed");
-        mtmd_input_text text{prompt, add_special != 0, parse_special != 0};
+        mtmd_input_text text{prompt, std::strlen(prompt), add_special != 0, parse_special != 0};
         const int32_t tok = mtmd_tokenize(mtmd->ctx, result->chunks.get(), &text, bitmaps.data(), bitmaps.size());
-        if (tok == 1) {
-            return fail(KGGML_STATUS_INVALID_ARGUMENT,
-                        ("the number of media markers in the prompt does not match n_images = " + std::to_string(n_images))
-                            .c_str());
-        }
         if (tok != 0) {
+            const std::string marker = mtmd_default_marker();
+            const std::string prompt_str(prompt, text.text_len);
+            size_t marker_count = 0;
+            if (!marker.empty()) {
+                for (size_t pos = 0; (pos = prompt_str.find(marker, pos)) != std::string::npos; pos += marker.size()) {
+                    ++marker_count;
+                }
+            }
+            if (tok == 1 || marker_count != static_cast<size_t>(n_images)) {
+                return fail(KGGML_STATUS_INVALID_ARGUMENT,
+                            ("the number of media markers in the prompt does not match n_images = " +
+                             std::to_string(n_images))
+                                .c_str());
+            }
             return fail(KGGML_STATUS_INVALID_ARGUMENT, ("image preprocessing failed (mtmd_tokenize = " +
                                                         std::to_string(tok) + ")").c_str());
         }

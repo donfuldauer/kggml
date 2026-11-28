@@ -1,8 +1,8 @@
 # kggml-runtime native layer
 
 This is the CMake build for the one shared `ggml` runtime used by every Kggml engine. It builds upstream
-[`ggml`](https://github.com/ggml-org/ggml), pinned to `v0.9.9` /
-`a04eea0761a85d18f3f504d6ab970c5c9dce705f` (see `NOTICE`), into **shared** libraries. It also builds the
+[`ggml`](https://github.com/ggml-org/ggml), pinned to `v1.1.1` /
+`bb877c0c51f38c52ee2d5e41d58e3d0c20f3fed4` (see `NOTICE`), into **shared** libraries. It also builds the
 `kggml_runtime` C ABI. Engines (`whisper.cpp`, `llama.cpp`, `stable-diffusion.cpp`) link these libraries
 dynamically and never carry their own copy of ggml.
 

@@ -123,9 +123,9 @@ internal class FakeWhisperBridge(
 
     override fun moduleVersion(): String = "1.0.0"
 
-    override fun upstreamVersion(): String = "1.8.4"
+    override fun upstreamVersion(): String = "1.9.6"
 
-    override fun upstreamCommit(): String = "9386f239401074690479731c1e41683fbbeac557"
+    override fun upstreamCommit(): String = "79b11911d9d38c4be2fc7dc8b4efeff3324c090f"
 
     override fun systemInfo(): String = "FAKE"
 

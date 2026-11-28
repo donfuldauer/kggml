@@ -2,9 +2,10 @@
 
 `libkggml_whisper` (`KggmlWhisper.framework` on iOS) is one shared library that contains:
 
-- `whisper.cpp` **v1.8.4** (`9386f239401074690479731c1e41683fbbeac557`, git submodule `third_party/whisper.cpp`,
-  recorded in `NOTICE`). Only `src/whisper.cpp` (plus `src/coreml/*` on iOS) is compiled. The vendored `ggml/`
-  directory and whisper.cpp's own `CMakeLists.txt` are never used.
+- `whisper.cpp` **v1.9.6** (`79b11911d9d38c4be2fc7dc8b4efeff3324c090f`, `v1.9.6-181-g79b11911`, git submodule
+  `third_party/whisper.cpp`, recorded in `NOTICE`). Only `src/whisper.cpp` and `src/aneforge/whisper-aneforge.cpp`
+  (plus `src/coreml/*` on iOS) are compiled. The vendored `ggml/` directory and whisper.cpp's own `CMakeLists.txt` are
+  never used.
 - The Kggml C ABI in [`include/kggml_whisper.h`](include/kggml_whisper.h): backend toggle, CoreML gate, abort
   plumbing, PCM conversion, streaming states, and FFI error mapping.
 

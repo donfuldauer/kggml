@@ -312,8 +312,8 @@ class RuntimeClientTest {
         assertEquals(
             RuntimeInfo(
                 runtimeVersion = "1.0.0",
-                ggmlVersion = "0.9.9",
-                ggmlCommit = "a04eea0761a85d18f3f504d6ab970c5c9dce705f",
+                ggmlVersion = "1.1.1",
+                ggmlCommit = "bb877c0c51f38c52ee2d5e41d58e3d0c20f3fed4",
                 ggmlBuildCommit = "unknown",
                 hasCoreMl = false,
             ),

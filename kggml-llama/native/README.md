@@ -2,12 +2,12 @@
 
 `libkggml_llama` (`KggmlLlama.framework` on iOS) is one shared library that contains:
 
-- `llama.cpp` release **b8598** (`9281dd135d6f175ceacca7d3a3ec440012264cfe`, git submodule `third_party/llama.cpp`,
-  recorded in `NOTICE`). That commit is the llama.cpp "sync : ggml" for ggml **v0.9.9**, the exact ggml the
-  `:kggml-runtime` pins, so llama.cpp is compiled against the same public ggml API it was released with. Every
-  `src/*.cpp` and `src/models/*.cpp` translation unit of upstream `src/CMakeLists.txt` is compiled (= `libllama`).
-- `libmtmd` from the same commit: the library sources of `tools/mtmd/` (`mtmd*.cpp`, `clip.cpp`, `models/*.cpp`,
-  plus the vendored `stb_image` / `miniaudio` headers it decodes media with). The CLI / debug tools are not built.
+- `llama.cpp` release **b12816** (`7b74cb92d67384373e87512f4ffd2dbef756b944`, git submodule `third_party/llama.cpp`,
+  recorded in `NOTICE`). Its vendored `ggml/include/*` matches ggml **v1.1.1**, the exact ggml `:kggml-runtime` pins,
+  so llama.cpp is compiled against the same public ggml API it was released with. Every `src/*.cpp` and
+  `src/models/*.cpp` translation unit of upstream `src/CMakeLists.txt` is compiled (= `libllama`).
+- `libmtmd` from the same commit: the library sources of `tools/mtmd/` (`mtmd*.cpp`, `models/*.cpp`, plus the vendored
+  `stb_image` / `miniaudio` headers it decodes media with). The CLI / debug tools and ffmpeg video helper are not built.
 - The Kggml C ABI in [`include/kggml_llama.h`](include/kggml_llama.h): model / context lifecycle, backend selection,
   abort plumbing, batched decoding, KV-cache state serialization, GBNF grammar samplers, embeddings, in-memory
   multimodal evaluation and FFI error mapping.

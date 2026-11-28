@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Builds the JVM desktop GPU add-on (issue #92): ggml's Vulkan backend as a loadable backend module for this Linux
-# host (libggml-vulkan.so.0, linked against the same ggml as :kggml-runtime), and stages it for the
+# host (libggml-vulkan.so, linked against the same ggml as :kggml-runtime), and stages it for the
 # :kggml-runtime-vulkan jar at <repo>/build/native-vulkan-jvm/kggml/native-addons/<platform>/ggml-vulkan/.
 #
 # Requires the Vulkan loader development library and glslc (Debian/Ubuntu: apt install libvulkan-dev glslc; without a
 # glslc on PATH, the Android NDK's shader-tools/<host>/glslc from ANDROID_NDK_HOME is used), a C/C++
-# compiler, CMake + Ninja and the ggml + Vulkan-Headers submodules. Windows: build the windows-x64 preset from an MSVC
+# compiler, CMake + Ninja and the ggml + Vulkan-Headers + SPIRV-Headers submodules. Windows: build the windows-x64 preset from an MSVC
 # developer prompt with the Vulkan SDK installed, then run this script with --stage-only from Git Bash.
 #
 # Usage: kggml-runtime-vulkan/native/scripts/build-host.sh [--stage-only]
