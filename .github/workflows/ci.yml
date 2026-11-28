@@ -7,7 +7,7 @@ name: CI (Phase 1 cross-platform matrix)
 # Windows scripts/toolchains -> Windows; shared KMP/C++/CMake/Gradle -> all three).
 #   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + llama (llama.cpp + libmtmd) + diffusion
 #              (stable-diffusion.cpp) + CTest + ggml / upstream pins + host linkage audits, the linux-aarch64 cross
-#              build with CTest under qemu, `./gradlew check` (commonTest, jvmTest, androidUnitTest, BOM checks, sample
+#              build with CTest under qemu, `./gradlew check` (commonTest, jvmTest, testAndroidHostTest, BOM checks, sample
 #              audits) with native-backed tests mandatory (incl. the :integration-tests dual-engine coexistence suite:
 #              whisper + llama inferring concurrently in one JVM on the single shared ggml runtime, plus diffusion),
 #              Android NDK cross-compile + linkage audits, the GPU add-on builds and the desktop Vulkan test on
@@ -193,7 +193,7 @@ jobs:
           ./kggml-diffusion/native/scripts/build-host.sh
           ./scripts/ci/audit-diffusion-linkage.sh host
 
-      - name: Gradle check (commonTest, jvmTest, androidUnitTest, dual-engine coexistence, showcase UI tests, BOM) with native tests required
+      - name: Gradle check (commonTest, jvmTest, testAndroidHostTest, dual-engine coexistence, showcase UI tests, BOM) with native tests required
         run: ./gradlew check $NATIVE_GRADLE_ARGS
 
       # Same script as release.yml: every publication signed (throwaway key), then POM/.module/BOM, sources/javadoc,
@@ -247,9 +247,9 @@ jobs:
       - name: Assemble samples (Android APKs, desktop jar) via kggml-bom
         run: >
           ./gradlew --console=plain
-          :samples:kggml-showcase:assembleDebug
+          :samples:kggml-showcase:androidApp:assembleDebug
           :samples:kggml-showcase:desktopJar
-          :samples:whisper-only-minimal:assembleDebug
+          :samples:whisper-only-minimal:androidApp:assembleDebug
 
       - name: Print JVM crash reports on failure
         if: failure()

@@ -222,13 +222,14 @@ CI_RULES: tuple[CiRule, ...] = (
     CiRule(
         category="android-sources-and-config",
         pattern=re.compile(
-            r"(?:^(?:.+/)?src/android(?:Main|UnitTest|SharedTest|InstrumentedTest)/|"
+            r"(?:^(?:.+/)?src/android(?:Main|UnitTest|HostTest|SharedTest|InstrumentedTest|DeviceTest)/|"
+            r"^samples/[^/]+/androidApp/|"
             r"(?:^|/)AndroidManifest\.xml$|"
             r"(?:^|/)consumer-rules\.pro$|"
             r"(?:^|/)robolectric\.properties$)"
         ),
         platforms=frozenset({"linux"}),
-        description="Android-only Kotlin sources, tests, manifests, ProGuard rules, and Robolectric config",
+        description="Android-only Kotlin sources, tests, sample androidApp modules, manifests, ProGuard rules, and Robolectric config",
     ),
     CiRule(
         category="linux-android-native-only",

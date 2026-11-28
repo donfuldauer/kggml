@@ -1,3 +1,5 @@
+import com.donfuldauer.kggml.buildlogic.wireAndroidJniLibs
+
 plugins {
     alias(libs.plugins.kggml.kmp.library)
 }
@@ -29,15 +31,14 @@ val hostOs = System.getProperty("os.name").lowercase()
 val desktopModuleHost = hostOs.startsWith("linux") || hostOs.startsWith("windows")
 
 kotlin {
+    android {
+        namespace = "com.donfuldauer.kggml.runtime.vulkan"
+    }
     sourceSets {
         commonMain.dependencies {
             api(project(":kggml-runtime"))
         }
     }
-}
-
-android {
-    namespace = "com.donfuldauer.kggml.runtime.vulkan"
 }
 
 val buildNativeAndroid by tasks.registering(Exec::class) {
@@ -65,8 +66,7 @@ val extraJvmAddonResources: List<File> = providers.gradleProperty("kggml.extraJv
     ?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.map { file(it) }.orEmpty()
 
 if (bundleNative) {
-    android.sourceSets.getByName("main").jniLibs.srcDir(androidJniLibsDir)
-    tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeAndroid) }
+    wireAndroidJniLibs(buildNativeAndroid, androidJniLibsDir)
     val jvmResources = kotlin.sourceSets.getByName("jvmMain").resources
     if (desktopModuleHost) jvmResources.srcDir(buildNativeHost)
     extraJvmAddonResources.forEach { dir ->

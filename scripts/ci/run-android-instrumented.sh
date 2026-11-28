@@ -76,14 +76,16 @@ case "${abi}" in
 esac
 
 ./gradlew --console=plain --continue \
-  :kggml-core-api:connectedDebugAndroidTest \
-  :kggml-runtime:connectedDebugAndroidTest \
-  :kggml-runtime-vulkan:connectedDebugAndroidTest \
-  :kggml-runtime-opencl:connectedDebugAndroidTest \
-  :kggml-whisper:connectedDebugAndroidTest \
-  :kggml-llama:connectedDebugAndroidTest \
-  :kggml-diffusion:connectedDebugAndroidTest \
-  :kggml-model-manager:connectedDebugAndroidTest \
-  :samples:whisper-only-minimal:connectedDebugAndroidTest \
-  :samples:kggml-showcase:connectedDebugAndroidTest \
+  :kggml-core-api:connectedAndroidDeviceTest \
+  :kggml-runtime:connectedAndroidDeviceTest \
+  :kggml-runtime-vulkan:connectedAndroidDeviceTest \
+  :kggml-runtime-opencl:connectedAndroidDeviceTest \
+  :kggml-whisper:connectedAndroidDeviceTest \
+  :kggml-llama:connectedAndroidDeviceTest \
+  :kggml-diffusion:connectedAndroidDeviceTest \
+  :kggml-model-manager:connectedAndroidDeviceTest \
+  :samples:whisper-only-minimal:connectedAndroidDeviceTest \
+  :samples:whisper-only-minimal:androidApp:connectedDebugAndroidTest \
+  :samples:kggml-showcase:connectedAndroidDeviceTest \
+  :samples:kggml-showcase:androidApp:connectedDebugAndroidTest \
   -Pkggml.bundleNative=true -Pkggml.requireNative=true "$@"

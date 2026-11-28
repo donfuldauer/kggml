@@ -110,7 +110,7 @@ Progress callbacks are delivered from native code on the engine thread and forwa
   engines, a throwing progress listener, invalid JNI arguments, and the native live-context count returning to its
   baseline. It needs the host build (`native/scripts/build-host.sh`); `-Pkggml.requireNative=true` turns a missing
   library into a failure instead of a skip.
-- `androidUnitTest`: the Android binding degrades into a typed `NativeFailureException` on the host JVM, and the Kotlin
+- `androidHostTest`: the Android binding degrades into a typed `NativeFailureException` on the host JVM, and the Kotlin
   JNI declarations, the C++ entry points and the progress callback signature cannot drift apart.
 
 ## Manual verification (real model, physical devices)

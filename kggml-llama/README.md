@@ -83,7 +83,7 @@ concurrently. `abortActiveGeneration()` and `close()` are safe from any thread.
   temporary file is written and that projector / chunk objects return to their live-object baseline.
   `jvmTest` needs the host build (`native/scripts/build-host.sh`); `-Pkggml.requireNative=true` turns a missing
   library into a failure instead of a skip.
-- `androidUnitTest`: the Android binding degrades into a typed `NativeFailureException` on the host JVM.
+- `androidHostTest`: the Android binding degrades into a typed `NativeFailureException` on the host JVM.
 
 ## Manual verification (real models, physical devices)
 

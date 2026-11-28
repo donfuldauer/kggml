@@ -50,5 +50,5 @@ CI tests the module on Mesa's lavapipe.
   -Pkggml.test.vulkanAddonDir=build/native-vulkan-jvm/kggml/native-addons/linux-x86_64/ggml-vulkan
 ./kggml-runtime-vulkan/native/scripts/build-android.sh arm64-v8a x86_64   # -> build/native-android-vulkan-jniLibs
 ./scripts/ci/audit-gpu-addon.sh vulkan arm64-v8a x86_64                       # dependencies, exports, 16 KB alignment
-./gradlew :kggml-runtime-vulkan:connectedDebugAndroidTest -Pkggml.bundleNative=true -Pkggml.requireNative=true
+./gradlew :kggml-runtime-vulkan:connectedAndroidDeviceTest -Pkggml.bundleNative=true -Pkggml.requireNative=true
 ```

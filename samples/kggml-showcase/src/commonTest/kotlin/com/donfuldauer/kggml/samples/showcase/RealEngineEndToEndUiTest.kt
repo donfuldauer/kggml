@@ -8,7 +8,7 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import com.donfuldauer.kggml.core.ComputeBackend
@@ -37,6 +37,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import kotlin.time.Duration.Companion.minutes
 
 /**
  * End-to-end UI tests of the showcase against the REAL SDK: the production engine factories ([WhisperTranscriberFactory],
@@ -131,7 +132,7 @@ class RealEngineEndToEndUiTest : UiTestBase() {
     private fun SemanticsNodeInteraction.text(): String = fetchSemanticsNode().config.texts()
 
     @Test
-    fun backendInspectorReportsTheRealRuntime() = runComposeUiTest {
+    fun backendInspectorReportsTheRealRuntime() = runComposeUiTest(testTimeout = 5.minutes) {
         if (!nativeEnginesAvailable("backendInspectorReportsTheRealRuntime")) return@runComposeUiTest
         showRealShowcase(Files(NativeTestEnvironment.newTempDirectory()), ShowcaseDestination.BACKEND_INSPECTOR)
         awaitText("inspector-metadata", "Kggml runtime:")
@@ -142,7 +143,7 @@ class RealEngineEndToEndUiTest : UiTestBase() {
     }
 
     @Test
-    fun whisperStudioTranscribesAWavFileWithTheRealEngine() = runComposeUiTest {
+    fun whisperStudioTranscribesAWavFileWithTheRealEngine() = runComposeUiTest(testTimeout = 5.minutes) {
         if (!nativeEnginesAvailable("whisperStudioTranscribesAWavFileWithTheRealEngine")) return@runComposeUiTest
         val files = Files(NativeTestEnvironment.newTempDirectory())
         showRealShowcase(files, ShowcaseDestination.WHISPER_STUDIO)
@@ -161,7 +162,7 @@ class RealEngineEndToEndUiTest : UiTestBase() {
     }
 
     @Test
-    fun whisperStudioStreamsLiveAudioThroughTheRealEngine() = runComposeUiTest {
+    fun whisperStudioStreamsLiveAudioThroughTheRealEngine() = runComposeUiTest(testTimeout = 5.minutes) {
         if (!nativeEnginesAvailable("whisperStudioStreamsLiveAudioThroughTheRealEngine")) return@runComposeUiTest
         // 48 kHz stereo like a real microphone: the native resampler / downmixer has to convert it to 16 kHz mono.
         val mic = FakeAudioCapture(CaptureFormat(48_000, 2))
@@ -182,7 +183,7 @@ class RealEngineEndToEndUiTest : UiTestBase() {
     }
 
     @Test
-    fun llmChatLoadsTheModelAndStreamsARealReply() = runComposeUiTest {
+    fun llmChatLoadsTheModelAndStreamsARealReply() = runComposeUiTest(testTimeout = 5.minutes) {
         if (!nativeEnginesAvailable("llmChatLoadsTheModelAndStreamsARealReply")) return@runComposeUiTest
         showRealShowcase(Files(NativeTestEnvironment.newTempDirectory()), ShowcaseDestination.LLM_CHAT)
         click("${LlmChatTags.BACKEND}-cpu_only")
@@ -215,7 +216,7 @@ class RealEngineEndToEndUiTest : UiTestBase() {
     }
 
     @Test
-    fun llmStructuredOutputAndEmbeddingsRunOnTheRealEngine() = runComposeUiTest {
+    fun llmStructuredOutputAndEmbeddingsRunOnTheRealEngine() = runComposeUiTest(testTimeout = 5.minutes) {
         if (!nativeEnginesAvailable("llmStructuredOutputAndEmbeddingsRunOnTheRealEngine")) return@runComposeUiTest
         showRealShowcase(Files(NativeTestEnvironment.newTempDirectory()), ShowcaseDestination.LLM_CHAT)
         click("${LlmChatTags.BACKEND}-cpu_only")
@@ -249,7 +250,7 @@ class RealEngineEndToEndUiTest : UiTestBase() {
     }
 
     @Test
-    fun modelManagerInspectsARealGgufHeader() = runComposeUiTest {
+    fun modelManagerInspectsARealGgufHeader() = runComposeUiTest(testTimeout = 5.minutes) {
         // Pure-Kotlin header parsing (no native library): runs on every platform, Robolectric included.
         val files = Files(NativeTestEnvironment.newTempDirectory())
         showRealShowcase(files, ShowcaseDestination.MODEL_MANAGER)
@@ -261,7 +262,7 @@ class RealEngineEndToEndUiTest : UiTestBase() {
     }
 
     @Test
-    fun diffusionStudioSurfacesATypedLoadErrorForAnInvalidModel() = runComposeUiTest {
+    fun diffusionStudioSurfacesATypedLoadErrorForAnInvalidModel() = runComposeUiTest(testTimeout = 5.minutes) {
         if (!nativeEnginesAvailable("diffusionStudioSurfacesATypedLoadErrorForAnInvalidModel")) return@runComposeUiTest
         showRealShowcase(Files(NativeTestEnvironment.newTempDirectory()), ShowcaseDestination.DIFFUSION_STUDIO)
         click("${DiffusionStudioTags.BACKEND}-cpu_only")

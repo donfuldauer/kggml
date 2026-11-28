@@ -6,14 +6,19 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -77,6 +82,35 @@ private class CloseableRejectingDispatcher(rejection: Throwable) : RejectingDisp
 
     override fun close() {
         closeCount++
+    }
+}
+
+/**
+ * Simulates JVM's `ExecutorCoroutineDispatcherImpl` rejection: once closed, [dispatch] cancels the
+ * dispatched child context and forwards [block] to [delegate] so the cancelled continuation resumes
+ * without invoking the user block.
+ */
+private class CancellingAfterCloseDispatcher(
+    private val delegate: CoroutineDispatcher,
+    private val onFirstDispatch: () -> Unit = {},
+) : CoroutineDispatcher(), AutoCloseable {
+    private var firstDispatch = true
+    var isClosed = false
+        private set
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        if (firstDispatch) {
+            firstDispatch = false
+            onFirstDispatch()
+        }
+        if (isClosed) {
+            context.cancel(CancellationException("The task was rejected"))
+        }
+        delegate.dispatch(context, block)
+    }
+
+    override fun close() {
+        isClosed = true
     }
 }
 
@@ -247,5 +281,61 @@ class SerialExecutorTest {
             second.close()
         }
         assertFailsWith<IllegalStateException> { first.execute { } }
+    }
+
+    @Test
+    fun closeRacingWithDispatchMapsRejectionToIllegalStateAndKeepsCallerActive() = runTest {
+        lateinit var executor: SerialExecutor
+        val dispatcher = CancellingAfterCloseDispatcher(StandardTestDispatcher(testScheduler)) {
+            executor.close()
+        }
+        executor = SerialExecutor("racing-close") { dispatcher }
+        var blockRan = false
+
+        val e = assertFailsWith<IllegalStateException> {
+            executor.execute { blockRan = true }
+        }
+
+        assertTrue(e.message!!.contains("racing-close"))
+        assertFalse(blockRan)
+        assertTrue(coroutineContext.isActive)
+    }
+
+    @Test
+    fun cancellationInsideStartedBlockAfterCloseRemainsCancellationException() = runTest {
+        val executor = SerialExecutor("started-cancel", FakeFactory(this))
+        val e = assertFailsWith<CancellationException> {
+            executor.execute {
+                executor.close()
+                throw CancellationException("block cancelled")
+            }
+        }
+
+        assertEquals("block cancelled", e.message)
+        assertTrue(coroutineContext.isActive)
+    }
+
+    @Test
+    fun callerCancellationWinsOverConcurrentCloseDuringDispatch() = runTest {
+        lateinit var executor: SerialExecutor
+        lateinit var callerJob: Job
+        val dispatcher = CancellingAfterCloseDispatcher(StandardTestDispatcher(testScheduler)) {
+            callerJob.cancel(CancellationException("caller cancelled"))
+            executor.close()
+        }
+        executor = SerialExecutor("caller-cancel") { dispatcher }
+        var caught: Throwable? = null
+
+        callerJob = launch {
+            try {
+                executor.execute { }
+            } catch (e: Throwable) {
+                caught = e
+                throw e
+            }
+        }
+        advanceUntilIdle()
+
+        assertIs<CancellationException>(caught)
     }
 }

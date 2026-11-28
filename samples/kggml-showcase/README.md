@@ -131,7 +131,7 @@ callback.
 
 # Android (grant the microphone permission when asked; download models in the Models tab, or push one with adb and
 # type its path)
-./gradlew :samples:kggml-showcase:installDebug -Pkggml.bundleNative=true
+./gradlew :samples:kggml-showcase:androidApp:installDebug -Pkggml.bundleNative=true
 ```
 
 The desktop app passes `-Dkggml.{native,whisper.native,llama.native,diffusion.native}.path` for every host build
@@ -158,7 +158,8 @@ Support/kggml/models); a `ggml-tiny.en.bin` added to the app target as a resourc
 
 ```bash
 ./gradlew :samples:kggml-showcase:desktopTest -Pkggml.requireNative=true   # everything below on the desktop JVM
-./gradlew :samples:kggml-showcase:testDebugUnitTest                        # the same commonTest on Android (Robolectric)
+./gradlew :samples:kggml-showcase:testAndroidHostTest                      # the same commonTest on Android (Robolectric)
+./gradlew :samples:kggml-showcase:androidApp:testDebugUnitTest             # MainActivity tests on Android (Robolectric)
 ./gradlew :samples:kggml-showcase:iosSimulatorArm64Test                    # macOS, needs the four xcframeworks
 ./scripts/ci/run-android-instrumented.sh                                   # on a device / emulator, real native libraries
 ```
@@ -203,7 +204,7 @@ These need a person and real hardware, so they are listed in [`docs/MANUAL_VERIF
 
 ### Model Manager: real downloads on devices
 
-1. Install the showcase on a physical Android phone (`./gradlew :samples:kggml-showcase:installDebug
+1. Install the showcase on a physical Android phone (`./gradlew :samples:kggml-showcase:androidApp:installDebug
    -Pkggml.bundleNative=true`) and on an iPhone (host app as above); open **Models**.
 2. **Download** *Qwen2.5 0.5B Instruct Q4_K_M*. Expected: bytes / percent / progress bar advance; the row ends in
    *Installed* with *Unverified (no published SHA-256)*, a SHA-256 prefix, and metadata (`GGUF v3 · qwen2`,

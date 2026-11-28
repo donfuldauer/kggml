@@ -1,22 +1,26 @@
 [versions]
 kotlin = "2.4.21"
-agp = "8.10.1"
-android-compileSdk = "35"
+agp = "9.5.3"
+android-compileSdk = "37"
 android-minSdk = "26"
 jvmTarget = "17"
 kotlinx-coroutines = "1.11.0"
-compose-multiplatform = "1.8.2"
+compose-multiplatform = "1.12.2"
+compose-material3 = "1.12.0-alpha03"
 androidx-activity = "1.10.1"
 kover = "0.9.11"
 # Test-only: Android local (Robolectric) and instrumented tests of the samples.
-robolectric = "4.14.1"
+robolectric = "4.17"
+# Pre-instrumented Android API 34 jar matching `sdk=34` in samples' robolectric.properties; resolved by Gradle so
+# Robolectric runs offline (robolectric.offline=true) instead of hitting repo1.maven.org at test time (HTTP 429).
+robolectric-android-all = "14-robolectric-10818077-i7"
 androidx-test-core = "1.6.1"
 androidx-test-runner = "1.6.2"
 androidx-test-rules = "1.6.1"
 androidx-test-ext-junit = "1.2.1"
 androidx-test-espresso = "3.6.1"
-# AndroidX Compose UI that Compose Multiplatform 1.8.2 resolves to on Android (ui-test-junit4 / ui-test-manifest).
-androidx-compose-ui = "1.8.2"
+# AndroidX Compose UI that Compose Multiplatform 1.12.2 resolves to on Android (ui-test-junit4 / ui-test-manifest).
+androidx-compose-ui = "1.12.1"
 junit4 = "4.13.2"
 
 [libraries]
@@ -26,8 +30,14 @@ kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotl
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 kotlinx-coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+compose-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
+compose-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "compose-material3" }
+compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }
+compose-ui-test = { module = "org.jetbrains.compose.ui:ui-test", version.ref = "compose-multiplatform" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+robolectric-android-all-instrumented = { module = "org.robolectric:android-all-instrumented", version.ref = "robolectric-android-all" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidx-test-core" }
 androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidx-test-runner" }
 androidx-test-rules = { module = "androidx.test:rules", version.ref = "androidx-test-rules" }
@@ -39,7 +49,7 @@ junit4 = { module = "junit:junit", version.ref = "junit4" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
-android-library = { id = "com.android.library", version.ref = "agp" }
+android-kotlin-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

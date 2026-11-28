@@ -1,3 +1,5 @@
+import com.donfuldauer.kggml.buildlogic.wireAndroidJniLibs
+
 plugins {
     alias(libs.plugins.kggml.kmp.library)
 }
@@ -20,15 +22,14 @@ val androidJniLibsDir = rootBuildDir.dir("native-android-opencl-jniLibs")
 val buildAndroidScript = nativeDir.file("scripts/build-android.sh").asFile.absolutePath
 
 kotlin {
+    android {
+        namespace = "com.donfuldauer.kggml.runtime.opencl"
+    }
     sourceSets {
         commonMain.dependencies {
             api(project(":kggml-runtime"))
         }
     }
-}
-
-android {
-    namespace = "com.donfuldauer.kggml.runtime.opencl"
 }
 
 val buildNativeAndroid by tasks.registering(Exec::class) {
@@ -42,6 +43,5 @@ val buildNativeAndroid by tasks.registering(Exec::class) {
 }
 
 if (bundleNative) {
-    android.sourceSets.getByName("main").jniLibs.srcDir(androidJniLibsDir)
-    tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(buildNativeAndroid) }
+    wireAndroidJniLibs(buildNativeAndroid, androidJniLibsDir)
 }

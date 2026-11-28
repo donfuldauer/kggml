@@ -23,6 +23,13 @@ dependencyResolutionManagement {
                 includeGroupByRegex("androidx.*")
             }
         }
+        // Google's official Maven Central mirror, scoped strictly to Robolectric's large (~135 MB) pre-instrumented
+        // Android SDK jar; repo1.maven.org returns HTTP 429 on this artifact from shared CI runner IPs.
+        maven {
+            name = "mavenCentralGoogleMirror"
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2")
+            content { includeModule("org.robolectric", "android-all-instrumented") }
+        }
         mavenCentral()
         // Build-local repository populated by `publishAllPublicationsToKggmlVerificationRepository`.
         // Used only by `:kggml-bom:verifyBomConsumerResolution` to resolve Kggml coordinates
@@ -56,8 +63,11 @@ include(":integration-tests")
 // Unpublished README snippet compile check: consumes the SDK through the BOM like an external app.
 include(":docs-snippets")
 
-// Samples (never published).
+// Samples (never published). Android apps live in separate androidApp modules (AGP 9 forbids combining
+// com.android.application with org.jetbrains.kotlin.multiplatform in one module).
 include(
     ":samples:kggml-showcase",
+    ":samples:kggml-showcase:androidApp",
     ":samples:whisper-only-minimal",
+    ":samples:whisper-only-minimal:androidApp",
 )

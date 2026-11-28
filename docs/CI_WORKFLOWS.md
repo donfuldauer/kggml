@@ -47,7 +47,7 @@ platform, and `--verify-repo` enforces 100% parity across all tracked files.
 | `scripts-dev-other` | `^scripts/[^/]+\.sh$` (other top-level helper scripts) | None |
 | `apple-ios-sources` | `^(.+/)?src/(ios\|apple\|macos)(Main\|Test)/` | `macos` |
 | `apple-cinterop-and-xcode` | `\.(def\|swift\|pbxproj\|plist\|xcscheme\|xcworkspacedata\|xib\|storyboard\|entitlements\|metal\|m\|mm)$` or `^samples/[^/]+/iosApp/` | `macos` |
-| `android-sources-and-config` | `^(.+/)?src/android(Main\|UnitTest\|SharedTest\|InstrumentedTest)/`, `AndroidManifest.xml`, `consumer-rules.pro`, `robolectric.properties` | `linux` |
+| `android-sources-and-config` | `^(.+/)?src/android(Main\|UnitTest\|HostTest\|SharedTest\|InstrumentedTest\|DeviceTest)/`, `^samples/[^/]+/androidApp/`, `AndroidManifest.xml`, `consumer-rules.pro`, `robolectric.properties` | `linux` |
 | `linux-android-native-only` | `kggml-runtime-{vulkan,opencl}/native/**`, `aarch64-linux-gnu.cmake`, `kggml-*/native/jni/*.map` | `linux` |
 | `windows-native-toolchain` | `kggml-runtime/native/cmake/toolchains/arm64-windows-llvm.cmake` | `windows` |
 | `docs-snippets-sources` | `^docs-snippets/src/` (compiled in Linux `./gradlew check`) | `linux` |

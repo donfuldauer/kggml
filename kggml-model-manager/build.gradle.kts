@@ -1,3 +1,4 @@
+import com.android.build.api.withAndroid
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 
 plugins {
@@ -7,13 +8,17 @@ plugins {
 description = "Kggml optional model manager: resumable downloads, SHA-256 verification, RAM estimation."
 
 kotlin {
+    android {
+        namespace = "com.donfuldauer.kggml.models"
+    }
+
     // `jvmCommonMain` is shared by androidMain + jvmMain (java.io / java.nio file system, HttpURLConnection transport);
     // iosMain uses POSIX + NSURLSession instead. The module has no native C/C++ code of its own.
     @OptIn(ExperimentalKotlinGradlePluginApi::class)
     applyDefaultHierarchyTemplate {
         common {
             group("jvmCommon") {
-                withAndroidTarget()
+                withAndroid()
                 withJvm()
             }
         }
@@ -35,8 +40,4 @@ kotlin {
             implementation(libs.kotlinx.coroutines.test)
         }
     }
-}
-
-android {
-    namespace = "com.donfuldauer.kggml.models"
 }
