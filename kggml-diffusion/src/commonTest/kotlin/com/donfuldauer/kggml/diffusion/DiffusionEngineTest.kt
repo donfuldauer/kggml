@@ -8,6 +8,7 @@ import com.donfuldauer.kggml.core.ModelLoadException
 import com.donfuldauer.kggml.core.NativeFailureException
 import com.donfuldauer.kggml.core.OutOfMemoryException
 import com.donfuldauer.kggml.core.SerialDispatcherFactory
+import kotlin.concurrent.atomics.AtomicBoolean
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
@@ -63,9 +64,20 @@ class DiffusionEngineTest {
     private suspend fun DiffusionEngine.events(p: DiffusionGenerationParams = params) =
         withContext(Dispatchers.Default) { generate(p).toList() }
 
-    /** Blocks the fake sampler at [step] until an abort is latched (like a long denoising step). */
-    private fun FakeDiffusionBridge.blockAtStep(step: Int) {
-        onStep = { b, ctx, s -> if (s == step) while (!b.abortRequested(ctx)) { /* spin */ } }
+    /**
+     * Blocks the fake sampler at [step] until an abort is latched (like a long denoising step) and returns a signal
+     * that becomes `true` once [step] has been entered (after its progress callback and after the pre-loop abort
+     * check).
+     */
+    private fun FakeDiffusionBridge.blockAtStep(step: Int): AtomicBoolean {
+        val entered = AtomicBoolean(false)
+        onStep = { b, ctx, s ->
+            if (s == step) {
+                entered.store(true)
+                while (!b.abortRequested(ctx)) { /* spin */ }
+            }
+        }
+        return entered
     }
 
     // ---- lifecycle & configuration ----------------------------------------------------------------------
@@ -322,11 +334,11 @@ class DiffusionEngineTest {
     @Test
     fun cancellingTheCollectorAbortsAtTheNextStepBoundary() = runTest {
         val bridge = FakeDiffusionBridge()
-        bridge.blockAtStep(2)
+        val entered = bridge.blockAtStep(2)
         open(bridge).use { engine ->
             val received = ConcurrentLog<DiffusionEvent>()
             val job = launch(Dispatchers.Default) { engine.generate(params).collect { received.add(it) } }
-            awaitCondition { engine.isGenerating && received.items.size == 3 }
+            awaitCondition { engine.isGenerating && entered.load() && received.items.size == 3 }
             job.cancelAndJoin()
             assertEquals(listOf(0, 1, 2), received.items.map { assertIs<DiffusionEvent.Progress>(it).step })
             assertEquals(listOf(2), bridge.cancelledAtStep.items, "stopped right after the step that was computing")
@@ -342,10 +354,10 @@ class DiffusionEngineTest {
     @Test
     fun cancellingGenerateImageThrowsCancellationException() = runTest {
         val bridge = FakeDiffusionBridge()
-        bridge.blockAtStep(1)
+        val entered = bridge.blockAtStep(1)
         open(bridge).use { engine ->
             val result = async(Dispatchers.Default) { engine.generateImage(params) }
-            awaitCondition { engine.isGenerating && bridge.generates.items.isNotEmpty() }
+            awaitCondition { engine.isGenerating && entered.load() }
             result.cancel()
             assertFailsWith<CancellationException> { result.await() }
             awaitCondition { !engine.isGenerating && bridge.cancelledAtStep.items == listOf(1) }
@@ -355,11 +367,11 @@ class DiffusionEngineTest {
     @Test
     fun abortActiveGenerationEndsTheFlowWithACancelledError() = runTest {
         val bridge = FakeDiffusionBridge()
-        bridge.blockAtStep(0)
+        val entered = bridge.blockAtStep(0)
         open(bridge).use { engine ->
             assertFalse(engine.abortActiveGeneration(), "nothing to abort while idle")
             val events = async(Dispatchers.Default) { engine.generate(params).toList() }
-            awaitCondition { engine.isGenerating && bridge.generates.items.isNotEmpty() }
+            awaitCondition { engine.isGenerating && entered.load() }
             assertTrue(engine.abortActiveGeneration())
             val all = events.await()
             assertEquals(DiffusionEvent.Progress(DiffusionPhase.DENOISING, 0, 4, 0.25f), all.first())
@@ -382,10 +394,10 @@ class DiffusionEngineTest {
     @Test
     fun closeDuringGenerationEndsTheFlowAndFreesTheContext() = runTest {
         val bridge = FakeDiffusionBridge()
-        bridge.blockAtStep(1)
+        val entered = bridge.blockAtStep(1)
         val engine = open(bridge)
         val events = async(Dispatchers.Default) { engine.generate(params).toList() }
-        awaitCondition { engine.isGenerating && bridge.generates.items.isNotEmpty() }
+        awaitCondition { engine.isGenerating && entered.load() }
         engine.close()
         val error = assertIs<DiffusionEvent.Error>(events.await().last())
         val e = assertIs<InferenceCancelledException>(error.exception)
@@ -397,10 +409,10 @@ class DiffusionEngineTest {
     @Test
     fun generationsQueuedBehindARunningOneFailOnceTheEngineCloses() = runTest {
         val bridge = FakeDiffusionBridge()
-        bridge.blockAtStep(1)
+        val entered = bridge.blockAtStep(1)
         val engine = open(bridge)
         val running = async(Dispatchers.Default) { engine.generate(params).toList() }
-        awaitCondition { engine.isGenerating && bridge.generates.items.isNotEmpty() }
+        awaitCondition { engine.isGenerating && entered.load() }
         val queued = async(Dispatchers.Default) { runCatching { engine.generate(params).toList() } }
         delay(50)
         engine.close()

@@ -70,7 +70,13 @@ class JvmNativeDiffusionTest : NativeDiffusionEngineContract() {
      * thread, inside native code) until the context's abort flag is latched, like a long denoising step.
      */
     private class StubJniBridge(private val real: JniDiffusionBridge) : NativeDiffusionBridge by real {
+        private val blocked = java.util.concurrent.atomic.AtomicBoolean(false)
         @Volatile var blockAtStep: Int = -1
+            set(value) {
+                blocked.set(false)
+                field = value
+            }
+        val isBlockedAtStep: Boolean get() = blocked.get()
         val contexts = java.util.concurrent.ConcurrentLinkedQueue<Long>()
 
         override fun contextCreate(params: RawContextParams): RawHandleResult {
@@ -91,6 +97,7 @@ class JvmNativeDiffusionTest : NativeDiffusionEngineContract() {
                 DiffusionProgressListener { step, total, sps ->
                     inner.onProgress(step, total, sps)
                     if (step == blockAtStep) {
+                        blocked.set(true)
                         val deadline = System.nanoTime() + 10_000_000_000L
                         while (!real.abortRequested(context) && System.nanoTime() < deadline) Thread.onSpinWait()
                     }
@@ -152,7 +159,7 @@ class JvmNativeDiffusionTest : NativeDiffusionEngineContract() {
             bridge.blockAtStep = 2
             val received = java.util.concurrent.ConcurrentLinkedQueue<DiffusionEvent>()
             val job = launch(Dispatchers.Default) { engine.generate(params).collect { received += it } }
-            withTimeout(10_000) { while (!(engine.isGenerating && received.size == 3)) delay(1) }
+            withTimeout(10_000) { while (!(engine.isGenerating && bridge.isBlockedAtStep && received.size == 3)) delay(1) }
             job.cancelAndJoin()
             assertEquals(listOf(0, 1, 2), received.map { assertIs<DiffusionEvent.Progress>(it).step })
             assertFalse(engine.isGenerating)
@@ -169,8 +176,7 @@ class JvmNativeDiffusionTest : NativeDiffusionEngineContract() {
         stubEngine().use { engine ->
             bridge.blockAtStep = 3
             val events = async { engine.generate(params).toList() }
-            withTimeout(10_000) { while (!engine.isGenerating) delay(1) }
-            delay(20)
+            withTimeout(10_000) { while (!(engine.isGenerating && bridge.isBlockedAtStep)) delay(1) }
             assertTrue(engine.abortActiveGeneration())
             val all = events.await()
             assertEquals(listOf(0, 1, 2, 3), all.dropLast(1).map { assertIs<DiffusionEvent.Progress>(it).step })
@@ -187,7 +193,7 @@ class JvmNativeDiffusionTest : NativeDiffusionEngineContract() {
         val engine = stubEngine()
         bridge.blockAtStep = 1
         val events = async { engine.generate(params).toList() }
-        withTimeout(10_000) { while (!engine.isGenerating) delay(1) }
+        withTimeout(10_000) { while (!(engine.isGenerating && bridge.isBlockedAtStep)) delay(1) }
         engine.close()
         engine.close()
         assertIs<InferenceCancelledException>(assertIs<DiffusionEvent.Error>(events.await().last()).exception)
