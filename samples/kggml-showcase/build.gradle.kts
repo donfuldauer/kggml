@@ -45,7 +45,11 @@ tasks.matching { it.name.contains("Lint") }.configureEach { dependsOn(syncEngine
 kotlin {
     android {
         namespace = "com.donfuldauer.kggml.samples.showcase.shared"
-        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        compileSdk {
+            version = release(libs.versions.android.compileSdk.get().toInt()) {
+                minorApiLevel = libs.versions.android.compileSdkMinor.get().toInt()
+            }
+        }
         minSdk = libs.versions.android.minSdk.get().toInt()
         androidResources { enable = true }
         compilerOptions { jvmTarget.set(JvmTarget.fromTarget(jvmTargetVersion)) }
