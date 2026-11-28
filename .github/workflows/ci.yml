@@ -1,29 +1,25 @@
 name: CI (Phase 1 cross-platform matrix)
 
-# Pull requests run only the platforms affected by the diff (classified by scripts/ci/classify_changes.py;
+# Pull requests run only the platforms and steps affected by the diff (classified by scripts/ci/classify_changes.py;
 # see docs/CI_WORKFLOWS.md). Workflow-level `paths:` skips this workflow altogether (0 runners) when only
 # documentation, agent/harness configs, repo metadata, or non-CI scripts change; `classify` then gates each
-# platform job individually (e.g. Apple/iOS-only -> macOS; Android/Vulkan/OpenCL/docs-snippets -> Ubuntu;
-# Windows scripts/toolchains -> Windows; shared KMP/C++/CMake/Gradle -> all three).
-#   - Ubuntu:  Linux x86_64 native runtime + whisper (whisper.cpp) + llama (llama.cpp + libmtmd) + diffusion
-#              (stable-diffusion.cpp) + CTest + ggml / upstream pins + host linkage audits, the linux-aarch64 cross
-#              build with CTest under qemu, `./gradlew check` (commonTest, jvmTest, testAndroidHostTest, BOM checks, sample
-#              audits) with native-backed tests mandatory (incl. the :integration-tests dual-engine coexistence suite:
-#              whisper + llama inferring concurrently in one JVM on the single shared ggml runtime, plus diffusion),
-#              Android NDK cross-compile + linkage audits, the GPU add-on builds and the desktop Vulkan test on
-#              lavapipe, whisper-only-minimal release APK binary symbol audit, Android APKs + desktop jar for both
-#              samples, and the Maven Central release dry-run (scripts/ci/stage-release.sh, as release.yml runs it).
-#   - macOS:   macOS arm64 native runtime (Metal + Accelerate) + whisper + llama + diffusion + CTest, JVM tests,
-#              GgmlRuntime/KggmlWhisper.xcframework (CoreML) + KggmlLlama.xcframework + KggmlDiffusion.xcframework,
-#              iosSimulatorArm64Test and macosArm64Test, sample iOS frameworks + whisper-only-minimal iOS symbol
-#              audit, both samples' Xcode apps (simulator + device, unsigned), release dry-run with the iOS components.
-#   - Windows: Windows x64 native runtime + whisper + llama + diffusion (MSVC) + CTest, JVM tests against it, and
-#              the windows-arm64 cross build.
+# platform job and step group individually:
+#   - Platform routing: Apple/iOS-only -> macOS; Android/Vulkan/OpenCL/docs-snippets -> Ubuntu; Windows scripts ->
+#     Windows; pure commonMain/commonTest Kotlin -> Ubuntu + macOS (Windows deferred to nightly / native / JNI / Gradle);
+#     JVM/JNI/Desktop, native C++/CMake, Gradle/build-logic -> all three.
+#   - Step gating & prebuilt native caching (`actions/cache@v6`, keyed on `native_cache_key` from `git ls-tree`):
+#     when native files did not change (`ci_native == false`), runners restore prebuilt native libraries / XCFrameworks
+#     (falling back to a minimal build on cache miss) and skip CTest, cross-compiles (`linux-aarch64`, Android NDK +
+#     Vulkan/OpenCL, desktop Vulkan lavapipe, `windows-arm64`), and redundant macOS host/JVM work. Signed Maven Central
+#     release dry-runs (`ci_release_dry_run`) run only on Gradle/BOM/publishing changes, and sample packaging / Xcode
+#     host apps / binary symbol audits (`ci_samples_packaging`) run on native, release, manifest, or sample changes.
+#   - Full matrix (`--all`): runs nightly (`schedule`, keeping Windows + full native CTest + main-branch caches warm),
+#     on manual `workflow_dispatch`, or on any PR carrying the `ci:full` label.
 # Android instrumented suites need an emulator and are run by hand (scripts/ci/run-android-instrumented.sh).
-# Checkouts fetch first-level submodules only (`submodules: true`): stable-diffusion.cpp's own nested submodules
-# (its ggml copy, libwebp, libwebm, web UI) are never built, and none of the other upstreams has nested ones.
-# Not run: draft PRs, non-build/docs/workflow-doc-only PRs (paths filter below), and pushes to main (PRs
-# merge with a merge commit after this workflow passed on the PR head, so a main run repeats it).
+# Submodules are initialized first-level only (`git submodule update --init`) and only when a native build runs:
+# stable-diffusion.cpp's own nested submodules (its ggml copy, libwebp, libwebm, web UI) are never built.
+# Not run: draft PRs, non-build/docs/workflow-doc-only PRs (paths filter below), and pushes to main (PRs merge with a
+# merge commit after passing on the PR head; nightly `schedule` covers main and refreshes its native caches).
 # Every job and slow step has a timeout, so a check always ends (AGENTS.md "When a runner fails or hangs").
 # Every Ubuntu step is reproducible locally with `./scripts/ci-local.sh --full`.
 
@@ -71,6 +67,10 @@ on:
       - "!scripts/ci/coverage.sh"
       - "!scripts/ci/run-android-instrumented.sh"
       - "!scripts/ci/upload-central-bundle.sh"
+  schedule:
+    # Nightly full cross-platform matrix (07:00 UTC) on main: verifies Windows, full native CTest, Android NDK + GPU
+    # add-ons, release dry-runs, and sample packaging, and keeps main-branch native caches warm for PRs.
+    - cron: "0 7 * * *"
   workflow_dispatch:
 
 permissions:
@@ -82,9 +82,9 @@ concurrency:
 
 env:
   GRADLE_OPTS: -Dorg.gradle.daemon=false
-  # The native runtime is built explicitly by a dedicated step on every runner, so Gradle must not rebuild it
-  # (its Exec task shells out to bash, which on Windows may resolve to WSL). -Pkggml.requireNative=true then
-  # turns every native-backed test from "skip if missing" into "fail if missing".
+  # The native runtime is built or restored from cache before Gradle runs, so Gradle must not invoke its Exec build
+  # task (which shells out to bash, resolving to WSL on Windows). -Pkggml.requireNative=true then turns every
+  # native-backed test from "skip if missing" into "fail if missing".
   NATIVE_GRADLE_ARGS: -Pkggml.requireNative=true -x :kggml-runtime:buildNativeHost -x :kggml-whisper:buildNativeHost -x :kggml-llama:buildNativeHost -x :kggml-diffusion:buildNativeHost --console=plain
 
 jobs:
@@ -99,6 +99,11 @@ jobs:
       ci_macos: ${{ steps.classify.outputs.ci_macos }}
       ci_windows: ${{ steps.classify.outputs.ci_windows }}
       ci_any: ${{ steps.classify.outputs.ci_any }}
+      ci_native: ${{ steps.classify.outputs.ci_native }}
+      ci_macos_jvm: ${{ steps.classify.outputs.ci_macos_jvm }}
+      ci_release_dry_run: ${{ steps.classify.outputs.ci_release_dry_run }}
+      ci_samples_packaging: ${{ steps.classify.outputs.ci_samples_packaging }}
+      native_cache_key: ${{ steps.classify.outputs.native_cache_key }}
     steps:
       - name: Checkout repository (full history for diff, no submodules)
         uses: actions/checkout@v7
@@ -111,8 +116,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          FORCE_FULL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:full') }}
         run: |
-          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" || "${EVENT_NAME}" == "schedule" || "${FORCE_FULL}" == "true" ]]; then
             python3 scripts/ci/classify_changes.py --all \
               --github-output "${GITHUB_OUTPUT}" --summary "${GITHUB_STEP_SUMMARY}"
           elif git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
@@ -129,23 +135,86 @@ jobs:
     needs: classify
     if: ${{ !github.event.pull_request.draft && needs.classify.outputs.ci_linux == 'true' }}
     runs-on: ubuntu-latest
-    # llama.cpp + libmtmd and stable-diffusion.cpp (host + 2 Android ABIs each) more than double the cold native
-    # compile time; ccache keeps warm runs well below this.
+    # Full native runs (host + aarch64 + 2 Android ABIs incl. Vulkan/OpenCL) stay well below this with ccache;
+    # Kotlin-only PRs restore prebuilt native libraries from cache and finish in minutes.
     timeout-minutes: 110
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - name: Checkout repository (with ggml submodule)
+      - name: Checkout repository (submodules fetched on demand if native build runs)
         uses: actions/checkout@v7
-        with:
-          submodules: true
 
-      # Everything the job needs (Ninja, CMake, the aarch64 cross toolchain, qemu-user), installed when missing.
+      - name: Cache prebuilt Linux host native libraries
+        id: host-native-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            build/native/lib
+            build/native-whisper/lib
+            build/native-llama/lib
+            build/native-diffusion/lib
+          key: kggml-native-host-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.classify.outputs.native_cache_key }}
+
+      - name: Cache prebuilt Android minimal jniLibs (runtime + whisper)
+        id: android-minimal-cache
+        if: ${{ needs.classify.outputs.ci_native == 'true' || needs.classify.outputs.ci_samples_packaging == 'true' }}
+        uses: actions/cache@v6
+        with:
+          path: |
+            build/native-android-jniLibs
+            build/native-android-whisper-jniLibs
+          key: kggml-native-android-minimal-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.classify.outputs.native_cache_key }}
+
+      - name: Compute Linux native build plan
+        id: native-plan
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
+          CI_SAMPLES: ${{ needs.classify.outputs.ci_samples_packaging }}
+          HOST_HIT: ${{ steps.host-native-cache.outputs.cache-hit }}
+          ANDROID_MIN_HIT: ${{ steps.android-minimal-cache.outputs.cache-hit }}
+        run: |
+          build_host=false
+          build_android_full=false
+          build_android_minimal=false
+          if [[ "${CI_NATIVE}" == "true" || "${HOST_HIT}" != "true" ]]; then
+            build_host=true
+          fi
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            build_android_full=true
+          elif [[ "${CI_SAMPLES}" == "true" && "${ANDROID_MIN_HIT}" != "true" ]]; then
+            build_android_minimal=true
+          fi
+          need_native_tools=false
+          if [[ "${build_host}" == "true" || "${build_android_full}" == "true" || "${build_android_minimal}" == "true" ]]; then
+            need_native_tools=true
+          fi
+          {
+            echo "build_host=${build_host}"
+            echo "build_android_full=${build_android_full}"
+            echo "build_android_minimal=${build_android_minimal}"
+            echo "need_native_tools=${need_native_tools}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Linux native plan: ci_native=${CI_NATIVE}, build_host=${build_host} (cache_hit=${HOST_HIT:-false}), build_android_full=${build_android_full}, build_android_minimal=${build_android_minimal} (cache_hit=${ANDROID_MIN_HIT:-false})"
+
+      - name: Initialize first-level submodules (native build needed)
+        if: ${{ steps.native-plan.outputs.need_native_tools == 'true' }}
+        run: git submodule update --init
+
+      # Everything the native build needs (Ninja, CMake; plus aarch64 cross toolchain & qemu-user on ci_native).
       - name: Runner setup (installs missing build tools)
-        run: ./scripts/ci/setup/linux.sh --arm64-cross
+        if: ${{ steps.native-plan.outputs.need_native_tools == 'true' }}
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
+        run: |
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./scripts/ci/setup/linux.sh --arm64-cross
+          else
+            ./scripts/ci/setup/linux.sh
+          fi
 
       - name: Set up ccache
+        if: ${{ steps.native-plan.outputs.need_native_tools == 'true' }}
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ci-linux
@@ -159,15 +228,23 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Native runtime (linux-x64) build + CTest + ggml pin + dynamic linkage audit
+      - name: Native runtime (linux-x64) build (+ CTest, pin & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./scripts/ci/verify-ggml-pin.sh
-          ./kggml-runtime/native/scripts/build-host.sh
-          ./scripts/ci/audit-host-linkage.sh
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./scripts/ci/verify-ggml-pin.sh
+            ./kggml-runtime/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-host-linkage.sh
+          else
+            ./kggml-runtime/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
       # Issue #91: the JVM jar also ships linux-aarch64. Cross-compiled here (no arm64 Linux runner); CTest runs the
       # aarch64 test binaries under qemu-user, and the release staging path is checked for the right ELF machine.
       - name: Native runtime (linux-aarch64 cross, CTest under qemu-aarch64) + linkage audit + staged arch check
+        if: ${{ needs.classify.outputs.ci_native == 'true' }}
         run: |
           ./kggml-runtime/native/scripts/build-host.sh --target linux-aarch64
           READELF=aarch64-linux-gnu-readelf NM=aarch64-linux-gnu-nm \
@@ -175,34 +252,57 @@ jobs:
           ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=linux-aarch64 --console=plain
           python3 scripts/ci/check_native_arch.py kggml-runtime/build/generated/kggml-native/jvm linux-aarch64
 
-      - name: Native whisper (linux-x64) build + CTest + dynamic ggml linkage audit
+      - name: Native whisper (linux-x64) build (+ CTest, pin & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./scripts/ci/verify-whisper-pin.sh
-          ./kggml-whisper/native/scripts/build-host.sh
-          ./scripts/ci/audit-whisper-linkage.sh host
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./scripts/ci/verify-whisper-pin.sh
+            ./kggml-whisper/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-whisper-linkage.sh host
+          else
+            ./kggml-whisper/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
-      - name: Native llama (llama.cpp + libmtmd, linux-x64) build + CTest + dynamic ggml linkage audit
+      - name: Native llama (llama.cpp + libmtmd, linux-x64) build (+ CTest, pin & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./scripts/ci/verify-llama-pin.sh
-          ./kggml-llama/native/scripts/build-host.sh
-          ./scripts/ci/audit-llama-linkage.sh host
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./scripts/ci/verify-llama-pin.sh
+            ./kggml-llama/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-llama-linkage.sh host
+          else
+            ./kggml-llama/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
-      - name: Native diffusion (stable-diffusion.cpp, linux-x64) build + CTest + dynamic ggml linkage audit
+      - name: Native diffusion (stable-diffusion.cpp, linux-x64) build (+ CTest, pin & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./scripts/ci/verify-diffusion-pin.sh
-          ./kggml-diffusion/native/scripts/build-host.sh
-          ./scripts/ci/audit-diffusion-linkage.sh host
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./scripts/ci/verify-diffusion-pin.sh
+            ./kggml-diffusion/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-diffusion-linkage.sh host
+          else
+            ./kggml-diffusion/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
       - name: Gradle check (commonTest, jvmTest, testAndroidHostTest, dual-engine coexistence, showcase UI tests, BOM) with native tests required
         run: ./gradlew check $NATIVE_GRADLE_ARGS
 
       # Same script as release.yml: every publication signed (throwaway key), then POM/.module/BOM, sources/javadoc,
-      # checksum and gpg signature audit. iOS components are built only on macOS (see the macOS job).
+      # checksum and gpg signature audit. Runs on Gradle/BOM/publishing changes and full-matrix runs.
       - name: Release dry-run (signed Maven Central staging + audit, JVM/Android/metadata)
+        if: ${{ needs.classify.outputs.ci_release_dry_run == 'true' }}
         timeout-minutes: 20
         run: ./scripts/ci/stage-release.sh --dry-run --skip-targets ios,macos -- $NATIVE_GRADLE_ARGS
 
       - name: Android NDK cross-compile (arm64-v8a, x86_64) incl. the Vulkan and OpenCL GPU add-ons
+        if: ${{ steps.native-plan.outputs.build_android_full == 'true' }}
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
           ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
@@ -220,10 +320,18 @@ jobs:
           ./kggml-runtime-opencl/native/scripts/build-android.sh arm64-v8a x86_64
           ./scripts/ci/audit-gpu-addon.sh opencl arm64-v8a x86_64
 
+      - name: Android NDK minimal cross-compile fallback (runtime + whisper, cache miss)
+        if: ${{ steps.native-plan.outputs.build_android_minimal == 'true' }}
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
+          ./kggml-runtime/native/scripts/build-android.sh arm64-v8a x86_64
+          ./kggml-whisper/native/scripts/build-android.sh arm64-v8a x86_64
+
       # Issue #92: the JVM desktop Vulkan add-on (kggml-runtime-vulkan's jar module), built against the runtime's ggml and
       # registered by the JVM loader. Mesa's lavapipe is a software Vulkan device, so the runtime must report Vulkan
       # available and AUTO must resolve to it (GGML_VK_VISIBLE_DEVICES=0 lets ggml use a CPU-type device).
       - name: Desktop Vulkan add-on (linux-x86_64 module) + JVM runtime test on Mesa lavapipe
+        if: ${{ needs.classify.outputs.ci_native == 'true' }}
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
           ./scripts/ci/setup/linux.sh --vulkan
@@ -238,13 +346,16 @@ jobs:
             || { echo "the Vulkan add-on test was skipped" >&2; exit 1; }
 
       - name: whisper-only-minimal binary symbol audit (release APK + desktop app, zero llama / stable-diffusion symbols)
+        if: ${{ needs.classify.outputs.ci_samples_packaging == 'true' }}
         run: |
           export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME}}"
-          ./scripts/ci/audit-minimal-sample.sh android
+          ./scripts/ci/audit-minimal-sample.sh android \
+            -x :kggml-runtime:buildNativeAndroid -x :kggml-whisper:buildNativeAndroid
           # Desktop: the app jar + runtime classpath, and the linux-x64 host native libraries it loads (ELF).
           ./scripts/ci/audit-minimal-sample.sh desktop
 
       - name: Assemble samples (Android APKs, desktop jar) via kggml-bom
+        if: ${{ needs.classify.outputs.ci_samples_packaging == 'true' }}
         run: >
           ./gradlew --console=plain
           :samples:kggml-showcase:androidApp:assembleDebug
@@ -283,13 +394,62 @@ jobs:
     # runner-lost job per AGENTS.md "When a runner fails or hangs".
     timeout-minutes: 140
     steps:
-      - name: Checkout repository (with ggml submodule)
+      - name: Checkout repository (submodules fetched on demand if native build runs)
         uses: actions/checkout@v7
+
+      - name: Cache prebuilt Apple XCFrameworks (GgmlRuntime + Whisper + Llama + Diffusion)
+        id: xcframework-cache
+        uses: actions/cache@v6
         with:
-          submodules: true
+          path: build/native-ios
+          key: kggml-native-xcframeworks-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.classify.outputs.native_cache_key }}
+
+      - name: Cache prebuilt macOS host dylibs (for JVM / desktop tests)
+        id: macos-host-cache
+        if: ${{ needs.classify.outputs.ci_native == 'true' || needs.classify.outputs.ci_macos_jvm == 'true' }}
+        uses: actions/cache@v6
+        with:
+          path: |
+            build/native/lib
+            build/native-whisper/lib
+            build/native-llama/lib
+            build/native-diffusion/lib
+          key: kggml-native-host-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.classify.outputs.native_cache_key }}
+
+      - name: Compute macOS native build plan
+        id: native-plan
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
+          CI_MACOS_JVM: ${{ needs.classify.outputs.ci_macos_jvm }}
+          XCF_HIT: ${{ steps.xcframework-cache.outputs.cache-hit }}
+          HOST_HIT: ${{ steps.macos-host-cache.outputs.cache-hit }}
+        run: |
+          build_xcframeworks=false
+          build_host=false
+          if [[ "${CI_NATIVE}" == "true" || "${XCF_HIT}" != "true" ]]; then
+            build_xcframeworks=true
+          fi
+          if [[ "${CI_NATIVE}" == "true" || ( "${CI_MACOS_JVM}" == "true" && "${HOST_HIT}" != "true" ) ]]; then
+            build_host=true
+          fi
+          need_native_tools=false
+          if [[ "${build_xcframeworks}" == "true" || "${build_host}" == "true" ]]; then
+            need_native_tools=true
+          fi
+          {
+            echo "build_xcframeworks=${build_xcframeworks}"
+            echo "build_host=${build_host}"
+            echo "need_native_tools=${need_native_tools}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "macOS native plan: ci_native=${CI_NATIVE}, ci_macos_jvm=${CI_MACOS_JVM}, build_xcframeworks=${build_xcframeworks} (cache_hit=${XCF_HIT:-false}), build_host=${build_host} (cache_hit=${HOST_HIT:-false})"
+
+      - name: Initialize first-level submodules (native build needed)
+        if: ${{ steps.native-plan.outputs.need_native_tools == 'true' }}
+        run: git submodule update --init
 
       # Ninja and CMake when missing (Homebrew, as the runner user); checks Xcode and an iOS simulator runtime.
       - name: Runner setup (installs missing build tools)
+        if: ${{ steps.native-plan.outputs.need_native_tools == 'true' }}
         run: ./scripts/ci/setup/macos.sh
 
       - name: Set up JDK 17
@@ -301,57 +461,91 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Native runtime (macos-arm64, Metal + Accelerate) build + CTest + ggml pin + dynamic linkage audit
+      - name: Native runtime (macos-arm64, Metal + Accelerate) build (+ CTest, pin & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         timeout-minutes: 20
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./scripts/ci/verify-ggml-pin.sh
-          ./kggml-runtime/native/scripts/build-host.sh
-          ./scripts/ci/audit-host-linkage.sh
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./scripts/ci/verify-ggml-pin.sh
+            ./kggml-runtime/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-host-linkage.sh
+          else
+            ./kggml-runtime/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
-      - name: Native whisper (macos-arm64) build + CTest + dynamic ggml linkage audit
+      - name: Native whisper (macos-arm64) build (+ CTest & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         timeout-minutes: 20
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./kggml-whisper/native/scripts/build-host.sh
-          ./scripts/ci/audit-whisper-linkage.sh host
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./kggml-whisper/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-whisper-linkage.sh host
+          else
+            ./kggml-whisper/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
-      - name: Native llama (macos-arm64) build + CTest + dynamic ggml linkage audit
+      - name: Native llama (macos-arm64) build (+ CTest & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         timeout-minutes: 25
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./kggml-llama/native/scripts/build-host.sh
-          ./scripts/ci/audit-llama-linkage.sh host
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./kggml-llama/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-llama-linkage.sh host
+          else
+            ./kggml-llama/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
-      - name: Native diffusion (macos-arm64) build + CTest + dynamic ggml linkage audit
+      - name: Native diffusion (macos-arm64) build (+ CTest & linkage audit when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         timeout-minutes: 25
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
-          ./kggml-diffusion/native/scripts/build-host.sh
-          ./scripts/ci/audit-diffusion-linkage.sh host
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            ./kggml-diffusion/native/scripts/build-host.sh --clean
+            ./scripts/ci/audit-diffusion-linkage.sh host
+          else
+            ./kggml-diffusion/native/scripts/build-host.sh --clean --skip-ctest
+          fi
 
       - name: Build GgmlRuntime.xcframework (iosArm64 + iosSimulatorArm64 + macosArm64)
+        if: ${{ steps.native-plan.outputs.build_xcframeworks == 'true' }}
         timeout-minutes: 20
         run: ./kggml-runtime/native/scripts/build-ios-xcframework.sh
+
+      - name: Build KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML, linked to GgmlRuntime)
+        if: ${{ steps.native-plan.outputs.build_xcframeworks == 'true' }}
+        timeout-minutes: 20
+        run: ./kggml-whisper/native/scripts/build-ios-xcframework.sh
+
+      - name: Build KggmlLlama.xcframework (iosArm64 + iosSimulatorArm64, llama.cpp + libmtmd, linked to GgmlRuntime)
+        if: ${{ steps.native-plan.outputs.build_xcframeworks == 'true' }}
+        timeout-minutes: 20
+        run: ./kggml-llama/native/scripts/build-ios-xcframework.sh
+
+      - name: Build KggmlDiffusion.xcframework (iosArm64 + iosSimulatorArm64, stable-diffusion.cpp, linked to GgmlRuntime)
+        if: ${{ steps.native-plan.outputs.build_xcframeworks == 'true' }}
+        timeout-minutes: 20
+        run: ./kggml-diffusion/native/scripts/build-ios-xcframework.sh
 
       # Issue #93: Kotlin/Native macOS (core-api and runtime so far) against the framework's macos-arm64 slice, natively.
       - name: Kotlin/Native macOS tests (macosArm64Test, core-api + runtime, real GgmlRuntime.framework)
         timeout-minutes: 20
         run: ./gradlew :kggml-core-api:macosArm64Test :kggml-runtime:macosArm64Test $NATIVE_GRADLE_ARGS
 
-      - name: Build KggmlWhisper.xcframework (iosArm64 + iosSimulatorArm64, CoreML, linked to GgmlRuntime)
-        timeout-minutes: 20
-        run: ./kggml-whisper/native/scripts/build-ios-xcframework.sh
-
-      - name: Build KggmlLlama.xcframework (iosArm64 + iosSimulatorArm64, llama.cpp + libmtmd, linked to GgmlRuntime)
-        timeout-minutes: 20
-        run: ./kggml-llama/native/scripts/build-ios-xcframework.sh
-
-      - name: Build KggmlDiffusion.xcframework (iosArm64 + iosSimulatorArm64, stable-diffusion.cpp, linked to GgmlRuntime)
-        timeout-minutes: 20
-        run: ./kggml-diffusion/native/scripts/build-ios-xcframework.sh
-
       - name: Release dry-run (signed Maven Central staging + audit, every target incl. iOS klibs)
+        if: ${{ needs.classify.outputs.ci_release_dry_run == 'true' }}
         timeout-minutes: 30
         run: ./scripts/ci/stage-release.sh --dry-run -- $NATIVE_GRADLE_ARGS
 
       - name: JVM tests (incl. dual-engine coexistence) against the macOS native runtime
+        if: ${{ needs.classify.outputs.ci_macos_jvm == 'true' }}
         timeout-minutes: 20
         run: |
           ./gradlew jvmTest :samples:kggml-showcase:desktopTest :samples:whisper-only-minimal:desktopTest $NATIVE_GRADLE_ARGS
@@ -397,12 +591,14 @@ jobs:
           :samples:whisper-only-minimal:linkDebugFrameworkIosSimulatorArm64
 
       - name: whisper-only-minimal binary symbol audit (iOS framework + xcframework slices)
+        if: ${{ needs.classify.outputs.ci_samples_packaging == 'true' }}
         timeout-minutes: 10
         run: ./scripts/ci/audit-minimal-sample.sh ios
 
       # The Xcode host apps of both samples (samples/*/iosApp), unsigned: they compile the Kotlin frameworks through
       # their own build phase and embed the xcframeworks built above, as a developer's Xcode build does.
       - name: Build the samples' iOS apps (simulator + device, unsigned)
+        if: ${{ needs.classify.outputs.ci_samples_packaging == 'true' }}
         timeout-minutes: 20
         run: ./scripts/ios/build-sample-apps.sh all
 
@@ -443,10 +639,48 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Checkout repository (with ggml submodule)
+      - name: Checkout repository (submodules fetched on demand if native build runs)
         uses: actions/checkout@v7
+
+      - name: Cache prebuilt Windows x64 native DLLs
+        id: win-host-cache
+        uses: actions/cache@v6
         with:
-          submodules: true
+          path: |
+            build/native/bin
+            build/native-whisper/bin
+            build/native-llama/bin
+            build/native-diffusion/bin
+          key: kggml-native-host-v1-${{ runner.os }}-${{ runner.arch }}-${{ needs.classify.outputs.native_cache_key }}
+
+      - name: Compute Windows native build plan
+        id: native-plan
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
+          HOST_HIT: ${{ steps.win-host-cache.outputs.cache-hit }}
+        run: |
+          build_host=false
+          build_arm64=false
+          if [[ "${CI_NATIVE}" == "true" || "${HOST_HIT}" != "true" ]]; then
+            build_host=true
+          fi
+          if [[ "${CI_NATIVE}" == "true" ]]; then
+            build_arm64=true
+          fi
+          need_native_tools=false
+          if [[ "${build_host}" == "true" || "${build_arm64}" == "true" ]]; then
+            need_native_tools=true
+          fi
+          {
+            echo "build_host=${build_host}"
+            echo "build_arm64=${build_arm64}"
+            echo "need_native_tools=${need_native_tools}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Windows native plan: ci_native=${CI_NATIVE}, build_host=${build_host} (cache_hit=${HOST_HIT:-false}), build_arm64=${build_arm64}"
+
+      - name: Initialize first-level submodules (native build needed)
+        if: ${{ steps.native-plan.outputs.need_native_tools == 'true' }}
+        run: git submodule update --init
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
@@ -454,12 +688,21 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Everything the job needs (Visual Studio C++ x64 + ARM64 tools, clang, Ninja), installed when missing.
+      # Everything the native build needs (Visual Studio C++ x64; plus ARM64 tools + clang on ci_native).
       - name: Runner setup (installs missing build tools)
+        if: ${{ steps.native-plan.outputs.need_native_tools == 'true' }}
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1 -Arm64
+        env:
+          BUILD_ARM64: ${{ steps.native-plan.outputs.build_arm64 }}
+        run: |
+          if ($env:BUILD_ARM64 -eq 'true') {
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1 -Arm64
+          } else {
+            powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ci/setup/windows.ps1
+          }
 
       - name: Set up MSVC developer environment (x64)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -468,33 +711,57 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
 
       # Run in cmd so the MSVC toolchain (cl.exe, link.exe) wins over Git Bash's coreutils `link`.
-      - name: Native runtime (windows-x64, MSVC) build + CTest
+      - name: Native runtime (windows-x64, MSVC) build (+ CTest when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         shell: cmd
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
+          if exist build\native rmdir /s /q build\native
           cmake -S kggml-runtime/native --preset windows-x64 -B build/native || exit /b 1
           cmake --build build/native --config Release -j 4 || exit /b 1
-          ctest --test-dir build/native --build-config Release --output-on-failure -j 4
+          if "%CI_NATIVE%"=="true" (
+            ctest --test-dir build/native --build-config Release --output-on-failure -j 4 || exit /b 1
+          )
 
-      - name: Native whisper (windows-x64, MSVC) build + CTest
+      - name: Native whisper (windows-x64, MSVC) build (+ CTest when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         shell: cmd
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
+          if exist build\native-whisper rmdir /s /q build\native-whisper
           cmake -S kggml-whisper/native --preset windows-x64 -B build/native-whisper || exit /b 1
           cmake --build build/native-whisper --config Release -j 4 || exit /b 1
-          ctest --test-dir build/native-whisper --build-config Release --output-on-failure -j 4
+          if "%CI_NATIVE%"=="true" (
+            ctest --test-dir build/native-whisper --build-config Release --output-on-failure -j 4 || exit /b 1
+          )
 
-      - name: Native llama (windows-x64, MSVC) build + CTest
+      - name: Native llama (windows-x64, MSVC) build (+ CTest when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         shell: cmd
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
+          if exist build\native-llama rmdir /s /q build\native-llama
           cmake -S kggml-llama/native --preset windows-x64 -B build/native-llama || exit /b 1
           cmake --build build/native-llama --config Release -j 4 || exit /b 1
-          ctest --test-dir build/native-llama --build-config Release --output-on-failure -j 4
+          if "%CI_NATIVE%"=="true" (
+            ctest --test-dir build/native-llama --build-config Release --output-on-failure -j 4 || exit /b 1
+          )
 
-      - name: Native diffusion (windows-x64, MSVC) build + CTest
+      - name: Native diffusion (windows-x64, MSVC) build (+ CTest when ci_native)
+        if: ${{ steps.native-plan.outputs.build_host == 'true' }}
         shell: cmd
+        env:
+          CI_NATIVE: ${{ needs.classify.outputs.ci_native }}
         run: |
+          if exist build\native-diffusion rmdir /s /q build\native-diffusion
           cmake -S kggml-diffusion/native --preset windows-x64 -B build/native-diffusion || exit /b 1
           cmake --build build/native-diffusion --config Release -j 4 || exit /b 1
-          ctest --test-dir build/native-diffusion --build-config Release --output-on-failure -j 4
+          if "%CI_NATIVE%"=="true" (
+            ctest --test-dir build/native-diffusion --build-config Release --output-on-failure -j 4 || exit /b 1
+          )
 
       - name: JVM tests (incl. dual-engine coexistence) against the Windows native runtime
         run: |
@@ -505,10 +772,12 @@ jobs:
       # MSVC ABI (ggml rejects cl.exe for ARM); there is no arm64 Windows runner to run it, so the staged DLLs are
       # checked for the ARM64 PE machine type instead.
       - name: Native runtime (windows-arm64 cross, LLVM clang) build
+        if: ${{ steps.native-plan.outputs.build_arm64 == 'true' }}
         shell: cmd
         run: call kggml-runtime\native\scripts\build-windows-arm64.cmd build\native-release-install
 
       - name: Stage the windows-aarch64 runtime + staged arch check
+        if: ${{ steps.native-plan.outputs.build_arm64 == 'true' }}
         run: |
           ./gradlew :kggml-runtime:stageJvmNativeResources -Pkggml.nativePlatform=windows-aarch64 \
             -x :kggml-runtime:buildNativeHostRelease --console=plain

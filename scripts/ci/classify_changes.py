@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import hashlib
 import json
 import os
 import re
@@ -28,6 +29,13 @@ from pathlib import Path
 from typing import Iterable
 
 PLATFORMS = ("linux", "macos", "windows")
+
+CI_STEP_KEYS = (
+    "ci_native",
+    "ci_macos_jvm",
+    "ci_release_dry_run",
+    "ci_samples_packaging",
+)
 
 SCRIPT_TEST_KEYS = (
     "test_wait_pr_checks",
@@ -43,12 +51,23 @@ ALL_OUTPUT_KEYS = (
     "ci_macos",
     "ci_windows",
     "ci_any",
+    *CI_STEP_KEYS,
     "agent_parity",
     "workflow_audit",
     "license_audit",
     "docs_audit",
     "script_tests",
     *SCRIPT_TEST_KEYS,
+)
+
+STRING_OUTPUT_KEYS = ("native_cache_key",)
+
+NATIVE_CACHE_TREE_PATHS = (
+    ".gitmodules",
+    "kggml-runtime/native",
+    "kggml-whisper/native",
+    "kggml-llama/native",
+    "kggml-diffusion/native",
 )
 
 
@@ -254,14 +273,26 @@ CI_RULES: tuple[CiRule, ...] = (
         description="README snippet Kotlin sources (compiled by :docs-snippets in Linux ./gradlew check)",
     ),
     CiRule(
-        category="kotlin-shared-and-jvm",
+        category="gradle-build-system",
+        pattern=re.compile(r"(?:\.(?:kts|gradle|groovy|properties|xml)$|^gradle/|^build-logic/|^gradlew$)"),
+        platforms=frozenset(PLATFORMS),
+        description="Gradle build scripts, convention plugins (incl. build-logic/*.kt), version catalog, wrapper, and properties",
+    ),
+    CiRule(
+        category="kotlin-jvm-jni-desktop",
         pattern=re.compile(
-            r"(?:\.(?:kt|java)$|"
-            r"^(?:.+/)?src/(?:common|jvm|jvmCommon|jni|desktop)(?:Main|Test)/|"
-            r"^integration-tests/src/)"
+            r"(?:^(?:.+/)?src/(?:jvm|jvmCommon|jni|desktop)(?:Main|Test)/|"
+            r"^integration-tests/src/|"
+            r"\.java$)"
         ),
         platforms=frozenset(PLATFORMS),
-        description="Shared KMP, JVM, JNI, Desktop, build-logic, and integration-test Kotlin/Java sources",
+        description="JVM, JNI, Desktop, Java, and cross-engine integration-test sources (all 3 desktop OSes)",
+    ),
+    CiRule(
+        category="kotlin-common",
+        pattern=re.compile(r"(?:^(?:.+/)?src/common(?:Main|Test)/|\.kt$)"),
+        platforms=frozenset({"linux", "macos"}),
+        description="Shared KMP commonMain/commonTest Kotlin sources (Linux JVM/Android + macOS K/N & iOS; Windows deferred to nightly)",
     ),
     CiRule(
         category="native-cpp-cmake-submodules",
@@ -276,13 +307,42 @@ CI_RULES: tuple[CiRule, ...] = (
         platforms=frozenset(PLATFORMS),
         description="Cross-platform native C/C++/asm sources, headers, CMake, presets, and core submodules",
     ),
-    CiRule(
-        category="gradle-build-system",
-        pattern=re.compile(r"(?:\.(?:kts|gradle|groovy|properties|xml)$|^gradle/|^build-logic/|^gradlew$)"),
-        platforms=frozenset(PLATFORMS),
-        description="Gradle build scripts, convention plugins, version catalog, wrapper, and properties",
-    ),
 )
+
+# --------------------------------------------------------------------------------------------------------------
+# Layer 1b: Step-level CI flags (applied only to files that trigger at least one CI platform)
+# --------------------------------------------------------------------------------------------------------------
+
+# Files that require rebuilding native C/C++ libraries, CTest, cross-compiles, and XCFrameworks.
+RE_CI_NATIVE_EXTRA = re.compile(
+    r"(?:\.(?:metal|m|mm)$|"
+    r"^scripts/ci/setup/(?:linux\.sh|macos\.sh|windows\.ps1)$|"
+    r"^scripts/ci/verify-(?:ggml|whisper|llama|diffusion)-pin\.sh$|"
+    r"^scripts/ci/audit-(?:host|android|whisper|llama|diffusion)-linkage\.sh$|"
+    r"^scripts/ci/audit-gpu-addon\.sh$|"
+    r"^scripts/ci/check_native_arch\.py$|"
+    r"^scripts/ios/build-xcframeworks\.sh$|"
+    r"^kggml-[^/]+/native/scripts/)"
+)
+
+# Files that affect Maven Central release publications, BOM constraints, or release staging/audit.
+RE_CI_RELEASE_DRY_RUN = re.compile(
+    r"^(?:build\.gradle\.kts|settings\.gradle\.kts|gradle\.properties|gradlew|"
+    r"gradle/.*|build-logic/.*|kggml-bom/.*|kggml-[^/]+/build\.gradle\.kts|"
+    r"scripts/ci/stage-release\.sh|scripts/ci/verify_release\.py)$"
+)
+
+# Files that affect sample app packaging (Android APKs, desktop jar, Xcode apps) or binary symbol audits.
+RE_CI_SAMPLES_PACKAGING = re.compile(
+    r"(?:^samples/|"
+    r"(?:^|/)(?:AndroidManifest\.xml|consumer-rules\.pro)$|"
+    r"^scripts/audit-binary-symbols\.sh$|"
+    r"^scripts/ci/audit-minimal-sample\.sh$|"
+    r"^scripts/ios/build-sample-apps\.sh$)"
+)
+
+# Release-only scripts in scripts-ci-linux-macos that do not need macOS host dylibs / jvmTest.
+RE_RELEASE_SCRIPT_ONLY = re.compile(r"^scripts/ci/(?:stage-release\.sh|verify_release\.py)$")
 
 # --------------------------------------------------------------------------------------------------------------
 # Layer 2: Repo-hygiene audit rules (additive: a file may require multiple hygiene checks)
@@ -345,6 +405,26 @@ SCRIPT_TEST_PATTERNS: dict[str, re.Pattern[str]] = {
 }
 
 
+def compute_native_cache_key(repo: Path, ref: str = "HEAD") -> str:
+    """Computes a deterministic 16-char SHA-256 hash of core native sources and submodule pins at `ref`."""
+    proc = subprocess.run(
+        ["git", "-C", str(repo), "ls-tree", "-r", ref, "--", *NATIVE_CACHE_TREE_PATHS],
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0 or not proc.stdout:
+        return "none"
+    # Exclude Markdown docs (e.g. native/README.md) so doc-only edits do not bust compiled native caches.
+    lines = [
+        line
+        for line in proc.stdout.decode("utf-8", errors="surrogateescape").splitlines()
+        if not line.lower().endswith(".md")
+    ]
+    if not lines:
+        return "none"
+    return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()[:16]
+
+
 def classify_file(change: ChangedFile) -> tuple[str, frozenset[str]]:
     """Returns (category, ci_platforms) for a single changed file."""
     for rule in CI_RULES:
@@ -353,13 +433,22 @@ def classify_file(change: ChangedFile) -> tuple[str, frozenset[str]]:
     return "unclassified-failsafe", frozenset(PLATFORMS)
 
 
-def classify_changes(changes: Iterable[ChangedFile], force_all: bool = False) -> dict:
+def classify_changes(
+    changes: Iterable[ChangedFile],
+    force_all: bool = False,
+    native_cache_key: str = "none",
+) -> dict:
     """Classifies a sequence of ChangedFile objects into workflow outputs and per-file details."""
     outputs: dict[str, bool] = {key: force_all for key in ALL_OUTPUT_KEYS}
     details: list[dict] = []
 
     if force_all:
-        return {"outputs": outputs, "files": details, "forced_all": True}
+        return {
+            "outputs": outputs,
+            "native_cache_key": native_cache_key,
+            "files": details,
+            "forced_all": True,
+        }
 
     for change in changes:
         category, platforms = classify_file(change)
@@ -372,6 +461,39 @@ def classify_changes(changes: Iterable[ChangedFile], force_all: bool = False) ->
 
         is_hygiene_wf = bool(RE_REPO_HYGIENE_WF.search(change.path))
         is_unclassified = category == "unclassified-failsafe"
+        is_ci_wf = category == "workflow-ci"
+
+        if platforms:
+            file_native = (
+                is_ci_wf
+                or is_unclassified
+                or category in ("native-cpp-cmake-submodules", "linux-android-native-only", "windows-native-toolchain")
+                or bool(RE_CI_NATIVE_EXTRA.search(change.path))
+            )
+            file_release = is_ci_wf or is_unclassified or bool(RE_CI_RELEASE_DRY_RUN.search(change.path))
+            file_samples = (
+                file_native
+                or file_release
+                or bool(RE_CI_SAMPLES_PACKAGING.search(change.path))
+            )
+            file_macos_jvm = "macos" in platforms and (
+                file_native
+                or category in ("workflow-ci", "unclassified-failsafe", "kotlin-jvm-jni-desktop", "gradle-build-system", "scripts-ci-all-platforms")
+                or (category == "scripts-ci-linux-macos" and not RE_RELEASE_SCRIPT_ONLY.search(change.path))
+            )
+
+            if file_native:
+                outputs["ci_native"] = True
+                triggers.append("step:native")
+            if file_macos_jvm:
+                outputs["ci_macos_jvm"] = True
+                triggers.append("step:macos-jvm")
+            if file_release:
+                outputs["ci_release_dry_run"] = True
+                triggers.append("step:release-dry-run")
+            if file_samples:
+                outputs["ci_samples_packaging"] = True
+                triggers.append("step:samples-packaging")
 
         if is_hygiene_wf or RE_AGENT_PARITY.search(change.path):
             outputs["agent_parity"] = True
@@ -413,7 +535,12 @@ def classify_changes(changes: Iterable[ChangedFile], force_all: bool = False) ->
 
     outputs["ci_any"] = outputs["ci_linux"] or outputs["ci_macos"] or outputs["ci_windows"]
     outputs["script_tests"] = any(outputs[k] for k in SCRIPT_TEST_KEYS)
-    return {"outputs": outputs, "files": details, "forced_all": False}
+    return {
+        "outputs": outputs,
+        "native_cache_key": native_cache_key,
+        "files": details,
+        "forced_all": False,
+    }
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -629,7 +756,7 @@ def verify_repo(repo: Path) -> int:
         )
 
     # Verify every `needs.classify.outputs.<key>` referenced in workflows is emitted by this classifier.
-    known_keys = set(ALL_OUTPUT_KEYS)
+    known_keys = set(ALL_OUTPUT_KEYS) | set(STRING_OUTPUT_KEYS)
     for wf_rel in (".github/workflows/ci.yml", ".github/workflows/repo-hygiene.yml"):
         wf_file = repo / wf_rel
         if not wf_file.is_file():
@@ -657,17 +784,20 @@ def verify_repo(repo: Path) -> int:
 # --------------------------------------------------------------------------------------------------------------
 
 
-def write_github_output(path: Path, outputs: dict[str, bool]) -> None:
+def write_github_output(path: Path, report: dict) -> None:
+    outputs = report["outputs"]
     with path.open("a", encoding="utf-8") as fh:
         for key in ALL_OUTPUT_KEYS:
             fh.write(f"{key}={'true' if outputs[key] else 'false'}\n")
+        for key in STRING_OUTPUT_KEYS:
+            fh.write(f"{key}={report[key]}\n")
 
 
 def write_summary(path: Path, report: dict) -> None:
     outputs = report["outputs"]
     lines = ["### Change Classification", ""]
     if report["forced_all"]:
-        lines.append("Manual dispatch (`--all`): all CI platforms and repo-hygiene checks enabled.")
+        lines.append("Full matrix (`--all`: schedule, manual dispatch, or `ci:full` label): all CI platforms, steps, and repo-hygiene checks enabled.")
         lines.append("")
     else:
         lines.extend(
@@ -686,11 +816,12 @@ def write_summary(path: Path, report: dict) -> None:
 
     lines.extend(
         [
-            "**Selected jobs:** "
+            "**Selected jobs & steps:** "
             + (
                 ", ".join(f"`{k}`" for k in ALL_OUTPUT_KEYS if outputs[k] and k not in ("ci_any", "script_tests"))
                 or "*(secret-scan only)*"
             ),
+            f"**Native cache key:** `{report['native_cache_key']}`",
             "",
         ]
     )
@@ -705,8 +836,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--head", help="head git ref/SHA (used with --base)")
     parser.add_argument("--paths", nargs="*", help="explicit changed file paths (or STATUS\\tpath[\\tbinary])")
     parser.add_argument("--paths-stdin", action="store_true", help="read path specs from stdin (one per line)")
-    parser.add_argument("--all", action="store_true", dest="force_all", help="enable every output (workflow_dispatch)")
-    parser.add_argument("--github-output", help="append key=true|false lines to this file ($GITHUB_OUTPUT)")
+    parser.add_argument("--all", action="store_true", dest="force_all", help="enable every output (workflow_dispatch/schedule/ci:full)")
+    parser.add_argument("--github-output", help="append key=value lines to this file ($GITHUB_OUTPUT)")
     parser.add_argument("--summary", help="append Markdown classification table to this file ($GITHUB_STEP_SUMMARY)")
     parser.add_argument("--json", action="store_true", dest="as_json", help="print JSON report to stdout")
     parser.add_argument("--verify-repo", action="store_true", help="audit all tracked files and ci.yml paths parity")
@@ -717,19 +848,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.verify_repo:
         return verify_repo(repo)
 
+    # Hash HEAD (the checked-out PR merge commit in GitHub Actions) so native caches match what every OS job builds.
+    native_cache_key = compute_native_cache_key(repo, ref="HEAD")
+
     if args.force_all:
-        report = classify_changes([], force_all=True)
+        report = classify_changes([], force_all=True, native_cache_key=native_cache_key)
     elif args.paths is not None:
-        report = classify_changes(parse_path_specs(args.paths))
+        report = classify_changes(parse_path_specs(args.paths), native_cache_key=native_cache_key)
     elif args.paths_stdin:
-        report = classify_changes(parse_path_specs(sys.stdin))
+        report = classify_changes(parse_path_specs(sys.stdin), native_cache_key=native_cache_key)
     elif args.base and args.head:
-        report = classify_changes(git_changed_files(repo, args.base, args.head))
+        report = classify_changes(git_changed_files(repo, args.base, args.head), native_cache_key=native_cache_key)
     else:
         parser.error("specify --verify-repo, --all, --base/--head, --paths, or --paths-stdin")
 
     if args.github_output:
-        write_github_output(Path(args.github_output), report["outputs"])
+        write_github_output(Path(args.github_output), report)
     if args.summary:
         write_summary(Path(args.summary), report)
 
@@ -738,6 +872,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         for key in ALL_OUTPUT_KEYS:
             print(f"{key}={'true' if report['outputs'][key] else 'false'}")
+        for key in STRING_OUTPUT_KEYS:
+            print(f"{key}={report[key]}")
     return 0
 
 

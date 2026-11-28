@@ -215,96 +215,118 @@ expect_exact(
 )
 
 # ------------------------------------------------------------------------------
-# 3. Platform-specific routing in ci.yml
+# 3. Platform-specific routing & step flags in ci.yml
 # ------------------------------------------------------------------------------
 expect_exact(
-    "Apple/iOS Swift + Xcode app -> macOS only",
+    "Apple/iOS Swift + Xcode app -> macOS + samples_packaging (no native rebuild)",
     [
         "samples/kggml-showcase/iosApp/iosApp/AppDelegate.swift",
         "samples/kggml-showcase/iosApp/iosApp.xcodeproj/project.pbxproj",
     ],
-    {"ci_macos"},
+    {"ci_macos", "ci_samples_packaging"},
 )
 expect_exact(
-    "iOS library main Kotlin -> macOS + docs_audit (KDoc)",
+    "iOS library main Kotlin -> macOS + docs_audit (no native rebuild, no samples packaging)",
     ["kggml-whisper/src/iosMain/kotlin/com/donfuldauer/kggml/whisper/IosWhisperBridge.kt"],
     {"ci_macos", "docs_audit"},
 )
 expect_exact(
-    "iOS cinterop .def + xcframework build script + macos setup -> macOS only",
-    [
-        "kggml-runtime/src/nativeInterop/cinterop/kggmlRuntime.def",
-        "kggml-runtime/native/scripts/build-ios-xcframework.sh",
-        "scripts/ios/build-sample-apps.sh",
-        "scripts/ci/setup/macos.sh",
-    ],
+    "iOS cinterop .def only -> macOS only (uses cached XCFrameworks)",
+    ["kggml-runtime/src/nativeInterop/cinterop/kggmlRuntime.def"],
     {"ci_macos"},
 )
 expect_exact(
-    "Windows setup + arm64 cmd + gradlew.bat -> Windows only",
+    "iOS xcframework build script + macos setup -> macOS + native + macos_jvm + samples_packaging",
+    [
+        "kggml-runtime/native/scripts/build-ios-xcframework.sh",
+        "scripts/ci/setup/macos.sh",
+    ],
+    {"ci_macos", "ci_native", "ci_macos_jvm", "ci_samples_packaging"},
+)
+expect_exact(
+    "scripts/ios/build-sample-apps.sh -> macOS + samples_packaging (no native rebuild)",
+    ["scripts/ios/build-sample-apps.sh"],
+    {"ci_macos", "ci_samples_packaging"},
+)
+expect_exact(
+    "Windows setup + arm64 cmd -> Windows + native + samples_packaging",
     [
         "scripts/ci/setup/windows.ps1",
         "kggml-runtime/native/scripts/build-windows-arm64.cmd",
-        "gradlew.bat",
     ],
+    {"ci_windows", "ci_native", "ci_samples_packaging"},
+)
+expect_exact(
+    "gradlew.bat only -> Windows only (no native rebuild)",
+    ["gradlew.bat"],
     {"ci_windows"},
 )
 expect_exact(
-    "Windows arm64 toolchain cmake -> Windows + license_audit",
+    "Windows arm64 toolchain cmake -> Windows + native + samples_packaging + license_audit",
     ["kggml-runtime/native/cmake/toolchains/arm64-windows-llvm.cmake"],
-    {"ci_windows", "license_audit"},
+    {"ci_windows", "ci_native", "ci_samples_packaging", "license_audit"},
 )
 expect_exact(
-    "Android sample + Android unit test + build-android.sh + linux setup -> Linux only",
+    "Android sample + manifest + ProGuard -> Linux + samples_packaging (no native rebuild)",
     [
         "samples/kggml-showcase/src/androidMain/AndroidManifest.xml",
         "samples/kggml-showcase/src/androidUnitTest/resources/robolectric.properties",
         "kggml-whisper/consumer-rules.pro",
+    ],
+    {"ci_linux", "ci_samples_packaging"},
+)
+expect_exact(
+    "Android/Linux native build & audit scripts -> Linux + native + samples_packaging",
+    [
         "kggml-whisper/native/scripts/build-android.sh",
         "scripts/ci/setup/linux.sh",
         "scripts/ci/audit-android-linkage.sh",
         "scripts/ci/audit-gpu-addon.sh",
         "kggml-llama/native/jni/kggml_llama_jni.map",
     ],
-    {"ci_linux"},
+    {"ci_linux", "ci_native", "ci_samples_packaging"},
 )
 expect_exact(
-    "Android library androidMain Kotlin -> Linux + docs_audit (KDoc)",
+    "Android library androidMain Kotlin -> Linux + docs_audit (no native rebuild)",
     ["kggml-runtime/src/androidMain/kotlin/com/donfuldauer/kggml/runtime/AndroidRuntimeLoader.kt"],
     {"ci_linux", "docs_audit"},
 )
 expect_exact(
-    "Vulkan/OpenCL native CMake + submodules -> Linux + license_audit",
+    "Vulkan/OpenCL native CMake + submodules -> Linux + native + samples_packaging + license_audit",
     [
         "kggml-runtime-vulkan/native/CMakeLists.txt",
         "kggml-runtime-vulkan/native/third_party/Vulkan-Headers",
         "kggml-runtime-opencl/native/third_party/OpenCL-Headers",
     ],
-    {"ci_linux", "license_audit"},
+    {"ci_linux", "ci_native", "ci_samples_packaging", "license_audit"},
 )
 expect_exact(
-    "docs-snippets Kotlin source -> Linux + docs_audit",
+    "docs-snippets Kotlin source -> Linux + docs_audit (no native rebuild)",
     ["docs-snippets/src/commonMain/kotlin/com/donfuldauer/kggml/docs/WhisperSnippets.kt"],
     {"ci_linux", "docs_audit"},
 )
 expect_exact(
-    "host build + linkage audit + release staging -> Linux + macOS",
+    "host build + linkage audit -> Linux + macOS + native + macos_jvm + samples_packaging",
     [
         "kggml-runtime/native/scripts/build-host.sh",
         "scripts/ci/audit-host-linkage.sh",
-        "scripts/ci/stage-release.sh",
     ],
-    {"ci_linux", "ci_macos"},
+    {"ci_linux", "ci_macos", "ci_native", "ci_macos_jvm", "ci_samples_packaging"},
 )
 expect_exact(
-    "verify_release.py -> Linux + macOS + test_verify_release",
+    "stage-release.sh only -> Linux + macOS + release_dry_run + samples_packaging (no native rebuild, no macos_jvm)",
+    ["scripts/ci/stage-release.sh"],
+    {"ci_linux", "ci_macos", "ci_release_dry_run", "ci_samples_packaging"},
+)
+expect_exact(
+    "verify_release.py -> Linux + macOS + release_dry_run + samples_packaging + test_verify_release",
     ["scripts/ci/verify_release.py"],
-    {"ci_linux", "ci_macos", "test_verify_release"},
+    {"ci_linux", "ci_macos", "ci_release_dry_run", "ci_samples_packaging", "test_verify_release"},
 )
 expect_exact(
-    "check_native_arch.py -> Linux + Windows + test_check_native_arch",
+    "check_native_arch.py -> Linux + Windows + native + samples_packaging + test_check_native_arch",
     ["scripts/ci/check_native_arch.py"],
-    {"ci_linux", "ci_windows", "test_check_native_arch"},
+    {"ci_linux", "ci_windows", "ci_native", "ci_samples_packaging", "test_check_native_arch"},
 )
 expect_exact(
     "python.sh -> Linux + Windows + agent_parity + test_verify_release + test_check_native_arch",
@@ -312,57 +334,100 @@ expect_exact(
     {"ci_linux", "ci_windows", "agent_parity", "test_verify_release", "test_check_native_arch"},
 )
 expect_exact(
-    "classify_changes.py -> Linux + test_classify_changes",
+    "classify_changes.py -> Linux + test_classify_changes (no native rebuild)",
     ["scripts/ci/classify_changes.py"],
     {"ci_linux", "test_classify_changes"},
 )
 
 # ------------------------------------------------------------------------------
-# 4. Cross-platform shared code, C++, Gradle, submodules, ci.yml
+# 4. Common Kotlin vs JVM/JNI/Desktop, native C++, Gradle, submodules, ci.yml
 # ------------------------------------------------------------------------------
 expect_exact(
-    "library commonMain Kotlin -> all 3 platforms + docs_audit (KDoc)",
+    "library commonMain Kotlin -> Linux + macOS + docs_audit (drops Windows, skips native/release/packaging)",
     ["kggml-core-api/src/commonMain/kotlin/com/donfuldauer/kggml/core/BackendConfig.kt"],
-    {"ci_linux", "ci_macos", "ci_windows", "docs_audit"},
+    {"ci_linux", "ci_macos", "docs_audit"},
 )
 expect_exact(
-    "commonTest Kotlin only -> all 3 platforms, no docs_audit/license_audit",
+    "commonTest Kotlin only -> Linux + macOS only (drops Windows, skips native/release/packaging)",
     ["kggml-core-api/src/commonTest/kotlin/com/donfuldauer/kggml/core/BackendConfigTest.kt"],
-    {"ci_linux", "ci_macos", "ci_windows"},
+    {"ci_linux", "ci_macos"},
 )
 expect_exact(
-    "native C++ source edit -> all 3 platforms, no hygiene audits",
+    "sample commonMain Kotlin -> Linux + macOS + samples_packaging (drops Windows, skips native/release)",
+    ["samples/kggml-showcase/src/commonMain/kotlin/com/donfuldauer/kggml/samples/showcase/ShowcaseApp.kt"],
+    {"ci_linux", "ci_macos", "ci_samples_packaging"},
+)
+expect_exact(
+    "library jvmMain / jniMain Kotlin -> all 3 platforms + macos_jvm + docs_audit (skips native/release/packaging)",
+    [
+        "kggml-runtime/src/jvmMain/kotlin/com/donfuldauer/kggml/runtime/JvmNativeLibraryLoader.kt",
+        "kggml-runtime/src/jniMain/kotlin/com/donfuldauer/kggml/runtime/JniRuntimeBridge.kt",
+    ],
+    {"ci_linux", "ci_macos", "ci_windows", "ci_macos_jvm", "docs_audit"},
+)
+expect_exact(
+    "integration-tests Kotlin -> all 3 platforms + macos_jvm (skips native/release/packaging)",
+    ["integration-tests/src/jvmTest/kotlin/com/donfuldauer/kggml/integration/EngineCoexistenceTest.kt"],
+    {"ci_linux", "ci_macos", "ci_windows", "ci_macos_jvm"},
+)
+expect_exact(
+    "sample desktopMain Kotlin -> all 3 platforms + macos_jvm + samples_packaging (skips native/release)",
+    ["samples/kggml-showcase/src/desktopMain/kotlin/com/donfuldauer/kggml/samples/showcase/Main.kt"],
+    {"ci_linux", "ci_macos", "ci_windows", "ci_macos_jvm", "ci_samples_packaging"},
+)
+expect_exact(
+    "native C++ source edit -> all 3 platforms + native + macos_jvm + samples_packaging (skips release_dry_run)",
     ["kggml-diffusion/native/src/kggml_diffusion.cpp"],
-    {"ci_linux", "ci_macos", "ci_windows"},
+    {"ci_linux", "ci_macos", "ci_windows", "ci_native", "ci_macos_jvm", "ci_samples_packaging"},
 )
 expect_exact(
-    "core CMakeLists.txt + ggml submodule -> all 3 platforms + license_audit",
+    "core CMakeLists.txt + ggml submodule -> all 3 platforms + native + macos_jvm + samples_packaging + license_audit",
     ["kggml-runtime/native/CMakeLists.txt", "kggml-runtime/native/third_party/ggml"],
-    {"ci_linux", "ci_macos", "ci_windows", "license_audit"},
+    {"ci_linux", "ci_macos", "ci_windows", "ci_native", "ci_macos_jvm", "ci_samples_packaging", "license_audit"},
 )
 expect_exact(
-    "kggml-bom/build.gradle.kts + gradle.properties -> all 3 platforms + docs_audit",
+    "build-logic Kotlin convention plugin -> all 3 platforms + macos_jvm + release_dry_run + samples_packaging (skips native)",
+    ["build-logic/convention/src/main/kotlin/com/donfuldauer/kggml/buildlogic/KggmlPublishingPlugin.kt"],
+    {"ci_linux", "ci_macos", "ci_windows", "ci_macos_jvm", "ci_release_dry_run", "ci_samples_packaging"},
+)
+expect_exact(
+    "kggml-bom/build.gradle.kts + gradle.properties -> all 3 platforms + macos_jvm + release_dry_run + samples_packaging + docs_audit",
     ["kggml-bom/build.gradle.kts", "gradle.properties"],
-    {"ci_linux", "ci_macos", "ci_windows", "docs_audit"},
+    {"ci_linux", "ci_macos", "ci_windows", "ci_macos_jvm", "ci_release_dry_run", "ci_samples_packaging", "docs_audit"},
 )
 expect_exact(
-    "ci.yml edit -> all 3 platforms + workflow_audit + test_classify_changes",
+    "sample build.gradle.kts only -> all 3 platforms + macos_jvm + samples_packaging (skips release_dry_run & native)",
+    ["samples/kggml-showcase/build.gradle.kts"],
+    {"ci_linux", "ci_macos", "ci_windows", "ci_macos_jvm", "ci_samples_packaging"},
+)
+expect_exact(
+    "ci.yml edit -> all 3 platforms + all CI step flags + workflow_audit + test_classify_changes",
     [".github/workflows/ci.yml"],
-    {"ci_linux", "ci_macos", "ci_windows", "workflow_audit", "test_classify_changes"},
+    {
+        "ci_linux",
+        "ci_macos",
+        "ci_windows",
+        "ci_native",
+        "ci_macos_jvm",
+        "ci_release_dry_run",
+        "ci_samples_packaging",
+        "workflow_audit",
+        "test_classify_changes",
+    },
 )
 expect_exact(
-    "scripts/audit-binary-symbols.sh -> all 3 platforms + test_audit_binary_symbols",
+    "scripts/audit-binary-symbols.sh -> all 3 platforms + macos_jvm + samples_packaging + test_audit_binary_symbols",
     ["scripts/audit-binary-symbols.sh"],
-    {"ci_linux", "ci_macos", "ci_windows", "test_audit_binary_symbols"},
+    {"ci_linux", "ci_macos", "ci_windows", "ci_macos_jvm", "ci_samples_packaging", "test_audit_binary_symbols"},
 )
 
 # ------------------------------------------------------------------------------
-# 5. Deletions, binaries, unknown fail-safe, --all
+# 5. Deletions, binaries, unknown fail-safe, --all, native_cache_key
 # ------------------------------------------------------------------------------
 expect_exact(
-    "deleted file triggers docs_audit (links) and license_audit (NOTICE fixtures)",
+    "deleted native C++ file triggers native + docs_audit (links) + license_audit (NOTICE fixtures)",
     ["D\tkggml-whisper/native/tests/tiny_model.cpp"],
-    {"ci_linux", "ci_macos", "ci_windows", "docs_audit", "license_audit"},
+    {"ci_linux", "ci_macos", "ci_windows", "ci_native", "ci_macos_jvm", "ci_samples_packaging", "docs_audit", "license_audit"},
 )
 expect_exact(
     "added binary file triggers license_audit even with non-standard extension",
@@ -370,19 +435,31 @@ expect_exact(
     {"license_audit"},
 )
 expect_exact(
-    "unknown/unclassified file fails safe (all 3 CI platforms + license_audit + docs_audit)",
+    "unknown/unclassified file fails safe (all 3 CI platforms + all step flags + license_audit + docs_audit)",
     ["A\tsome-unknown-top-level.xyz"],
-    {"ci_linux", "ci_macos", "ci_windows", "license_audit", "docs_audit"},
+    {
+        "ci_linux",
+        "ci_macos",
+        "ci_windows",
+        "ci_native",
+        "ci_macos_jvm",
+        "ci_release_dry_run",
+        "ci_samples_packaging",
+        "license_audit",
+        "docs_audit",
+    },
 )
 
 all_report = run_classify("--all")
-if all(all_report["outputs"].values()):
-    ok("--all enables every output key")
+if all(all_report["outputs"].values()) and len(all_report["native_cache_key"]) == 16 and all(
+    c in "0123456789abcdef" for c in all_report["native_cache_key"]
+):
+    ok(f"--all enables every output key and emits 16-char native_cache_key ({all_report['native_cache_key']})")
 else:
-    ko("--all enables every output key", str(all_report["outputs"]))
+    ko("--all enables every output key and native_cache_key", str(all_report))
 
 # ------------------------------------------------------------------------------
-# 6. Real git diff (--base / --head) + --github-output + --summary
+# 6. Real git diff (--base / --head) + --github-output + --summary + native_cache_key stability
 # ------------------------------------------------------------------------------
 repo = work / "git-repo"
 repo.mkdir()
@@ -394,12 +471,17 @@ git("config", "user.email", "test@example.com")
 (repo / "docs" / "a.md").write_text("# A\n", encoding="utf-8")
 (repo / "samples" / "app" / "iosApp").mkdir(parents=True)
 (repo / "samples" / "app" / "iosApp" / "App.swift").write_text("// swift\n", encoding="utf-8")
+(repo / "kggml-runtime" / "native").mkdir(parents=True)
+(repo / "kggml-runtime" / "native" / "CMakeLists.txt").write_text("# cmake v1\n", encoding="utf-8")
+(repo / "kggml-runtime" / "native" / "README.md").write_text("# readme v1\n", encoding="utf-8")
 git("add", "-A")
 git("commit", "-q", "-m", "base")
 base_sha = git("rev-parse", "HEAD").stdout.strip()
+key_v1 = run_classify("--repo", str(repo), "--all")["native_cache_key"]
 
 git("checkout", "-q", "-b", "feat")
 (repo / "samples" / "app" / "iosApp" / "App.swift").write_text("// updated\n", encoding="utf-8")
+(repo / "kggml-runtime" / "native" / "README.md").write_text("# readme v2\n", encoding="utf-8")
 git("rm", "-q", "docs/a.md")
 (repo / "docs").mkdir(exist_ok=True)
 (repo / "docs" / "blob.dat").write_bytes(b"\x00\x01\x02\xff\xfe")
@@ -430,12 +512,35 @@ diff_proc = subprocess.run(
     text=True,
 )
 diff_report = json.loads(diff_proc.stdout)
-expected_diff = {"ci_macos", "ci_any", "docs_audit", "license_audit"}
+expected_diff = {"ci_macos", "ci_any", "ci_samples_packaging", "docs_audit", "license_audit"}
 actual_diff = {k for k, v in diff_report["outputs"].items() if v}
-if actual_diff == expected_diff and "ci_macos=true" in gh_out.read_text() and "App.swift" in gh_sum.read_text():
-    ok("real git diff (--base/--head) detects iOS edit + deletion + binary + outputs/summary")
+key_v2 = diff_report["native_cache_key"]
+gh_out_text = gh_out.read_text()
+gh_sum_text = gh_sum.read_text()
+if (
+    actual_diff == expected_diff
+    and key_v2 == key_v1
+    and f"native_cache_key={key_v2}" in gh_out_text
+    and "ci_macos=true" in gh_out_text
+    and "App.swift" in gh_sum_text
+    and key_v2 in gh_sum_text
+):
+    ok("real git diff (--base/--head) detects iOS edit + deletion + binary; native README edit preserves native_cache_key")
 else:
-    ko("real git diff", f"expected={sorted(expected_diff)} actual={sorted(actual_diff)}")
+    ko(
+        "real git diff",
+        f"expected={sorted(expected_diff)} actual={sorted(actual_diff)} key_v1={key_v1} key_v2={key_v2}",
+    )
+
+# Modifying a real native CMake file MUST change native_cache_key.
+(repo / "kggml-runtime" / "native" / "CMakeLists.txt").write_text("# cmake v2\n", encoding="utf-8")
+git("add", "-A")
+git("commit", "-q", "-m", "native change")
+key_v3 = run_classify("--repo", str(repo), "--all")["native_cache_key"]
+if key_v3 != key_v1 and len(key_v3) == 16:
+    ok(f"native CMakeLists.txt change rotates native_cache_key ({key_v1} -> {key_v3})")
+else:
+    ko("native CMakeLists.txt change rotates native_cache_key", f"key_v1={key_v1} key_v3={key_v3}")
 
 # ------------------------------------------------------------------------------
 # 7. Negative --verify-repo checks (unclassified file, ci.yml paths drift, output typo)

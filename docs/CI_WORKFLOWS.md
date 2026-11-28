@@ -11,13 +11,16 @@ repository by [`scripts/tests/test-classify-changes.sh`](../scripts/tests/test-c
 
 | Workflow | Trigger | When It Runs |
 | --- | --- | --- |
-| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | `pull_request` (`paths:` filter) + `workflow_dispatch` | Heavy cross-platform native/JVM/Android/iOS/Windows builds, CTest, Gradle tests, symbol audits, and release dry-run. Skipped completely (0 runners) when no build/code/native/CI files change. When triggered, its `classify` job gates `linux`, `macos`, and `windows` independently. Draft PRs run nothing. |
+| [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) | `pull_request` (`paths:` filter) + `schedule` (nightly 07:00 UTC) + `workflow_dispatch` | Cross-platform native/JVM/Android/iOS/Windows builds, CTest, Gradle tests, symbol audits, and release dry-run. Skipped completely (0 runners) when no build/code/native/CI files change. When triggered on a PR, its `classify` job gates `linux`, `macos`, and `windows` **and** heavy step groups (`ci_native`, `ci_macos_jvm`, `ci_release_dry_run`, `ci_samples_packaging`) independently, restoring prebuilt native binaries/XCFrameworks via `actions/cache@v6` when native files did not change. Draft PRs run nothing. |
 | [`.github/workflows/repo-hygiene.yml`](../.github/workflows/repo-hygiene.yml) | `pull_request` + `workflow_dispatch` | Cheap Ubuntu repository audits. Its `classify` job gates `agent-parity`, `workflow-audit`, `license-audit`, `docs-audit`, and `script-tests` (and individual script tests inside `script-tests`). `secret-scan` runs in parallel on every ready PR because any commit, file, or commit message can introduce secrets, private keys, oversized blobs, or developer-machine paths. Draft PRs run nothing. |
 | [`.github/workflows/label.yml`](../.github/workflows/label.yml) | `pull_request_target` | Applies module, CI, and documentation labels using [`.github/labeler.yml`](../.github/labeler.yml). |
 | [`.github/workflows/release.yml`](../.github/workflows/release.yml) | `push` (`tags: ["v*"]`) + `workflow_dispatch` | Builds, signs, audits, and publishes the Maven Central bundle and draft GitHub release. Never runs on pull requests. |
 | [`.github/workflows/stale.yml`](../.github/workflows/stale.yml) | `schedule` (daily cron) | Marks inactive issues and PRs as stale. Never triggered by file changes. |
 
-Manual `workflow_dispatch` runs of `ci.yml` and `repo-hygiene.yml` pass `--all` to `classify_changes.py`, enabling every job.
+Full-matrix runs (`--all`, enabling every platform and step) run automatically on:
+- Nightly `schedule` (`0 7 * * *` UTC on `main`), which keeps Windows, full native CTest, Android NDK + GPU add-ons, release dry-runs, sample packaging, and `main`-branch native caches warm for PRs.
+- Manual `workflow_dispatch` of `ci.yml` or `repo-hygiene.yml`.
+- Any PR carrying the `ci:full` label.
 
 ---
 
@@ -51,17 +54,32 @@ platform, and `--verify-repo` enforces 100% parity across all tracked files.
 | `linux-android-native-only` | `kggml-runtime-{vulkan,opencl}/native/**`, `aarch64-linux-gnu.cmake`, `kggml-*/native/jni/*.map` | `linux` |
 | `windows-native-toolchain` | `kggml-runtime/native/cmake/toolchains/arm64-windows-llvm.cmake` | `windows` |
 | `docs-snippets-sources` | `^docs-snippets/src/` (compiled in Linux `./gradlew check`) | `linux` |
-| `kotlin-shared-and-jvm` | `\.(kt\|java)$`, `src/(common\|jvm\|jvmCommon\|jni\|desktop)(Main\|Test)/`, `integration-tests/src/` | `linux`, `macos`, `windows` |
+| `gradle-build-system` | `\.(kts\|gradle\|groovy\|properties\|xml)$`, `gradle/**`, `build-logic/**` (incl. convention plugin `.kt`), `gradlew` | `linux`, `macos`, `windows` |
+| `kotlin-jvm-jni-desktop` | `src/(jvm\|jvmCommon\|jni\|desktop)(Main\|Test)/`, `integration-tests/src/`, `\.java$` | `linux`, `macos`, `windows` |
+| `kotlin-common` | `src/common(Main\|Test)/`, other `\.kt$` (Linux JVM/Android + macOS K/N & iOS; Windows deferred to nightly) | `linux`, `macos` |
 | `native-cpp-cmake-submodules` | `\.(c\|cc\|cpp\|cxx\|h\|hh\|hpp\|hxx\|inl\|cl\|comp\|glsl\|s\|S\|asm\|cmake)$`, `*.cmake.in`, `CMakeLists.txt`, `CMakePresets.json`, `.gitmodules`, `kggml-*/native/**` | `linux`, `macos`, `windows` |
-| `gradle-build-system` | `\.(kts\|gradle\|groovy\|properties\|xml)$`, `gradle/**`, `build-logic/**`, `gradlew` | `linux`, `macos`, `windows` |
 | `unclassified-failsafe` | Any path matching none of the rules above | `linux`, `macos`, `windows` |
 
 ---
 
-## 3. Repo-Hygiene Audit Classification (`repo-hygiene.yml`)
+## 3. Step-Level Gating & Prebuilt Native Caching (`ci.yml`)
+
+Within each selected OS job, `classify_changes.py` emits four step flags plus a deterministic `native_cache_key` (16-char SHA-256 of `git ls-tree -r HEAD` across `.gitmodules` and `kggml-{runtime,whisper,llama,diffusion}/native`, excluding `*.md`):
+
+| Output | Controls | Triggered By |
+| --- | --- | --- |
+| `ci_native` | Full native C/C++ rebuilds, upstream pin checks, CTest, dynamic linkage audits, `linux-aarch64` QEMU cross-compile, full Android NDK + Vulkan/OpenCL add-ons, desktop Vulkan Mesa lavapipe test, `windows-arm64` cross-compile, and XCFramework rebuilds | `native-cpp-cmake-submodules`, `linux-android-native-only`, `windows-native-toolchain`, `.metal`/`.m`/`.mm`, `kggml-*/native/scripts/**`, `scripts/ios/build-xcframeworks.sh`, `scripts/ci/setup/*`, pin/linkage/GPU/arch scripts, `ci.yml`, unclassified |
+| `ci_macos_jvm` | macOS host dylibs + desktop `jvmTest` / `desktopTest` / desktop minimal audit on `macos` (skipped on pure `commonMain` or iOS-only PRs, where `macos` focuses on `macosArm64Test`, `iosSimulatorArm64Test`, and `linkDebugFrameworkIos*`) | `ci_native` (when `macos` runs), `kotlin-jvm-jni-desktop`, `gradle-build-system`, `scripts-ci-all-platforms`, host/linkage scripts in `scripts-ci-linux-macos`, `ci.yml`, unclassified |
+| `ci_release_dry_run` | Signed Maven Central staging dry-run (`scripts/ci/stage-release.sh --dry-run` + `verify_release.py`) on Linux and macOS | Root/library/BOM Gradle files (`build.gradle.kts`, `settings.gradle.kts`, `gradle.properties`, `gradlew`, `gradle/**`, `build-logic/**`, `kggml-bom/**`, `kggml-*/build.gradle.kts`), `scripts/ci/stage-release.sh`, `scripts/ci/verify_release.py`, `ci.yml`, unclassified |
+| `ci_samples_packaging` | Sample Android debug/release APKs, desktop jar, `whisper-only-minimal` APK/desktop/iOS binary symbol audits, and both Xcode sample apps (`scripts/ios/build-sample-apps.sh all`) | `ci_native`, `ci_release_dry_run`, any buildable file under `samples/**`, `AndroidManifest.xml`, `consumer-rules.pro`, `scripts/audit-binary-symbols.sh`, `scripts/ci/audit-minimal-sample.sh`, `scripts/ios/build-sample-apps.sh`, `ci.yml`, unclassified |
+| `native_cache_key` | Exact `actions/cache@v6` key suffix for prebuilt Linux/macOS/Windows host libs, Android minimal jniLibs (`runtime` + `whisper`), and Apple XCFrameworks (`build/native-ios`) | Always emitted; on a cache miss when `ci_native == false`, the runner automatically performs a minimal native build (skipping CTest and unrelated cross-compiles) so `-Pkggml.requireNative=true` still passes and warms the cache |
+
+---
+
+## 4. Repo-Hygiene Audit Classification (`repo-hygiene.yml`)
 
 Hygiene rules are additive: a single file can trigger multiple audits (for example, `kggml-runtime/src/commonMain/.../*.kt`
-triggers all three `ci.yml` platforms plus `docs-audit` for public KDoc; `NOTICE` triggers `license-audit` and `docs-audit`).
+triggers Linux + macOS in `ci.yml` plus `docs-audit` for public KDoc; `NOTICE` triggers `license-audit` and `docs-audit`).
 
 | Job | Triggered By |
 | --- | --- |
@@ -74,10 +92,10 @@ triggers all three `ci.yml` platforms plus `docs-audit` for public KDoc; `NOTICE
 
 ---
 
-## 4. Verifying Locally
+## 5. Verifying Locally
 
 ```bash
-# Inspect what workflows and jobs your branch changes would run
+# Inspect what workflows, platforms, step flags, and native cache key your branch changes would run
 python3 scripts/ci/classify_changes.py --base origin/main --head HEAD --json
 
 # Audit every tracked file and verify 100% parity with ci.yml paths
