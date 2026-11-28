@@ -16,6 +16,7 @@ import com.donfuldauer.kggml.whisper.TranscriptionResult
 import com.donfuldauer.kggml.whisper.WhisperEngine
 import java.io.File
 import java.nio.file.Files
+import kotlin.math.roundToLong
 import kotlin.random.Random
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
@@ -201,19 +202,24 @@ class EngineCoexistenceTest {
                 cycle()
                 checkNotNull(residentKb(status))
             }
-            // A leak grows the resident set on every cycle; the allocator does not. After warm-up it still makes the odd
-            // one-off step of 10-20 MB (a new arena or heap region) and then stays flat, so a delta between two points or
-            // windows cannot tell a step from a leak. The median of the per-cycle deltas can: a step is one outlier delta
-            // and the median ignores it, while a leak of even 1 MB per cycle (far less than one engine's model plus
-            // contexts) moves every delta. The total-growth backstop catches a leak that only shows every few cycles.
-            val perCycleKb = samples.takeLast(SLOPE_CYCLES + 1).zipWithNext { a, b -> b - a }
-            val slopeKb = median(perCycleKb)
+            // A leak grows the resident set across the whole measured window; the allocator does not. After warm-up it
+            // can still oscillate with JVM GC sawtooths (gradual ramp over several cycles followed by a sharp drop,
+            // which biases the median of consecutive single-cycle deltas upward) or make a one-off allocator/arena step
+            // (tens of MB when glibc promotes a compute buffer into a heap arena) and then plateau. Taking the Theil-Sen
+            // slope (median of pairwise slopes) on each half of the measured window and checking their minimum eliminates
+            // GC sawtooth bias and absorbs any single one-off step (which can affect at most one half), while a genuine
+            // leak of ~1.5-2 MB per cycle (far less than one engine's model plus contexts) lifts both halves above the
+            // 1 MB/cycle bound. The total-growth backstop catches unbounded growth even if it only appears late.
+            val slope = RssSlopeEstimator.sustainedSlopeKbPerCycle(samples)
             val totalKb = samples.last() - samples.first()
             val trace = "VmRSS per cycle in MB: " + samples.joinToString { (it / 1024).toString() }
             assertTrue(
-                slopeKb < MAX_SLOPE_KB_PER_CYCLE,
-                "resident set keeps growing after warm-up: median ${slopeKb} KB per cycle over the last $SLOPE_CYCLES " +
-                    "cycles (bound ${MAX_SLOPE_KB_PER_CYCLE} KB); $trace",
+                slope.sustainedKbPerCycle < MAX_SLOPE_KB_PER_CYCLE,
+                "resident set keeps growing after warm-up: sustained Theil-Sen slope " +
+                    "${slope.sustainedKbPerCycle.roundToLong()} KB per cycle " +
+                    "(first half ${slope.firstHalfKbPerCycle.roundToLong()} KB/cycle, " +
+                    "second half ${slope.secondHalfKbPerCycle.roundToLong()} KB/cycle over $MEASURED_CYCLES cycles; " +
+                    "bound $MAX_SLOPE_KB_PER_CYCLE KB); $trace",
             )
             assertTrue(
                 totalKb < MAX_TOTAL_GROWTH_KB,
@@ -223,16 +229,13 @@ class EngineCoexistenceTest {
         }
     }
 
-    private fun median(values: List<Long>): Long = values.sorted().let { (it[(it.size - 1) / 2] + it[it.size / 2]) / 2 }
-
     private fun residentKb(status: File): Long? =
         if (!status.isFile) null
         else status.readLines().firstOrNull { it.startsWith("VmRSS:") }?.filter(Char::isDigit)?.toLongOrNull()
 
     private companion object {
         const val WARM_UP_CYCLES = 5
-        const val MEASURED_CYCLES = 20
-        const val SLOPE_CYCLES = 10 // per-cycle deltas the median slope is taken over
+        const val MEASURED_CYCLES = 26
         const val MAX_SLOPE_KB_PER_CYCLE = 1024L
         const val MAX_TOTAL_GROWTH_KB = 96L * 1024
 
