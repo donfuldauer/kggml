@@ -165,5 +165,6 @@ CI is a gate the agent checks, never something it waits on open-endedly. Every `
 4. **`tester`** — Writes unit, CTest, memory-safety, binary-audit, integration, and Compose UI tests; validates coverage.
 5. **`phase-reviewer`** — Invoked **exclusively** on the final issue of each Phase/Milestone (never on routine mid-phase PRs) to audit cumulative phase changes against the Phase Exit Criteria in its checklist before unblocking the next phase.
 
-### Autonomous Skill
+### Autonomous Skills
 - Use `.agents/skills/work-on-issue/SKILL.md` for `"work on next issue"` or `"work on issue #X"` workflows using standard `gh`, `git`, `./gradlew`, and `ctest` commands.
+- Use `.agents/skills/update-dependencies/SKILL.md` for `"update all dependencies"` workflows (Gradle catalog, Gradle wrapper, CMake `FetchContent` pins, GitHub Actions, pinned CI tools, and compatible native submodules) across Antigravity and Claude Code.
