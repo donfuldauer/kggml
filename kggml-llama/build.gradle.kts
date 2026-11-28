@@ -98,7 +98,7 @@ kotlin {
 // one of the properties above is set.
 // ---------------------------------------------------------------------------------------------------------
 
-val buildNativeHost by tasks.registering(Exec::class) {
+val buildNativeHost = tasks.register<Exec>("buildNativeHost") {
     group = "kggml native"
     description = "Builds kggml-llama/native (llama.cpp + libmtmd + kggml_llama + JNI + tests) into <root>/build/native-llama."
     workingDir(rootProject.layout.projectDirectory)
@@ -108,7 +108,7 @@ val buildNativeHost by tasks.registering(Exec::class) {
     dependsOn(":kggml-runtime:buildNativeHost")
 }
 
-val nativeCtest by tasks.registering(Exec::class) {
+val nativeCtest = tasks.register<Exec>("nativeCtest") {
     group = "kggml native"
     description = "Runs the kggml-llama native CTest suite (ctest --test-dir build/native-llama --output-on-failure)."
     dependsOn(buildNativeHost)
@@ -116,7 +116,7 @@ val nativeCtest by tasks.registering(Exec::class) {
     commandLine("ctest", "--test-dir", rootBuildDir.dir("native-llama").asFile.absolutePath, "--output-on-failure")
 }
 
-val buildNativeAndroid by tasks.registering(Exec::class) {
+val buildNativeAndroid = tasks.register<Exec>("buildNativeAndroid") {
     group = "kggml native"
     description = "Cross-compiles llama for Android (arm64-v8a, x86_64) into <root>/build/native-android-llama-jniLibs."
     workingDir(rootProject.layout.projectDirectory)

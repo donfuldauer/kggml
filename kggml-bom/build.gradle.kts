@@ -55,7 +55,7 @@ val generatePom = tasks.named<GenerateMavenPom>("generatePomFileForMavenPublicat
 
 val kmpLibraryPluginUsage = Regex("""(?m)^\s*alias\(libs\.plugins\.kggml\.kmp\.library\)""")
 
-val verifyBomPom by tasks.registering {
+val verifyBomPom = tasks.register("verifyBomPom") {
     group = "verification"
     description = "Verifies the generated BOM POM declares <dependencyManagement> constraints for every Kggml library."
     val pomFile = generatePom.map { it.destination }
@@ -101,8 +101,11 @@ val verifyBomPom by tasks.registering {
  * Simulates an external JVM consumer: imports `platform("com.donfuldauer:kggml-bom:<v>")` and
  * declares every Kggml library WITHOUT a version, resolving against the build-local Maven repo.
  * Every library must resolve (via Gradle module metadata) to the BOM-aligned version.
+ *
+ * Resolved on `rootProject` (whose identity is `:kggml`, not `com.donfuldauer:kggml-bom`) so
+ * Gradle does not flag a project resolving its own published coordinates as a self-dependency.
  */
-val bomConsumer: Configuration by configurations.creating {
+val bomConsumer = rootProject.configurations.create("kggmlBomConsumer") {
     isCanBeConsumed = false
     isCanBeResolved = true
     attributes {
@@ -114,17 +117,17 @@ val bomConsumer: Configuration by configurations.creating {
     }
 }
 
-dependencies {
+rootProject.dependencies {
     bomConsumer(platform("$expectedGroup:kggml-bom:$expectedVersion"))
     expectedArtifactIds.forEach { bomConsumer("$expectedGroup:$it") }
 }
 
 val publishToVerificationRepo = "publishAllPublicationsTo${KggmlPublishingPlugin.VERIFICATION_REPOSITORY_NAME.replaceFirstChar { it.uppercase() }}Repository"
 
-val verifyBomConsumerResolution by tasks.registering {
+val rootVerifyBomConsumerResolution = rootProject.tasks.register("verifyKggmlBomConsumerResolution") {
     group = "verification"
-    description = "Resolves every Kggml library through the BOM without explicit versions, as an external consumer."
-    dependsOn(tasks.named(publishToVerificationRepo))
+    description = "Resolves every Kggml library through the published BOM without explicit versions, as an external consumer."
+    dependsOn(":kggml-bom:$publishToVerificationRepo")
     kggmlLibraryModules.forEach { dependsOn("$it:$publishToVerificationRepo") }
     val rootComponent = bomConsumer.incoming.resolutionResult.rootComponent
     doLast {
@@ -151,6 +154,12 @@ val verifyBomConsumerResolution by tasks.registering {
         }
         logger.lifecycle("kggml-bom consumer resolution OK: ${libs.joinToString { "${it.second}:${it.third}" }}")
     }
+}
+
+val verifyBomConsumerResolution = tasks.register("verifyBomConsumerResolution") {
+    group = "verification"
+    description = "Resolves every Kggml library through the BOM without explicit versions, as an external consumer."
+    dependsOn(rootVerifyBomConsumerResolution)
 }
 
 tasks.named("check") {

@@ -41,7 +41,7 @@ kotlin {
     }
 }
 
-val buildNativeAndroid by tasks.registering(Exec::class) {
+val buildNativeAndroid = tasks.register<Exec>("buildNativeAndroid") {
     group = "kggml native"
     description = "Cross-compiles ggml's Vulkan backend module for Android (arm64-v8a, x86_64) into " +
         "<root>/build/native-android-vulkan-jniLibs."
@@ -51,7 +51,7 @@ val buildNativeAndroid by tasks.registering(Exec::class) {
     mustRunAfter(":kggml-runtime:buildNativeAndroid")
 }
 
-val buildNativeHost by tasks.registering(Exec::class) {
+val buildNativeHost = tasks.register<Exec>("buildNativeHost") {
     group = "kggml native"
     description = "Builds ggml's Vulkan backend module for this desktop host (Linux; on Windows it only stages a " +
         "prebuilt windows-x64 preset build) into <root>/build/native-vulkan-jvm."

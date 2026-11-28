@@ -32,7 +32,7 @@ kotlin {
     }
 }
 
-val buildNativeAndroid by tasks.registering(Exec::class) {
+val buildNativeAndroid = tasks.register<Exec>("buildNativeAndroid") {
     group = "kggml native"
     description = "Cross-compiles ggml's OpenCL backend module for Android (arm64-v8a, x86_64) into " +
         "<root>/build/native-android-opencl-jniLibs."

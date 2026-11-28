@@ -44,7 +44,7 @@ val iosTestTimeoutMinutes: Provider<Long> =
 // Pre-stage Robolectric's API 34 android-all-instrumented jar via Gradle's cached dependency resolution so
 // Robolectric runs offline (`robolectric.offline=true`) instead of fetching from repo1.maven.org over raw
 // HttpURLConnection inside test JVMs (which hits Maven Central HTTP 429 rate limits on GitHub Actions runners).
-val robolectricSdk: Configuration by configurations.creating {
+val robolectricSdk = configurations.create("robolectricSdk") {
     isCanBeConsumed = false
     isCanBeResolved = true
     isTransitive = false
@@ -53,7 +53,7 @@ dependencies {
     robolectricSdk(libs.robolectric.android.all.instrumented)
 }
 val robolectricSdkDir = layout.buildDirectory.dir("robolectric-sdk")
-val syncRobolectricSdk by tasks.registering(Sync::class) {
+val syncRobolectricSdk = tasks.register<Sync>("syncRobolectricSdk") {
     description = "Stages Robolectric's pre-instrumented Android SDK jar from Gradle's dependency cache."
     from(robolectricSdk)
     into(robolectricSdkDir)

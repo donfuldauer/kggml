@@ -86,13 +86,13 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
-        val desktopTest by getting {
+        getByName("desktopTest") {
             dependencies {
                 implementation(libs.junit4)
             }
         }
         // Test-only dependencies: they never reach the audited app APK.
-        val androidHostTest by getting {
+        getByName("androidHostTest") {
             kotlin.srcDir("src/androidSharedTest/kotlin")
             dependencies {
                 implementation(libs.robolectric)
@@ -101,7 +101,7 @@ kotlin {
                 implementation(libs.androidx.test.ext.junit)
             }
         }
-        val androidDeviceTest by getting {
+        getByName("androidDeviceTest") {
             kotlin.srcDir("src/androidSharedTest/kotlin")
             dependencies {
                 implementation(libs.junit4)
@@ -116,7 +116,7 @@ kotlin {
 
 // Guard: this sample must never (even transitively) pull in the llama or diffusion engines.
 val forbiddenKggmlModules = setOf("kggml-llama", "kggml-diffusion")
-val verifyMinimalDependencies by tasks.registering {
+val verifyMinimalDependencies = tasks.register("verifyMinimalDependencies") {
     group = "verification"
     description = "Fails if :samples:whisper-only-minimal resolves :kggml-llama or :kggml-diffusion."
     val roots = listOf("androidRuntimeClasspath", "desktopRuntimeClasspath")
@@ -150,7 +150,7 @@ val hostLibs = mapOf(
     "kggml.whisper.native.path" to (hostWhisperLibDir to "kggml_whisper_jni"),
 )
 
-val runDesktop by tasks.registering(JavaExec::class) {
+val runDesktop = tasks.register<JavaExec>("runDesktop") {
     group = "application"
     description = "Runs the Swing desktop app of the minimal sample (pass app arguments with --args=\"...\")."
     val main = kotlin.jvm("desktop").compilations.getByName("main") // the existing target
@@ -162,7 +162,7 @@ val runDesktop by tasks.registering(JavaExec::class) {
 
 // What a desktop app of this sample ships: its jar plus the resolved runtime classpath (audited by
 // scripts/ci/audit-minimal-sample.sh desktop with scripts/audit-binary-symbols.sh jars).
-val desktopDistribution by tasks.registering(Sync::class) {
+val desktopDistribution = tasks.register<Sync>("desktopDistribution") {
     group = "distribution"
     description = "Collects the desktop app jar and its runtime classpath into build/desktop-dist/lib."
     val main = kotlin.jvm("desktop").compilations.getByName("main")

@@ -106,7 +106,7 @@ dependencies {
 
 // Guard: this sample APK must never (even transitively) pull in the llama or diffusion engines or GPU add-ons.
 val forbiddenKggmlModules = setOf("kggml-llama", "kggml-diffusion", "kggml-runtime-vulkan", "kggml-runtime-opencl")
-val verifyMinimalDependencies by tasks.registering {
+val verifyMinimalDependencies = tasks.register("verifyMinimalDependencies") {
     group = "verification"
     description = "Fails if :samples:whisper-only-minimal:androidApp resolves forbidden Kggml modules."
     val roots = listOf("releaseRuntimeClasspath", "debugRuntimeClasspath")

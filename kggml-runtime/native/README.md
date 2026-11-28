@@ -14,7 +14,7 @@ dynamically and never carry their own copy of ggml.
 | `include/kggml_runtime.h` | Public C ABI: init/shutdown (refcounted), backends, backend modules (`kggml_runtime_load_backend`), P-core count, versions, last error |
 | `jni/kggml_runtime_jni.cpp` | JNI bridge (`libkggml_runtime_jni`) for the Kotlin bindings on Android + JVM Desktop; links `kggml_runtime` dynamically (`KGGML_RUNTIME_BUILD_JNI`, ON when JNI headers are found / on Android, never on iOS) |
 | `src/` | Implementation. `guard.hpp` holds the FFI exception firewall. `kggml_runtime_testing.h` holds the test-only fault hooks |
-| `tests/` | GoogleTest/CTest suite (`-DKGGML_RUNTIME_BUILD_TESTS=ON`; GoogleTest v1.15.2 via FetchContent) |
+| `tests/` | GoogleTest/CTest suite (`-DKGGML_RUNTIME_BUILD_TESTS=ON`; GoogleTest v1.18.0 via FetchContent) |
 | `cmake/kggml-version.cmake` | `KGGML_VERSION`, read from `VERSION_NAME` in `gradle.properties` (the one place the version is set); the runtime and every engine use it as their CMake project version. `-DKGGML_VERSION=x.y.z` overrides it outside the repository. |
 | `cmake/kggml-runtime-config.cmake.in` | Installed package: `find_package(kggml-runtime)` → `kggml::runtime`, `kggml::ggml` |
 | `scripts/` | `build-host.sh`, `build-android.sh`, `build-ios-xcframework.sh`, `build-windows-arm64.cmd` |

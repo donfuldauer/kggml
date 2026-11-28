@@ -115,14 +115,14 @@ kotlin {
 // submodule).
 // ---------------------------------------------------------------------------------------------------------
 
-val buildNativeHost by tasks.registering(Exec::class) {
+val buildNativeHost = tasks.register<Exec>("buildNativeHost") {
     group = "kggml native"
     description = "Configures and builds kggml-runtime/native (ggml + kggml_runtime + JNI + tests) into <root>/build/native."
     workingDir(rootProject.layout.projectDirectory)
     commandLine("bash", buildHostScript, "--skip-ctest")
 }
 
-val nativeCtest by tasks.registering(Exec::class) {
+val nativeCtest = tasks.register<Exec>("nativeCtest") {
     group = "kggml native"
     description = "Runs the kggml-runtime native CTest suite (ctest --test-dir build/native --output-on-failure)."
     dependsOn(buildNativeHost)
@@ -130,7 +130,7 @@ val nativeCtest by tasks.registering(Exec::class) {
     commandLine("ctest", "--test-dir", nativeBuildDir.asFile.absolutePath, "--output-on-failure")
 }
 
-val buildNativeHostRelease by tasks.registering(Exec::class) {
+val buildNativeHostRelease = tasks.register<Exec>("buildNativeHostRelease") {
     group = "kggml native"
     description = "Builds and installs a release (no tests, no test hooks) host runtime into <root>/build/native-release-install."
     workingDir(rootProject.layout.projectDirectory)
@@ -143,7 +143,7 @@ val buildNativeHostRelease by tasks.registering(Exec::class) {
     )
 }
 
-val buildNativeAndroid by tasks.registering(Exec::class) {
+val buildNativeAndroid = tasks.register<Exec>("buildNativeAndroid") {
     group = "kggml native"
     description = "Cross-compiles the runtime for Android (arm64-v8a, x86_64) into <root>/build/native-android-jniLibs."
     workingDir(rootProject.layout.projectDirectory)
@@ -173,7 +173,7 @@ val nativeLoadOrder = listOf(
 
 val jvmNativeResourcesDir = layout.buildDirectory.dir("generated/kggml-native/jvm")
 
-val stageJvmNativeResources by tasks.registering {
+val stageJvmNativeResources = tasks.register("stageJvmNativeResources") {
     group = "kggml native"
     description = "Copies the release host runtime into JVM resources (/kggml/native/<platform>/) with a load-order index."
     dependsOn(buildNativeHostRelease)
